@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #ffffff;
+  --text: #333;
+  --card-bg: rgba(255, 255, 255, 0.85);
+  --card-border: rgba(0, 0, 0, 0.04);
+  --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  --dot: rgba(0, 0, 0, 0.35);
+  --glow: radial-gradient(circle at top center, rgba(70, 130, 180, 0.5), transparent 70%);
+  --toggle-bg: rgba(255, 255, 255, 0.6);
+  --toggle-border: rgba(0, 0, 0, 0.1);
+  --toggle-hover-bg: rgba(255, 255, 255, 0.9);
+  --toggle-hover-border: rgba(0, 0, 0, 0.2);
+}
+
+html.dark {
+  --bg: #000000;
+  --text: #e0e0e0;
+  --card-bg: rgba(20, 20, 35, 0.85);
+  --card-border: rgba(255, 255, 255, 0.06);
+  --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  --dot: rgba(255, 255, 255, 0.2);
+  --glow:
+    radial-gradient(circle at 50% 100%, rgba(70, 85, 110, 0.5) 0%, transparent 60%),
+    radial-gradient(circle at 50% 100%, rgba(99, 102, 241, 0.4) 0%, transparent 70%),
+    radial-gradient(circle at 50% 100%, rgba(181, 184, 208, 0.3) 0%, transparent 80%);
+  --toggle-bg: rgba(30, 30, 50, 0.6);
+  --toggle-border: rgba(255, 255, 255, 0.1);
+  --toggle-hover-bg: rgba(30, 30, 50, 0.9);
+  --toggle-hover-border: rgba(255, 255, 255, 0.2);
+}
+
+body {
+  margin: 0;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
