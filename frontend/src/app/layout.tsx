@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import "./globals.css";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { LoadingScreen } from "@/components/loading-screen";
+import { OpeningAnimation } from "@/components/opening-animation";
 import { Space_Grotesk, Montserrat } from "next/font/google";
 import { cn } from "@/lib/utils";
 
@@ -22,20 +23,15 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning className={cn("font-sans", spaceGrotesk.variable, montserratHeading.variable)}>
       <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              if (localStorage.getItem('theme') === 'dark') {
-                document.documentElement.classList.add('dark')
-              }
-            `,
-          }}
-        />
+        <Script id="theme-init" strategy="beforeInteractive">
+          {`if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark')`}
+        </Script>
       </head>
       <body>
-        <LoadingScreen />
-        {children}
-        <ThemeToggle />
+        <OpeningAnimation>
+          {children}
+          <ThemeToggle />
+        </OpeningAnimation>
       </body>
     </html>
   );

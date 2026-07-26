@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { DotmSquare17 } from "@/components/ui/dotm-square-17";
 
-export function LoadingScreen() {
+export function LoadingScreen({ onDone }: { onDone?: () => void }) {
   const [visible, setVisible] = useState(true);
   const [fadeOut, setFadeOut] = useState(false);
 
@@ -18,7 +18,10 @@ export function LoadingScreen() {
       setTimeout(() => {
         if (!cancelled) {
           setFadeOut(true);
-          setTimeout(() => setVisible(false), 500);
+          setTimeout(() => {
+            setVisible(false);
+            onDone?.();
+          }, 500);
         }
       }, remaining);
     };
