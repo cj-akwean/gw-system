@@ -1,6 +1,13 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { LoadingScreen } from "@/components/loading-screen";
+import { Space_Grotesk, Montserrat } from "next/font/google";
+import { cn } from "@/lib/utils";
+
+const montserratHeading = Montserrat({subsets:['latin'],variable:'--font-heading'});
+
+const spaceGrotesk = Space_Grotesk({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
   title: "GW-System",
@@ -13,7 +20,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning className={cn("font-sans", spaceGrotesk.variable, montserratHeading.variable)}>
       <head>
         <script
           dangerouslySetInnerHTML={{
@@ -26,6 +33,7 @@ export default function RootLayout({
         />
       </head>
       <body>
+        <LoadingScreen />
         {children}
         <ThemeToggle />
       </body>
