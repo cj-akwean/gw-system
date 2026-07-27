@@ -33,9 +33,10 @@ export interface UseCyclePhaseOptions {
 
 export function useCyclePhase({ active, cycleMsBase, speed = 1 }: UseCyclePhaseOptions): number {
   const [phase, setPhase] = useState(0);
+  const prefersReducedMotion = usePrefersReducedMotion();
 
   useEffect(() => {
-    if (!active) {
+    if (!active || prefersReducedMotion) {
       setPhase(0);
       return;
     }
@@ -45,8 +46,14 @@ export function useCyclePhase({ active, cycleMsBase, speed = 1 }: UseCyclePhaseO
     const cycleMs = raw > 0 && Number.isFinite(raw) ? raw : 1000;
     const start = performance.now();
     let rafId = 0;
+    let frameCount = 0;
 
     const tick = (now: number) => {
+      frameCount++;
+      if (frameCount % 2 === 0) {
+        rafId = requestAnimationFrame(tick);
+        return;
+      }
       const elapsed = ((now - start) % cycleMs + cycleMs) % cycleMs;
       setPhase(elapsed / cycleMs);
       rafId = requestAnimationFrame(tick);
@@ -54,7 +61,7 @@ export function useCyclePhase({ active, cycleMsBase, speed = 1 }: UseCyclePhaseO
 
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [active, cycleMsBase, speed]);
+  }, [active, cycleMsBase, speed, prefersReducedMotion]);
 
   return phase;
 }
@@ -71,6 +78,7 @@ type FrameListener = (now: number) => void;
 
 const listeners = new Set<FrameListener>();
 let rafId: number | null = null;
+let globalFrameCount = 0;
 
 function emit(now: number) {
   listeners.forEach((listener) => {
@@ -79,6 +87,15 @@ function emit(now: number) {
 }
 
 function tick(now: number) {
+  globalFrameCount++;
+  if (globalFrameCount % 2 === 0) {
+    if (listeners.size > 0) {
+      rafId = window.requestAnimationFrame(tick);
+    } else {
+      rafId = null;
+    }
+    return;
+  }
   emit(now);
   if (listeners.size > 0) {
     rafId = window.requestAnimationFrame(tick);

@@ -23,6 +23,10 @@
   },
   "registries": {
     "@dotmatrix": "https://dotmatrix.zzzzshawn.cloud/r/{name}.json",
-    "@canvas-ui": "https://canvasui.dev/r/{name}.json"
+    "@canvas-ui": "https://canvasui.dev/r/{name}.json",
+    "@fancy": "https://fancycomponents.dev/r/{name}.json",
+    "@eldoraui": "https://eldoraui.site/r/{name}.json",
+    "@smoothui": "https://smoothui.dev/r/{name}.json",
+    "@efferd": "https://efferd.com/r/{style}/{name}.json"
   }
 }

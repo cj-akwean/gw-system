@@ -1,3 +1,5 @@
+import Hero33 from "@/components/ui/hero-33";
+
 export default function Home() {
   return (
     <div className="relative min-h-screen w-full" style={{ background: "var(--bg)" }}>
@@ -13,25 +15,11 @@ export default function Home() {
           backgroundSize: "20px 20px",
         }}
       />
-      <div
-        className="relative flex min-h-screen items-center justify-center"
-        style={{
-          color: "var(--text)",
-          fontFamily: "system-ui, sans-serif",
-          fontSize: "1.5rem",
-        }}
-      >
-        <div
-          className="rounded-2xl px-12 py-8 backdrop-blur-md"
-          style={{
-            background: "var(--card-bg)",
-            boxShadow: "var(--card-shadow)",
-            border: "1px solid var(--card-border)",
-          }}
-        >
-          ✦ Your Content Goes Here ✦
-        </div>
-      </div>
+      <Hero33
+        logoText="Guinobatan Waterworks"
+        titleLines={['Every Drop', 'Matters.']}
+        description="Delivering clean, reliable water to every home in Guinobatan."
+      />
     </div>
   );
 }

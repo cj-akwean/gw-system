@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { LoadingScreen } from "@/components/loading-screen";
 import { Ripple } from "@/components/canvasui/Ripple";
+import { LoadingContext } from "@/lib/loading-context";
 
 export function OpeningAnimation({ children }: { children: ReactNode }) {
+  const [loadingComplete, setLoadingComplete] = useState(false);
   const splashRef = useRef<((x: number, y: number, strength?: number) => void) | null>(null);
 
   // detect desktop for wider ripple radius (default to mobile-safe values during SSR)
@@ -21,6 +23,7 @@ export function OpeningAnimation({ children }: { children: ReactNode }) {
   );
 
   const handleLoadingDone = useCallback(() => {
+    setLoadingComplete(true);
     const splash = splashRef.current;
     if (!splash) return;
 
@@ -48,7 +51,9 @@ export function OpeningAnimation({ children }: { children: ReactNode }) {
         shine={0.8}
         onRippleReady={handleRippleReady}
       >
-        {children}
+        <LoadingContext.Provider value={loadingComplete}>
+          {children}
+        </LoadingContext.Provider>
       </Ripple>
     </>
   );
