@@ -95,3 +95,9 @@ Run before suggesting a commit:
 ### 6. Commit cadence
 - Suggest a commit after each **meaningfully complete, working** checklist item
 - Not after every small edit, and not after multiple features bundled together
+
+### 7. Use the knowledge graph, not just grep
+- Before editing shared code (models, services, anything with callers), run `graphify query "<term>"` first to see what depends on it — the graph knows relationships grep can't
+- If `graphify query` returns nothing useful, fall back to grep — don't force it
+- After any significant structural change (new models, renamed services, moved files), re-run `graphify . --update --no-viz` to refresh the graph incrementally
+- Treat `graphify-out/GRAPH_REPORT.md` as a sanity check against `ARCHITECTURE.md` — if they disagree about what exists, flag it

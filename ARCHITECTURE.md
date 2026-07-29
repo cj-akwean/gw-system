@@ -111,10 +111,10 @@ npm run dev
 > Keep this checklist in sync with the actual codebase. Check an item only when it is genuinely working end-to-end (not stubbed). Update in the same commit that completes the item.
 
 ### Foundation
-- [ ] Laravel 13 backend scaffolded, Postgres connected (dev via Sail)
-- [ ] Next.js frontend scaffolded (marketing pages)
-- [ ] CORS configured between frontend and backend
-- [ ] `.env.example` files present for both apps (no real secrets committed)
+- [x] Laravel 13 backend scaffolded, Postgres connected (local Postgres 18, not Sail — Docker unavailable)
+- [x] Next.js frontend scaffolded (marketing pages)
+- [x] CORS configured between frontend and backend
+- [x] `.env.example` files present for both apps (no real secrets committed)
 
 ### Auth
 - [ ] Sanctum installed, Bearer token issuance on login working
