@@ -117,9 +117,9 @@ npm run dev
 - [x] `.env.example` files present for both apps (no real secrets committed)
 
 ### Auth
-- [ ] Sanctum installed, Bearer token issuance on login working
-- [ ] Token revocation / logout working
-- [ ] Filament admin auth guard set up separately from API guard
+- [x] Sanctum installed, Bearer token issuance on login working
+- [x] Token revocation / logout working
+- [x] Filament admin auth guard set up separately from API guard (is_admin flag + filter)
 
 ### Core Data Models
 - [ ] Customer model + migration

@@ -24,6 +24,14 @@ gw-system/
 - **No permanent file storage** — PDFs generated in-memory and emailed; regenerate from DB on demand
 - **PayMongo webhook must be idempotent** — check if invoice is already paid before processing; verify signature
 
+## Admin Credentials
+
+| Email | Password | Role | Access |
+|---|---|---|---|
+| admin@gwsystem.com | admin123 | Super Admin | `/admin` (Filament dashboard) |
+
+> Use `admin@gwsystem.com` / `admin123` to log into the Filament admin panel. Seeded via `php artisan db:seed`.
+
 ## Key Decisions
 
 | Decision | Choice |

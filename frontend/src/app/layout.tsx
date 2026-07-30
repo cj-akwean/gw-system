@@ -5,6 +5,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { OpeningAnimation } from "@/components/opening-animation";
 import { Space_Grotesk, Montserrat } from "next/font/google";
 import { cn } from "@/lib/utils";
+import { Providers } from "@/lib/providers";
 
 const montserratHeading = Montserrat({subsets:['latin'],variable:'--font-heading'});
 
@@ -28,10 +29,12 @@ export default function RootLayout({
         </Script>
       </head>
       <body>
-        <OpeningAnimation>
-          {children}
-          <ThemeToggle />
-        </OpeningAnimation>
+        <Providers>
+          <OpeningAnimation>
+            {children}
+            <ThemeToggle />
+          </OpeningAnimation>
+        </Providers>
       </body>
     </html>
   );
