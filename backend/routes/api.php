@@ -10,3 +10,9 @@ Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:sanc
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/links', [App\Http\Controllers\Api\ConnectionLinkController::class, 'index']);
+    Route::post('/links', [App\Http\Controllers\Api\ConnectionLinkController::class, 'store']);
+    Route::delete('/links/{link}', [App\Http\Controllers\Api\ConnectionLinkController::class, 'destroy']);
+});

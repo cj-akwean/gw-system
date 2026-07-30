@@ -161,7 +161,7 @@ npm run dev
 - [x] `Barangay` model + migration (seed 15 real Guinobatan barangays)
 - [x] `ServiceConnection` model + migration (account_number, meter_number, registered_name, barangay_id, status)
 - [x] `PortalUser` model + migration (or extend default auth user — login identity only, not tied to registered_name) — used existing `User` model, added `phone` column
-- [ ] `ConnectionLink` model + migration (portal_user_id, service_connection_id, status, linked_at, unlinked_at) + self-serve link-by-account-and-meter-number flow
+- [x] `ConnectionLink` model + migration (user_id, service_connection_id, status, linked_at, unlinked_at) + self-serve link-by-account-and-meter-number flow
 - [ ] `MeterReading` model + migration (present_reading, previous_reading, cu_m_used, entered_by, entered_at, method, flagged)
 - [ ] `RateSchedule` + `RateTier` models + migration (supports flat-rate and tiered, effective_from/effective_to)
 - [ ] `PenaltyRule` model + migration (percent_per_month, grace_period_days, disconnection_after_days — seed with 2%/month as confirmed real-world default)
