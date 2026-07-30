@@ -13,6 +13,7 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->call(BarangaySeeder::class);
+        $this->call(PenaltyRuleSeeder::class);
 
         User::factory()->create([
             'name' => 'Admin',
