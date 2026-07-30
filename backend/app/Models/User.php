@@ -24,6 +24,11 @@ class User extends Authenticatable
         return $this->hasMany(ConnectionLink::class);
     }
 
+    public function enteredReadings(): HasMany
+    {
+        return $this->hasMany(MeterReading::class, 'entered_by');
+    }
+
     protected function casts(): array
     {
         return [
