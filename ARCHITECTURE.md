@@ -160,7 +160,7 @@ npm run dev
 ### Core Data Models
 - [x] `Barangay` model + migration (seed 15 real Guinobatan barangays)
 - [ ] `ServiceConnection` model + migration (account_number, meter_number, registered_name, barangay_id, status)
-- [ ] `PortalUser` model + migration (or extend default auth user — login identity only, not tied to registered_name)
+- [x] `PortalUser` model + migration (or extend default auth user — login identity only, not tied to registered_name) — used existing `User` model, added `phone` column
 - [ ] `ConnectionLink` model + migration (portal_user_id, service_connection_id, status, linked_at, unlinked_at) + self-serve link-by-account-and-meter-number flow
 - [ ] `MeterReading` model + migration (present_reading, previous_reading, cu_m_used, entered_by, entered_at, method, flagged)
 - [ ] `RateSchedule` + `RateTier` models + migration (supports flat-rate and tiered, effective_from/effective_to)
