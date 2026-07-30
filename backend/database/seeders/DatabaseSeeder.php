@@ -12,6 +12,8 @@ class DatabaseSeeder extends Seeder
 
     public function run(): void
     {
+        $this->call(BarangaySeeder::class);
+
         User::factory()->create([
             'name' => 'Admin',
             'email' => 'admin@gwsystem.com',

@@ -17,7 +17,7 @@ gw-system/
 | Customer-facing UI | Next.js 16 + React 19 + shadcn/ui + Tailwind v4 |
 | Admin Panel | Filament (PHP/Livewire) |
 | Backend Framework | Laravel 13 |
-| Database | Postgres (both dev & prod — Docker/Laravel Sail for local) |
+| Database | Postgres (both dev & prod) |
 | API Auth | Laravel Sanctum — Bearer token mode (not SPA cookies) |
 | Payments | **PayMongo** (one-off payments, not subscriptions) |
 | Invoices | Generate PDF via barryvdh/laravel-dompdf, email to customer |
@@ -27,6 +27,7 @@ gw-system/
 | Email (dev/test) | Mailtrap |
 | SMS | Semaphore (PH) or Twilio (global) |
 | Exports / Reports | Laravel Excel |
+| Codebase context | Graphify knowledge graph (`graphify-out/`) — query before editing shared code |
 
 ## Architecture
 
@@ -50,7 +51,7 @@ Payment Gateway (PayMongo) ───────── webhook → marks invoice
 ## Database
 
 - Postgres for both dev and prod (avoid SQLite dev / MySQL prod surprises)
-- Use **Laravel Sail** (Docker) or local Postgres install for development
+- Local dev: **native PostgreSQL 18 install** (via winget on Windows) — no Docker/Sail needed
 - Postgres is stricter about constraints — catches bugs earlier for a billing system where data integrity matters
 
 ## Queue & Background Jobs
@@ -61,9 +62,36 @@ Payment Gateway (PayMongo) ───────── webhook → marks invoice
 
 ## Meter Readings
 
-- **CSV import** (bulk upload via Filament) + **manual entry** (Filament form)
+- Meter reading stays a **physical, in-person process** (confirmed by real PH water bills — a reader walks the barangay and reads each meter by hand; there's no automated hardware). GW-System doesn't try to replace the walk — it replaces what happens *after* the walk.
+- **CSV import** (bulk upload via Filament, one file per reading day/route) + **manual entry** (Filament form) for individual corrections
 - No hardware/automated reading integration for now
-- Audit trail for every reading entry (who entered it, when)
+- Audit trail for every reading entry (who entered it, when, method)
+- Each reading stores `present_reading`, `previous_reading`, and computed `cu_m_used` — matches the exact fields printed on real water bills (present/previous/cu.m. used), so admin views map 1:1 to what a customer already recognizes from paper bills
+
+## Barangays
+
+- `Barangay` is a simple lookup table (id, name) — seeded once, not free-typed by customers at signup
+- Customer portal signup uses a barangay **dropdown**, not a text field, to avoid typos and keep zone data clean for reading routes / reports later
+- Seed list (real Guinobatan, Albay barangays — 15 of the municipality's 44, more can be added anytime without a schema change): Poblacion, Mauraro, San Rafael, Masarawag, Maipon, Travesia, San Francisco, Quibongbongan, Calzada, Quitago, Morera, Muladbucad Grande, Binogsacan Lower, Maguiron, Lomacao
+
+## Customer & Connection Linking (renter/boarder problem)
+
+Real PH utility bills (electric co-op and municipal water alike) identify an account by **account number + meter number**, printed on the physical bill — completely independent of who currently lives there. GW-System mirrors this instead of inventing a new scheme:
+
+- **`ServiceConnection`** is the source of truth for a physical connection: `account_number`, `meter_number`, `registered_name` (whoever originally applied — stays fixed, historical/legal record only), address line, `barangay_id`, status, connection date. This never changes when tenants change.
+- **`PortalUser`** is just the login identity — any email, not required to match `registered_name`.
+- **`ConnectionLink`** (join table) connects a `PortalUser` to a `ServiceConnection`: `linked_at`, `unlinked_at` (nullable), `status` (active/revoked).
+- **Linking is self-serve, no admin approval needed**: at signup, the portal user enters the `account_number` + `meter_number` from their physical bill — the same two identifiers the utility itself already uses to mean "this account," regardless of whose name is on it. This matches how payment already works informally (whoever holds the bill pays it, no ID check).
+- When a renter moves out, their link is set to `revoked`; the next occupant links using the same account/meter numbers. The `ServiceConnection` record itself is untouched.
+- Multiple simultaneous links are allowed (e.g. two boarders splitting one bill both want visibility) — the join table supports this naturally.
+
+## Rate Schedule & Penalties
+
+Based on real Sorsogon-area water bills reviewed:
+- Some municipal water systems bill a **simple flat rate per cu.m.** (not tiered blocks) — e.g. ₱10/cu.m. flat. Design `RateSchedule` to support **either** a flat rate or tiered blocks (via a `RateTier` child table: `min_cu_m`, `max_cu_m`, `rate_per_cu_m`), so it works for a flat-rate MVP now and tiered billing later without a schema change.
+- `RateSchedule` must have `effective_from` / `effective_to` dates — rates change over time, and historical invoices must keep reflecting the rate that applied when they were billed, not today's rate.
+- **Penalty**: confirmed from a real bill — **2% per month interest** on any unpaid balance, disconnection follows after due date. Store this as data (`PenaltyRule`: `percent_per_month`, `grace_period_days`, `disconnection_after_days`), not hardcoded in billing logic, since municipalities can and do change these.
+- **Arrears**: real bills carry forward unpaid balances month over month with accruing interest (see the "ARREARS" table on the sample bills — one row per month). `Invoice` must store `previous_balance` (carried arrears) separately from the current period's `base_amount`, so the itemized breakdown is transparent — customers will dispute bills, and this is what lets you show your work.
 
 ## Security
 
@@ -76,11 +104,19 @@ Payment Gateway (PayMongo) ───────── webhook → marks invoice
 - PDF generated on payment confirmation via dompdf
 - Emailed to customer as attachment — no permanent file storage
 - If "download past invoices" feature needed later, regenerate PDF from DB data (bill amount, date, customer) — no files to host
+- Real municipal water bills reviewed don't yet have a QR/online payment option (unlike the electric co-op bill, which does) — this is the actual gap GW-System fills. PayMongo checkout can generate its own QR/payment link per invoice; no need to replicate SOReco's QR format specifically.
 
 ## Payment Webhook Handling
 
 - PayMongo webhook route must be **idempotent**: check if the invoice is already marked paid before processing, since webhook providers can retry/send duplicate notifications
 - Verify webhook signature before trusting the payload
+
+## Smart Features (post-MVP, not urgent)
+
+- AI/statistics layer is **explanatory only** — it must never calculate or decide a bill amount; billing math stays 100% deterministic Laravel service code, auditable line by line
+- Cheap wins that need no AI at all, just math on data already being stored: leak/anomaly detection (compare new reading to customer's own trailing average), simple consumption forecasting (moving average), collections risk scoring (payment history aggregation)
+- If/when an LLM is added: a small hosted API call (e.g. a low-cost model) to turn already-computed structured data into plain-language bill explanations or admin natural-language queries — not a local model, given expected volume is low (dozens–low hundreds of bills per cycle, not scale that justifies self-hosting)
+- Do not start this section until Core Data Models → Meter Readings → Billing → Payments are fully working
 
 ## Testing, Monitoring, Backups
 
@@ -122,11 +158,15 @@ npm run dev
 - [x] Filament admin auth guard set up separately from API guard (is_admin flag + filter)
 
 ### Core Data Models
-- [ ] Customer model + migration
-- [ ] Meter/Account model + migration
-- [ ] Meter Reading model + migration (with audit fields: entered_by, entered_at)
-- [ ] Invoice/Bill model + migration
-- [ ] Payment model + migration
+- [x] `Barangay` model + migration (seed 15 real Guinobatan barangays)
+- [ ] `ServiceConnection` model + migration (account_number, meter_number, registered_name, barangay_id, status)
+- [ ] `PortalUser` model + migration (or extend default auth user — login identity only, not tied to registered_name)
+- [ ] `ConnectionLink` model + migration (portal_user_id, service_connection_id, status, linked_at, unlinked_at) + self-serve link-by-account-and-meter-number flow
+- [ ] `MeterReading` model + migration (present_reading, previous_reading, cu_m_used, entered_by, entered_at, method, flagged)
+- [ ] `RateSchedule` + `RateTier` models + migration (supports flat-rate and tiered, effective_from/effective_to)
+- [ ] `PenaltyRule` model + migration (percent_per_month, grace_period_days, disconnection_after_days — seed with 2%/month as confirmed real-world default)
+- [ ] `Invoice` model + migration (previous_balance/arrears, base_amount, penalty_amount, total_amount, due_date, status)
+- [ ] `Payment` model + migration (amount, method, paymongo_reference, paid_at, linked invoice(s))
 
 ### Meter Readings
 - [ ] Manual entry form in Filament
@@ -134,9 +174,9 @@ npm run dev
 - [ ] Validation on import (reject bad rows, show errors)
 
 ### Billing
-- [ ] Billing calculation logic in `App\Services\BillingService`
+- [ ] Billing calculation logic in `App\Services\BillingService` (reads RateSchedule + PenaltyRule, never hardcodes rates)
 - [ ] Billing run as a queued job (not synchronous)
-- [ ] Invoice PDF generation (dompdf)
+- [ ] Invoice PDF generation (dompdf) — itemized, matches real bill breakdown (current charges, arrears, penalty, total)
 
 ### Payments
 - [ ] PayMongo integration (create payment intent/checkout)
@@ -146,7 +186,7 @@ npm run dev
 
 ### Admin Panel (Filament)
 - [ ] Dashboard with key metrics (customers, unpaid invoices, revenue)
-- [ ] CRM views (customer list, detail, edit)
+- [ ] CRM views (customer/connection list, detail, edit)
 - [ ] Billing management views
 
 ### Notifications
@@ -157,3 +197,9 @@ npm run dev
 - [ ] Queue worker running (database driver)
 - [ ] Automatic daily DB backups enabled on host
 - [ ] Basic rate limiting on public API routes
+
+### Smart Features (post-MVP)
+- [ ] Leak/anomaly detection (trailing average comparison, no AI)
+- [ ] Consumption forecasting (moving average, no AI)
+- [ ] Collections risk scoring (payment history aggregation, no AI)
+- [ ] LLM-powered bill explanation / admin natural-language query (hosted API, optional)
