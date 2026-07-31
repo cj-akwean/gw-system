@@ -176,7 +176,7 @@ Meter Readings gap fixes + CSV round-trip (prompt saved in `docs/prompts/meter-r
 
 **Commit:** `fix: implement FilamentUser so admin panel works in production` (de4ec0e). Landmine from Addendum 5 is resolved; no further action needed before prod deploy.
 
-## Addendum 7 — import page file upload disappearing bug FIXED (same day, commit 96f2cd0)
+## Addendum 7 — import page file upload disappearing bug FIXED (same day, commit 8de72cd)
 
 **Bug (user-reported):** CSV file upload button on `/admin/meter-readings/import` appeared for milliseconds, then vanished.
 
@@ -186,4 +186,4 @@ Meter Readings gap fixes + CSV round-trip (prompt saved in `docs/prompts/meter-r
 
 **Regression test (permanent):** `tests/Feature/ImportMeterReadingsPageTest.php` — `Livewire::test()` asserts `fi-fo-file-upload` present, then `->set('validCount', 1)` (forces a second Livewire request where `mount()` does not re-run), asserts present again. **Failed before the fix** (proving the root cause), passes after. Full suite 10/10.
 
-**Commit:** `fix: keep import file upload visible across Livewire renders` (96f2cd0).
+**Commit:** `fix: keep import file upload visible across Livewire renders` (8de72cd).
