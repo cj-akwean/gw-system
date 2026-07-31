@@ -117,11 +117,18 @@ class ReadingService
         User $enteredBy,
         string $method = 'manual',
     ): MeterReading {
-        $previous = $data['previous_reading']
-            ?? $this->getPreviousReading((int) $data['service_connection_id']);
+        $latest = $this->getLatestReading((int) $data['service_connection_id']);
+
+        $previous = $latest
+            ? (float) $latest->present_reading
+            : (float) ($data['previous_reading'] ?? 0);
 
         $present = (float) $data['present_reading'];
         $cuMUsed = $this->computeUsage($present, $previous);
+
+        $flagged = $present < $previous
+            ? 2
+            : (int) ($data['flagged'] ?? 0);
 
         return MeterReading::create([
             'service_connection_id' => $data['service_connection_id'],
@@ -131,7 +138,7 @@ class ReadingService
             'entered_by' => $enteredBy->id,
             'entered_at' => $data['entered_at'] ?? now(),
             'method' => $method,
-            'flagged' => $data['flagged'] ?? false,
+            'flagged' => $flagged,
         ]);
     }
 

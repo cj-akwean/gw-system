@@ -275,3 +275,19 @@ Also: `backend/.gitignore` gained `/storage/framework/livewire-tmp/` and `/sampl
 **Docs:** ARCHITECTURE.md meter-replacement bullet + CSV round-trip bullet + checkbox 175 updated to levels; product-decisions.md §4 gained "Third correction"; prompt file item 3 rewritten.
 
 **NOT browser-tested (needs user's manual pass):** Select control on manual form, badge/filter in table, preview badges, downloaded CSV values.
+
+## Addendum 12 — insert-time recompute kills the stale-preview quirk (same day, pre-commit)
+
+**Goal:** fix the row-14 quirk found during manual-test planning — a row later in the same CSV file imported with the preview's stale `previous_reading`/flag (GW-00005's 25.00 imported after 75.00 in the same file would land **unflagged with cu_m_used = −50**, a billing hazard: negative usage that isn't flagged).
+
+**Fix (`ReadingService::createFromArray()`):** at insert, fetch the actual latest reading for the connection and recompute — `$previous = latest ? latest->present_reading : (data previous ?? 0)`; `$flagged = present < previous ? 2 : (int)(data['flagged'] ?? 0)`. The auto-detect is ground truth at insert for **all** paths (CSV in-file order, manual double-entry races, any stale preview). Stored previous is always the true one.
+
+**Semantic consequence (documented in the Select helper text):** manual override to 0/1 is ineffective when present < previous — level 2 always wins.
+
+**Manual form:** Flagged Select gained helper text: "A present reading lower than previous always saves as Meter replacement (level 2)."
+
+**Tests (+3, suite 22/22):** in-file-order recompute (stored previous 75.00, cu −50.00, flagged 2); level 1 preserved when present not lower; level 0 kept when present not lower.
+
+**Docs:** ARCHITECTURE meter-replacement bullet (insert-time recompute sentence); product-decisions.md §4 "Fourth correction" (incl. preview-is-a-snapshot rationale).
+
+**Deliberately out of scope:** preview simulating in-file order (contradicts the documented DB-only gap check); pre-existing hole where manual create doesn't check date duplicates (form only validates the date window) — separate fix if ever needed.

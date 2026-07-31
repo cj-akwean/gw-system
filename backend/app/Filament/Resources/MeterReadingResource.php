@@ -124,6 +124,7 @@ class MeterReadingResource extends Resource
 
                 Select::make('flagged')
                     ->label('Flagged')
+                    ->helperText('A present reading lower than previous always saves as Meter replacement (level 2).')
                     ->options([
                         0 => 'Not flagged',
                         1 => 'Flagged',

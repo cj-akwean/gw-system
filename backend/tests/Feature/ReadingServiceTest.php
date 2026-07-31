@@ -124,6 +124,68 @@ class ReadingServiceTest extends TestCase
         $this->assertSame('Present reading is lower than previous (meter may have been replaced)', $row['notes']);
     }
 
+    public function test_create_from_array_recomputes_previous_and_forces_level_2_for_in_file_order(): void
+    {
+        $service = app(ReadingService::class);
+        $user = User::factory()->create();
+        $connection = ServiceConnection::factory()->create();
+
+        $service->createFromArray([
+            'service_connection_id' => $connection->id,
+            'present_reading' => 75.00,
+            'previous_reading' => 0.00,
+            'entered_at' => '2026-07-30',
+            'flagged' => 1,
+        ], $user, 'csv_import');
+
+        $second = $service->createFromArray([
+            'service_connection_id' => $connection->id,
+            'present_reading' => 25.00,
+            'previous_reading' => 0.00,
+            'entered_at' => '2026-07-31',
+            'flagged' => 0,
+        ], $user, 'csv_import');
+
+        $this->assertSame('75.00', (string) $second->previous_reading);
+        $this->assertSame('-50.00', (string) $second->cu_m_used);
+        $this->assertSame(2, $second->flagged);
+    }
+
+    public function test_create_from_array_preserves_csv_level_1_when_present_not_lower(): void
+    {
+        $service = app(ReadingService::class);
+        $user = User::factory()->create();
+        $connection = ServiceConnection::factory()->create();
+
+        $reading = $service->createFromArray([
+            'service_connection_id' => $connection->id,
+            'present_reading' => 100.00,
+            'previous_reading' => 0.00,
+            'entered_at' => '2026-07-30',
+            'flagged' => 1,
+        ], $user, 'csv_import');
+
+        $this->assertSame('0.00', (string) $reading->previous_reading);
+        $this->assertSame(1, $reading->flagged);
+    }
+
+    public function test_create_from_array_keeps_zero_when_present_not_lower(): void
+    {
+        $service = app(ReadingService::class);
+        $user = User::factory()->create();
+        $connection = ServiceConnection::factory()->create();
+
+        $reading = $service->createFromArray([
+            'service_connection_id' => $connection->id,
+            'present_reading' => 100.00,
+            'previous_reading' => 0.00,
+            'entered_at' => '2026-07-30',
+            'flagged' => 0,
+        ], $user, 'csv_import');
+
+        $this->assertSame(0, $reading->flagged);
+    }
+
     public function test_reading_before_previous_plus_30_days_is_invalid_in_import(): void
     {
         $service = app(ReadingService::class);

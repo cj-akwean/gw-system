@@ -119,6 +119,19 @@ import preview + downloaded CSV show the level; a CSV `flagged` value only ever
 sets level 1 — level 2 is system-reserved and the auto-detect fires even when
 the file has no `flagged` column at all.
 
+**Fourth correction (same session):** preview-time data could go stale between
+preview and import — a row later in the same CSV file was stored with the
+preview's previous reading and flag, so e.g. GW-00005's 25.00 imported after
+75.00 in the same file landed **unflagged with cu_m_used = −50** (negative
+usage never being flagged is a billing hazard). `createFromArray()` now
+recomputes against the **actual latest reading at insert time**: stored
+`previous_reading` is always the true one, and `present < previous` forces
+level 2 — the auto-detect is ground truth at insert, so CSV/manual levels 0/1
+only apply when present >= previous (the manual form's Select states this in
+its helper text). The import preview remains a validation snapshot (it does not
+simulate in-file order — consistent with the DB-only gap check); the DB is
+truth.
+
 ---
 
 ## 5. The product replaces what happens AFTER the meter walk — not the walk
