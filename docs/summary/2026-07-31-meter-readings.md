@@ -64,8 +64,21 @@ Implement the full Meter Readings phase: Filament manual entry form (auto-comput
 7. Meter replacement dedicated marker — deferred, noted in ARCHITECTURE.md near end
 
 ## Git State at Session End
-- Working tree contains ALL of the above UNCOMMITTED (13 commits ahead of origin/main already)
-- Commit checkpoint needed: `feat: meter readings phase complete + import robustness fixes`
+- Committed: `8b1c438` — `feat: meter readings phase complete + import robustness fixes, docs structure` (21 files, 1420 insertions). 14 commits ahead of origin/main.
+- `temp.txt` at repo root left untracked (user scratch notes)
+
+## Addendum — post-commit review pass (same day)
+User review caught a missed promise: the meter-replacement note was claimed to be in
+ARCHITECTURE.md but wasn't. Fixed in commit `{hash}`:
+- ARCHITECTURE.md Meter Readings section: meter replacement prose (negative cu_m_used is
+  transient — chain self-corrects next reading)
+- ARCHITECTURE.md Billing section: flagged readings must NEVER feed billing math (skip /
+  treat as 0 / manual override) + composite index (service_connection_id, entered_at)
+  noted for the Billing phase
+- ARCHITECTURE.md new "Deferred" section near the end: meter replacement marker (labeling
+  improvement, not functional gap)
+- docs/insights/product-decisions.md §3 expanded with the swap-reading billing insight
+- docs/prompts/meter-readings-roundtrip.md Phase 5 expanded (billing implication + index)
 
 ## Next Step
 Meter Readings gap fixes + CSV round-trip (prompt saved in `docs/prompts/meter-readings-roundtrip.md`), then Billing phase.

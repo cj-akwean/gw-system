@@ -67,6 +67,7 @@ Payment Gateway (PayMongo) ───────── webhook → marks invoice
 - No hardware/automated reading integration for now
 - Audit trail for every reading entry (who entered it, when, method)
 - Each reading stores `present_reading`, `previous_reading`, and computed `cu_m_used` — matches the exact fields printed on real water bills (present/previous/cu.m. used), so admin views map 1:1 to what a customer already recognizes from paper bills
+- **Meter replacement**: when a physical meter is swapped, the new meter starts at 0, so a reading can legitimately be `present < previous` → negative `cu_m_used`. Such readings are stored with `flagged = true` (import + flag, never rejected). The chain self-corrects on the next reading (previous = new meter's value), but billing must handle the flagged reading (see Billing section).
 
 ## Barangays
 
@@ -174,6 +175,8 @@ npm run dev
 - [x] Validation on import (per-row errors, flags suspicious readings, rejects invalid) (reject bad rows, show errors)
 
 ### Billing
+- **Flagged readings must not feed billing math**: a flagged reading (meter replacement, `present < previous`) stores negative `cu_m_used`. Feeding it into billing produces negative consumption → negative/zero bill → breaks the system. `BillingService` must define behavior for flagged readings (skip / treat as 0 / manual override before billing). Revisit `flagged` handling in the Billing phase.
+- Add composite index on `meter_readings (service_connection_id, entered_at)` with billing work — billing queries readings per connection by date.
 - [ ] Billing calculation logic in `App\Services\BillingService` (reads RateSchedule + PenaltyRule, never hardcodes rates)
 - [ ] Billing run as a queued job (not synchronous)
 - [ ] Invoice PDF generation (dompdf) — itemized, matches real bill breakdown (current charges, arrears, penalty, total)
@@ -203,3 +206,6 @@ npm run dev
 - [ ] Consumption forecasting (moving average, no AI)
 - [ ] Collections risk scoring (payment history aggregation, no AI)
 - [ ] LLM-powered bill explanation / admin natural-language query (hosted API, optional)
+
+### Deferred (noted, not scheduled)
+- **Meter replacement marker**: dedicated flag/note on a reading when a physical meter is swapped (present < previous is legitimate then), so a backward reading isn't mistaken for an error by another user. Deferred — the current `flagged` workflow suffices; the billing guard above (Billing section) is the functional requirement.

@@ -56,6 +56,16 @@ Two different things, treated differently by the system:
 120). CSV import auto-flags it; manual entry flags it (auto-flag coming). It shows in
 the list → filter "flagged" → verify the meter was indeed replaced → done.
 
+**Why the flagged reading must never flow into billing (the swap-reading problem):**
+after a meter swap, the swap reading stores `present 0 < previous 120` → `cu_m_used =
+-120`. The chain self-corrects on the next reading (its previous = the new meter's
+value), so the negative is transient — one reading only. BUT if that single -120 is
+fed into billing math, it produces negative consumption → a negative/zero bill, which
+breaks billing for that connection. So the billing service MUST define flagged-reading
+behavior (skip / treat as 0 / manual override before billing). This requirement is
+documented in the ARCHITECTURE.md Billing section so the Billing phase cannot forget
+it.
+
 **Deferred enhancement (noted in ARCHITECTURE.md):** a dedicated "meter replaced"
 marker/note on the reading, so a backward reading isn't mistaken for an error by
 someone else looking at the data. Deferred because the flag workflow already

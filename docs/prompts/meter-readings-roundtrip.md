@@ -53,9 +53,16 @@ Key files:
 
 ## Phase 5 — ARCHITECTURE.md updates
 
-12. In ARCHITECTURE.md Meter Readings section: document the 30-day hard-block rule (monthly cycle rationale).
-13. Near the end of ARCHITECTURE.md (with post-MVP items): add — "Meter replacement marker: dedicated flag/note on a reading when a physical meter is swapped (present < previous is legitimate then). Deferred — current flag workflow suffices."
+12. In ARCHITECTURE.md Meter Readings section: document the 30-day hard-block rule (monthly cycle rationale). A meter-replacement note + Billing guard already exist there (added 2026-07-31) — don't duplicate.
+13. The "Meter replacement marker" deferred note and the "flagged readings must not feed billing math" Billing-section requirement are ALREADY in ARCHITECTURE.md (added 2026-07-31). Keep them, do not remove. The composite index note (service_connection_id, entered_at) is also already in the Billing section.
 14. If any checklist item's behavior changed (e.g. validation rules), note it in the Meter Readings checkbox descriptions.
+
+## Billing phase heads-up (do NOT start it this session)
+
+The Billing phase must implement: flagged readings never feed billing math (skip / treat
+as 0 / manual override before billing) and the composite index on
+meter_readings (service_connection_id, entered_at). Both are documented in
+ARCHITECTURE.md Billing section.
 
 ## Constraints
 
