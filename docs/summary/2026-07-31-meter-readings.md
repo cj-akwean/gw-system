@@ -69,7 +69,7 @@ Implement the full Meter Readings phase: Filament manual entry form (auto-comput
 
 ## Addendum — post-commit review pass (same day)
 User review caught a missed promise: the meter-replacement note was claimed to be in
-ARCHITECTURE.md but wasn't. Fixed in commit `{hash}`:
+ARCHITECTURE.md but wasn't. Fixed in commit `f6b277f`:
 - ARCHITECTURE.md Meter Readings section: meter replacement prose (negative cu_m_used is
   transient — chain self-corrects next reading)
 - ARCHITECTURE.md Billing section: flagged readings must NEVER feed billing math (skip /
