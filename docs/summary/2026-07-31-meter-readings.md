@@ -199,3 +199,32 @@ Meter Readings gap fixes + CSV round-trip (prompt saved in `docs/prompts/meter-r
 **Tests:** new permanent `test_upload_completes_with_filament_dotted_path_and_auto_previews` in `tests/Feature/ImportMeterReadingsPageTest.php` — simulates the real browser flow (`_startUpload` → `FileUploadController::validateAndStore` → `_finishUpload` with `data.csvFile.<uuid>`) and asserts upload completes + auto-preview ran (`hasPreview`, `invalidCount=1`). **Failed before the fix with the exact production exception** (also required registering the `tmp-for-tests` disk in `setUp()` — Livewire's own test bootstrap normally does this). Full suite 11/11. Dev-server upload NOT yet browser-tested by me — needs user's manual pass.
 
 **Commit:** `fix: nest import form state under data so Filament uploads don't crash Livewire` (d559536).
+
+## Addendum 9 — manual test CSV committed (same day, commit e6c0b7a)
+
+`backend/samples/meter-readings-manual-test.csv` (14 rows) is a purpose-built fixture for the manual checklist — rows are deterministic against the seeded connections (GW-00004..00013 untouched at creation time; row 13 needs GW-00003's pre-existing DB reading). Verified end-to-end through the real pipeline (Excel parse → validateHeaders → prepareImportRows): 9 valid / 5 invalid.
+
+**Row → test mapping (today 2026-07-31):**
+
+| Row | Account / value | Expected | Confirms |
+|---|---|---|---|
+| 1 | GW-00004, 100.50, 07-30, flag=`1` | Valid, Flagged | D1 (`1`) |
+| 2 | GW-00005, 75.00, 07-30, `true` | Valid, Flagged | D1 (`true`) |
+| 3 | GW-00006, 50.00, 07-29, `yes` | Valid, Flagged | D1 (`yes`) |
+| 4 | GW-00007, 40.00, 07-29, `0` | Valid, not flagged | D1 (`0`) |
+| 5 | GW-00008, 30.00, 07-28, `no` | Valid, not flagged | D1 (`no`) |
+| 6 | GW-00009, 20.00, 07-28, blank | Valid, not flagged | D1 (blank) |
+| 7 | GW-00010, 10.00, **07-01** | Valid — exactly 30 days = allowed | boundary |
+| 8 | GW-00011, 60.00, **06-30** | Invalid — more than 30 days old | B4 (30-day) |
+| 9 | GW-00012, 70.00, **08-01** | Invalid — future | B4 (future) |
+| 10 | GW-99999 | Invalid — no matching connection | regression |
+| 11 | GW-00013, **-5.00** | Invalid — negative | regression |
+| 12 | GW-00004, 101.00, **07-30** | Invalid — duplicate within file (row 1) | regression |
+| 13 | GW-00003, 30.00, 07-29, `0` | **Valid + Flagged** (previous 73 > 30; auto-flag beats CSV `0`) | D2 |
+| 14 | GW-00005, 25.00, 07-31, `false` | Valid, not flagged | D1 (`false`) |
+
+**Two-pass flow:** Pass 1 — upload → check badges → Import (9 rows). Pass 2 — re-upload same file → rows 1–7/13/14 show "already exists on this date" (DB-duplicate detection + round-trip). Note: on any fresh DB where GW-00004..13 have no prior readings, rows 1–3's "lower than previous" note text is the generic flagged note (ReadingService.php:210–212) — flagged there comes from the CSV column.
+
+Also: `backend/.gitignore` gained `/storage/framework/livewire-tmp/` and `/samples/meter-readings-preview-*.csv` (user keeps a downloaded preview artifact locally for now — not deleted). The current `meter-readings-preview-20260731-101200.csv` stays untracked+ignored.
+
+**Commit:** `chore: commit manual-test CSV and ignore preview artifacts` (e6c0b7a).
