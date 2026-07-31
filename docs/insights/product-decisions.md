@@ -125,3 +125,45 @@ back-office for a process utilities already run on paper.
 - AI/statistics (post-MVP) are **explanatory only** — billing math stays 100%
   deterministic, auditable line by line.
 - Money-critical flows are manually tested; backups are automatic daily.
+
+---
+
+## 8. Filament 5.7 API reality check
+
+Why the GW-System code looks the way it does — so future sessions don't "fix" it back
+to v3/v4 style. All confirmed against installed vendor source (July 2026).
+
+- **`form(Schema $schema): Schema`** — `Filament\Forms\Form` no longer exists; the
+  schemas package (`Filament\Schemas\Schema` + `InteractsWithSchemas`) replaced it.
+  Same for the import page: no `HasForms` — base pages already handle schemas.
+- **Actions live in `Filament\Actions\*`** (`ViewAction`, `EditAction`,
+  `BulkActionGroup`, `CreateAction`) — NOT `Filament\Tables\Actions\*`. The tables
+  package only ships an enum there.
+- **`defaultSort()` belongs to the Table, not the Column** — calling it on a
+  `TextColumn` throws `BadMethodCallException`.
+- **Custom resource pages with static slugs must be registered BEFORE `/{record}`**
+  in `getPages()` — otherwise the record route swallows them and Laravel tries to
+  cast the slug to a bigint (`SQLSTATE[22P02]` on Postgres is the symptom).
+- **Resource property types must match the parent exactly** (e.g.
+  `string | \UnitEnum | null` for `$navigationGroup`) — PHP property type variance is
+  strict; a narrower `?string` is a fatal error at class-load time.
+
+---
+
+## 9. Empty dropdown ≠ broken code — check the data first
+
+**Question asked:** "The Service Connection search field returns nothing — what do I put
+in the input?"
+
+**Answer:** nothing typed manually — it's a searchable dropdown over `service_connections`
+(account number, meter number, or registered name). It returned nothing because the table
+had **0 rows**: the whole meter reading feature was working against empty data.
+
+**Lesson:** before debugging a UI widget, count the records it queries. Seeding gaps
+masquerade as code bugs — and that's exactly what seeders exist for (15 connections now,
+`GW-00001..15`).
+
+**Related product note:** CSV reading dates need only a **date**, not a time — field
+readers note the day, not the hour. Carbon parses date-only strings to midnight. The
+manual form was switched from `DateTimePicker` to `DatePicker` so both entry paths accept
+the same input.

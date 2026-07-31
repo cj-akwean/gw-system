@@ -80,5 +80,55 @@ ARCHITECTURE.md but wasn't. Fixed in commit `f6b277f`:
 - docs/insights/product-decisions.md §3 expanded with the swap-reading billing insight
 - docs/prompts/meter-readings-roundtrip.md Phase 5 expanded (billing implication + index)
 
+## Addendum 2 — runtime bugfix round (same day, live browser testing)
+
+Found while clicking through `/admin/meter-readings` — none of these were in the audit;
+all were Filament 5.7 API mismatches + one data-contract gap.
+
+| # | Bug found | Root cause | Fix |
+|---|---|---|---|
+| 10 | `BadMethodCallException: TextColumn::defaultSort does not exist` | Filament 5.7: `defaultSort()` is **Table-level only** (`Table/Concerns/CanSortRecords.php`) | Removed from column; table's `->defaultSort('entered_at', 'desc')` already handled it |
+| 11 | `Class Filament\Tables\Actions\ViewAction not found` | Filament 5.7 moved all actions to `Filament\Actions\*` (tables pkg only ships an enum) | `Tables\Actions\X` → `Actions\X`, dropped empty `bulkActions` |
+| 12 | `SQLSTATE[22P02]: invalid input syntax for type bigint: "import"` on `/admin/meter-readings/import` | Route ordering — `/{record}` registered **before** `/import`, so "import" resolved as a record ID | Static routes before `{record}` in `getPages()` |
+| 13 | `Undefined array key "entered_at"` in import preview | Early-exit branches of `prepareImportRows()` pushed raw CSV rows as `data` (no normalized keys) | Both branches now emit normalized `data` (`entered_at`, `present_reading`, `previous_reading`, `flagged`) + `connection` key; blade `?? null` defensive fix |
+
+Lesson: Filament 5.7's API differs significantly from v3/v4 docs (Schema ≠ Form, action
+namespaces, Table-level sorts). Treat any v3/v4 tutorial code as suspect until verified
+against the installed vendor source.
+
+## Addendum 3 — debugging + seeding round (same day)
+
+**User question:** what is the "Service Connection*" field for, and what do I put in it?
+
+- It is a searchable FK to `service_connections` (account number / meter number /
+  registered name). It selects whose meter is being read and auto-fills previous_reading
+  from that connection's latest reading.
+
+**Root cause of the empty dropdown (this session's debugging):** live DB scan showed
+`service_connections` = **0 rows** (meter_readings 0, users 2, barangays 15). The field
+looked broken; it was a data-seeding gap, not a code bug.
+
+**Fix:**
+- Created `backend/database/seeders/ServiceConnectionSeeder.php` — seeds 15 connections
+  via the existing factory (`GW-00001..15`, `MTR-00001..15`, random names/barangays)
+- Registered in `DatabaseSeeder.php` (runs after BarangaySeeder)
+- Ran targeted `php artisan db:seed --class=ServiceConnectionSeeder` → verified 15 rows
+  via tinker. Factory's static counter means re-runs continue at `GW-00016` — no
+  collision risk.
+
+**Checklist items 9–18 audited against current code — all green:**
+- 9/10 happy path + CSV Import badge, 11 "No matching service connection found.",
+  12 status error now reachable (resolveConnection has no status filter),
+  13 negative, 14 future date, 15 duplicate (DB + in-file seenPairs), 16 flagged-but-valid,
+  17 empty/header-less (validateHeaders + warning), 18 "Imported N reading(s). M row(s)
+  failed." — all present.
+
+**CSV reading_date answer:** date-only (`2026-07-30`) is enough — Carbon parse defaults
+to midnight; time is optional. Manual form now uses DatePicker (bug 9), so both entry
+paths accept the same input.
+
+**Git state at this point:** both docs modified but uncommitted (38 insertions);
+`temp.txt` untracked at repo root.
+
 ## Next Step
 Meter Readings gap fixes + CSV round-trip (prompt saved in `docs/prompts/meter-readings-roundtrip.md`), then Billing phase.
