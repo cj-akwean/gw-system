@@ -43,18 +43,18 @@ class ImportMeterReadings extends Page
 
     public function importForm(Schema $schema): Schema
     {
-        return $schema;
-    }
-
-    public function getImportForm(): Schema
-    {
-        return $this->makeSchema()
+        return $schema
             ->components([
                 FileUpload::make('csvFile')
                     ->label('CSV file')
                     ->acceptedFileTypes(['text/csv', 'text/plain', 'application/vnd.ms-excel'])
                     ->maxSize(2048),
             ]);
+    }
+
+    public function getImportForm(): Schema
+    {
+        return $this->importForm($this->makeSchema());
     }
 
     public function downloadCsv()

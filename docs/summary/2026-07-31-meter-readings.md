@@ -175,3 +175,15 @@ Meter Readings gap fixes + CSV round-trip (prompt saved in `docs/prompts/meter-r
 **Regression test added (permanent):** `backend/tests/Feature/AdminPanelAccessTest.php` forces `config(['app.env' => 'production'])` in `setUp()` (so the local-env bypass can never mask a regression) and asserts: admin user → `/admin` 200; non-admin user → 403; guest → redirect to `/admin/login`. **9/9 tests pass** (6 existing + 3 new). Browser check can't prove this fix on dev (env=local works before and after) — the production-env test is the real proof.
 
 **Commit:** `fix: implement FilamentUser so admin panel works in production` (de4ec0e). Landmine from Addendum 5 is resolved; no further action needed before prod deploy.
+
+## Addendum 7 — import page file upload disappearing bug FIXED (same day, commit 96f2cd0)
+
+**Bug (user-reported):** CSV file upload button on `/admin/meter-readings/import` appeared for milliseconds, then vanished.
+
+**Root cause (verified in `vendor/filament/schemas/src/Concerns/InteractsWithSchemas.php`):** `cachedSchemas` is a **protected** (non-persisted) property. `mount()` cached the real schema once, but on the next Livewire render (hydration/any update) the cache is empty, so `getSchema('importForm')` falls back to the reflection path (`cacheSchema($name)` with no args, lines 268–306), which calls `importForm(Schema $schema)` with a fresh **empty** schema. Our method returned it unchanged → empty schema → upload vanished. The blade `{{ $this->importForm }}` resolves via `__get()` → `getSchema()` (`ResolvesDynamicLivewireProperties.php:26`), so the empty schema was rendered.
+
+**Fix:** moved the `FileUpload` components INTO `importForm(Schema $schema)` (returns the schema with components — the same pattern Filament's own `CreateRecord::form()` uses). `getImportForm()` now delegates to it. Every render path (cached or reflection fallback) now builds the full schema.
+
+**Regression test (permanent):** `tests/Feature/ImportMeterReadingsPageTest.php` — `Livewire::test()` asserts `fi-fo-file-upload` present, then `->set('validCount', 1)` (forces a second Livewire request where `mount()` does not re-run), asserts present again. **Failed before the fix** (proving the root cause), passes after. Full suite 10/10.
+
+**Commit:** `fix: keep import file upload visible across Livewire renders` (96f2cd0).
