@@ -188,7 +188,7 @@ Meter Readings gap fixes + CSV round-trip (prompt saved in `docs/prompts/meter-r
 
 **Commit:** `fix: keep import file upload visible across Livewire renders` (8de72cd).
 
-## Addendum 8 — upload crash `[null]` property synthesizer FIXED (same day, commit 7f3c9e5)
+## Addendum 8 — upload crash `[null]` property synthesizer FIXED (same day, commit d559536)
 
 **Bug (user-reported):** after the file finishes uploading on the import page: `Exception … HandleComponents.php:773 "Property type not supported in Livewire for property: [null]"` on `/livewire-…/update`.
 
@@ -198,4 +198,4 @@ Meter Readings gap fixes + CSV round-trip (prompt saved in `docs/prompts/meter-r
 
 **Tests:** new permanent `test_upload_completes_with_filament_dotted_path_and_auto_previews` in `tests/Feature/ImportMeterReadingsPageTest.php` — simulates the real browser flow (`_startUpload` → `FileUploadController::validateAndStore` → `_finishUpload` with `data.csvFile.<uuid>`) and asserts upload completes + auto-preview ran (`hasPreview`, `invalidCount=1`). **Failed before the fix with the exact production exception** (also required registering the `tmp-for-tests` disk in `setUp()` — Livewire's own test bootstrap normally does this). Full suite 11/11. Dev-server upload NOT yet browser-tested by me — needs user's manual pass.
 
-**Commit:** `fix: nest import form state under data so Filament uploads don't crash Livewire` (7f3c9e5).
+**Commit:** `fix: nest import form state under data so Filament uploads don't crash Livewire` (d559536).
