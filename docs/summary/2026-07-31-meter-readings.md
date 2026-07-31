@@ -167,3 +167,11 @@ Meter Readings gap fixes + CSV round-trip (prompt saved in `docs/prompts/meter-r
 **PROD LANDMINE (found, NOT fixed):** `vendor/filament/filament/src/Http/Middleware/Authenticate.php` aborts 403 unless the panel user implements `FilamentUser::canAccessPanel()` OR `config('app.env') === 'local'`. Our `app/Models/User.php` does NOT implement FilamentUser, so the `/admin` panel only works because dev env is `local` — in production every admin login would 403. **Fix (next session, before any prod deploy):** add `FilamentUser` contract + `canAccessPanel()` returning `$this->is_admin` (or similar) to the User model. Also the admin login form is Livewire-only (no plain CSRF token; `wire:submit="authenticate"`, `data.email`/`data.password`) — scripted HTTP login won't work; use `test-login`/browser.
 
 **Final git state:** all work + this doc committed in one commit per plan (message `feat: meter readings 30-day rule, CSV round-trip, import UI polish, case-insensitive search`). Pre-existing dirty files not touched: `AGENTS.md` (modified), `temp.txt` (untracked). Dev server (PID 11572) stopped after verification.
+
+## Addendum 6 — FilamentUser prod landmine FIXED (same day, commit 3e9f09f)
+
+**Fix applied** (per plan): `backend/app/Models/User.php` now `implements FilamentUser` with `canAccessPanel(Panel $panel): bool { return $this->is_admin; }` (is_admin already cast to boolean; single panel, no `$panel->getId()` branch needed). Auth is unchanged: `admin` guard → `admins` provider already filters `where is_admin = true`, so the contract is a defense-in-depth backstop — `/admin` now works in production.
+
+**Regression test added (permanent):** `backend/tests/Feature/AdminPanelAccessTest.php` forces `config(['app.env' => 'production'])` in `setUp()` (so the local-env bypass can never mask a regression) and asserts: admin user → `/admin` 200; non-admin user → 403; guest → redirect to `/admin/login`. **9/9 tests pass** (6 existing + 3 new). Browser check can't prove this fix on dev (env=local works before and after) — the production-env test is the real proof.
+
+**Commit:** `fix: implement FilamentUser so admin panel works in production` (3e9f09f). Landmine from Addendum 5 is resolved; no further action needed before prod deploy.
