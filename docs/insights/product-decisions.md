@@ -86,6 +86,39 @@ Two water bills within one month for the same connection is practically unheard 
 catch-up reading. Rare; can be revisited with a review/approval flow if it ever
 becomes real.
 
+**Correction (2026-07-31, evening):** the rule above was implemented wrong the
+first time. It blocked dates **older than 30 days from today** — but that would
+legitimately block a first reading backdated to before a new connection was
+billed, and it let through two readings only a few days apart. The actual intent
+is a **minimum 30-day gap since the connection's last reading** (monthly cycle:
+you cannot bill the same account twice within one month). New rule, manual +
+CSV: a reading is rejected when `reading_date < last_reading_date + 30 days`
+(exactly 30 = allowed); future dates still rejected; **first readings are exempt**
+(no age limit, so backdating a first reading stays legal). The gap is checked
+against the DB's latest reading only — rows inside one CSV file don't affect each
+other on a first upload.
+
+**Second correction (same session):** CSV-declared `flagged` was conflated with
+the automatic `present < previous` flag when generating the preview/download
+note, so a row flagged only via the CSV column got the misleading "Present
+reading is lower than previous" note even when the reading was higher than
+previous. Notes now reflect the actual source: auto-flag → meter-replacement
+text; CSV-only flag → "Flagged via CSV - no automatic issue detected". The flag
+value itself is still `auto-flag OR csv-flagged` — the CSV column can add a flag
+but never suppress the present < previous detection.
+
+**Third correction (same session):** the `flagged` column went from boolean to
+**flag levels** (`smallint`, 0/1/2) so a flag's *source* is visible, not just
+that it exists: `0` = not flagged; `1` = flagged by CSV column or manual
+override — no automatic basis detected (the note says exactly that, since the
+system cannot prove a flag *incorrect*: tampering/dispute reasons are invisible
+in the data); `2` = auto-flagged because `present < previous` (meter
+replacement). Any non-zero level keeps meaning "suspicious" for the Billing
+guard. Manual form is a 3-option Select (auto-sets 2, user can override to 0/1);
+import preview + downloaded CSV show the level; a CSV `flagged` value only ever
+sets level 1 — level 2 is system-reserved and the auto-detect fires even when
+the file has no `flagged` column at all.
+
 ---
 
 ## 5. The product replaces what happens AFTER the meter walk — not the walk

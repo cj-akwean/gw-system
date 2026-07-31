@@ -67,9 +67,9 @@ Payment Gateway (PayMongo) ───────── webhook → marks invoice
 - No hardware/automated reading integration for now
 - Audit trail for every reading entry (who entered it, when, method)
 - Each reading stores `present_reading`, `previous_reading`, and computed `cu_m_used` — matches the exact fields printed on real water bills (present/previous/cu.m. used), so admin views map 1:1 to what a customer already recognizes from paper bills
-- **Meter replacement**: when a physical meter is swapped, the new meter starts at 0, so a reading can legitimately be `present < previous` → negative `cu_m_used`. Such readings are stored with `flagged = true` (import + flag, never rejected). The chain self-corrects on the next reading (previous = new meter's value), but billing must handle the flagged reading (see Billing section).
-- **30-day hard block on reading dates**: dates older than 30 days (or in the future) are rejected outright — in a monthly-billing cycle they are entry errors ~99% of the time. Applies to manual entry and CSV import alike. Known edge case (deferred): a reader who misses a month and records a 45-day catch-up reading — rare; revisit with a review/approval flow if it ever becomes real.
-- **CSV round-trip**: the importer reads an optional `flagged` column (`1/0`, `true/false`, `yes/no`; empty = not flagged) and silently ignores any other extra columns. After preview, the full preview (valid **and** invalid rows) can be downloaded as CSV — the original columns plus `notes` (per-row errors / flag message) and `flagged` (`1/0`) — so rows can be fixed offline and re-imported; already-imported rows are caught by the DB duplicate check, never imported twice.
+- **Meter replacement**: when a physical meter is swapped, the new meter starts at 0, so a reading can legitimately be `present < previous` → negative `cu_m_used`. Such readings are stored with `flagged = 2` (auto-detected, never rejected). The chain self-corrects on the next reading (previous = new meter's value), but billing must handle the flagged reading (see Billing section). Flag levels: `0` = not flagged, `1` = flagged by CSV/manual with no automatic basis, `2` = auto-flagged (`present < previous`). Any non-zero level means "suspicious" for billing.
+- **Minimum 30-day gap between readings**: a new reading is only accepted when its date is at least 30 days after the connection's last reading (monthly-billing cycle; exactly 30 days = allowed, sooner = hard-blocked). Future dates are rejected outright. First readings are exempt (no age limit). Applies to manual entry and CSV import alike. The gap is checked against the DB's latest reading only — rows inside the same CSV file don't affect each other's gap check on a first upload.
+- **CSV round-trip**: the importer reads an optional `flagged` column (`1/0`, `true/false`, `yes/no`; empty = not flagged; sets level 1 — the auto-detected `present < previous` level 2 always wins) and silently ignores any other extra columns. After preview, the full preview (valid **and** invalid rows) can be downloaded as CSV — the original columns plus `notes` (per-row errors / flag message) and `flagged` (`0/1/2`) — so rows can be fixed offline and re-imported; already-imported rows are caught by the DB duplicate check, never imported twice.
 
 ## Barangays
 
@@ -172,9 +172,9 @@ npm run dev
 - [x] `Payment` model + migration (amount, method, paymongo_reference, paid_at, linked invoice(s))
 
 ### Meter Readings
-- [x] Manual entry form in Filament (auto-computes cu_m_used, auto-fills previous_reading, auto-flags present < previous, 30-day date window enforced)
+- [x] Manual entry form in Filament (auto-computes cu_m_used, auto-fills previous_reading, auto-flags present < previous as level 2, minimum 30-day gap since last reading enforced)
 - [x] CSV bulk import in Filament (upload → preview → validate → import)
-- [x] Validation on import (per-row errors, flags suspicious readings, rejects invalid: bad rows, future dates, dates >30 days old, duplicates; optional `flagged` column respected; preview downloadable with notes for fix-and-reimport round-trip)
+- [x] Validation on import (per-row errors, flags suspicious readings, rejects invalid: bad rows, future dates, <30-day gaps since the previous reading, duplicates; optional `flagged` column respected; preview downloadable with notes for fix-and-reimport round-trip)
 
 ### Billing
 - **Flagged readings must not feed billing math**: a flagged reading (meter replacement, `present < previous`) stores negative `cu_m_used`. Feeding it into billing produces negative consumption → negative/zero bill → breaks the system. `BillingService` must define behavior for flagged readings (skip / treat as 0 / manual override before billing). Revisit `flagged` handling in the Billing phase.

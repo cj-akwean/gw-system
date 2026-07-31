@@ -87,7 +87,7 @@ class ImportMeterReadings extends Page
                 foreach ($columns as $column) {
                     $row[] = match ($column) {
                         'notes' => $result['notes'],
-                        'flagged' => ($result['data']['flagged'] ?? false) ? 1 : 0,
+                        'flagged' => (int) ($result['data']['flagged'] ?? 0),
                         default => $result['original'][$column] ?? '',
                     };
                 }

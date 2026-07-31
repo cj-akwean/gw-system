@@ -57,7 +57,9 @@ class ReadingService
             $flagged = true;
         }
 
-        $errors = [...$errors, ...$this->validateReadingDate($readingDate)];
+        $previousDate = $this->getLatestReading($serviceConnectionId)?->entered_at?->toDateString();
+
+        $errors = [...$errors, ...$this->validateReadingDate($readingDate, $previousDate)];
 
         $duplicate = MeterReading::where('service_connection_id', $serviceConnectionId)
             ->whereDate('entered_at', $readingDate ?? now())
@@ -74,7 +76,7 @@ class ReadingService
         ];
     }
 
-    public function validateReadingDate(?string $date): array
+    public function validateReadingDate(?string $date, ?string $previousReadingDate = null): array
     {
         if (! $date) {
             return [];
@@ -84,8 +86,10 @@ class ReadingService
             return ['Reading date cannot be in the future.'];
         }
 
-        if (strtotime($date) < strtotime(date('Y-m-d', strtotime('-30 days')))) {
-            return ['Reading date is more than 30 days old.'];
+        if ($previousReadingDate && strtotime($date) < strtotime($previousReadingDate.' +30 days')) {
+            return [
+                'Reading date must be at least 30 days after the previous reading ('.date('Y-m-d', strtotime($previousReadingDate)).').',
+            ];
         }
 
         return [];
@@ -152,7 +156,7 @@ class ReadingService
                         'present_reading' => (float) ($row['present_reading'] ?? 0),
                         'previous_reading' => 0.00,
                         'entered_at' => $row['reading_date'] ?? null,
-                        'flagged' => $csvFlagged,
+                        'flagged' => $csvFlagged ? 1 : 0,
                     ],
                     'original' => $row,
                     'connection' => null,
@@ -183,7 +187,7 @@ class ReadingService
                         'present_reading' => $present,
                         'previous_reading' => $previous,
                         'entered_at' => $readingDate ? now()->parse($readingDate) : now(),
-                        'flagged' => $csvFlagged,
+                        'flagged' => $csvFlagged ? 1 : 0,
                     ],
                     'original' => $row,
                     'connection' => $connection,
@@ -200,22 +204,25 @@ class ReadingService
                 $readingDate,
             );
 
-            $flagged = $validation['flagged'] || $csvFlagged;
+            $autoFlag = $validation['flagged'];
+            $flagLevel = $autoFlag ? 2 : ($csvFlagged ? 1 : 0);
 
             $results->push([
                 'row' => $rowIndex,
                 'valid' => $validation['valid'],
-                'flagged' => $flagged,
+                'flagged' => $flagLevel,
                 'errors' => $validation['errors'],
                 'notes' => empty($validation['errors'])
-                    ? ($flagged ? 'Present reading is lower than previous (meter may have been replaced)' : '')
+                    ? ($autoFlag
+                        ? 'Present reading is lower than previous (meter may have been replaced)'
+                        : ($csvFlagged ? 'Flagged via CSV - no automatic issue detected' : ''))
                     : implode('; ', $validation['errors']),
                 'data' => [
                     'service_connection_id' => $connection->id,
                     'present_reading' => $present,
                     'previous_reading' => $previous,
                     'entered_at' => $readingDate ? now()->parse($readingDate) : now(),
-                    'flagged' => $flagged,
+                    'flagged' => $flagLevel,
                 ],
                 'original' => $row,
                 'connection' => $connection,

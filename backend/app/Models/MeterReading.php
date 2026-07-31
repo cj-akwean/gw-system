@@ -21,7 +21,7 @@ class MeterReading extends Model
             'previous_reading' => 'decimal:2',
             'cu_m_used' => 'decimal:2',
             'entered_at' => 'datetime',
-            'flagged' => 'boolean',
+            'flagged' => 'integer',
         ];
     }
 

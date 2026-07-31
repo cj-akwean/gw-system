@@ -228,3 +228,50 @@ Meter Readings gap fixes + CSV round-trip (prompt saved in `docs/prompts/meter-r
 Also: `backend/.gitignore` gained `/storage/framework/livewire-tmp/` and `/samples/meter-readings-preview-*.csv` (user keeps a downloaded preview artifact locally for now — not deleted). The current `meter-readings-preview-20260731-101200.csv` stays untracked+ignored.
 
 **Commit:** `chore: commit manual-test CSV and ignore preview artifacts` (44e2a81).
+
+## Addendum 10 — 30-day rule corrected to gap rule + honest flag notes (same day, pre-commit)
+
+**Goal:** fix the 30-day rule that was misunderstood + the misleading "lower than previous" note, per the user's manual-test findings.
+
+**The misunderstanding:** the rule was implemented as "reject dates older than 30 days from today". The user's actual intent: **a new reading is only allowed when its date is at least 30 days after the connection's last reading** (monthly billing cycle — you can't bill the same account twice within one month). First readings are exempt (no age limit — backdating a first reading stays legal). Exactly 30 days = allowed.
+
+**The note bug:** `prepareImportRows()` merged `validation['flagged'] || csvFlagged` BEFORE picking the note text, so any row flagged only via the CSV column got the lying note "Present reading is lower than previous" — proven by the user's test: rows 2–8 and 15 flagged via CSV with previous 0.00 and present HIGHER, yet the note claimed the opposite. Only GW-00003 (30 vs previous 73) was genuine.
+
+**Changes (`backend/app/Services/ReadingService.php`):**
+- `validateReadingDate(?string $date, ?string $previousReadingDate = null)` — removed the absolute `-30 days from today` check; added gap check: `date < previousDate + 30 days` → error "Reading date must be at least 30 days after the previous reading ({date})." Future-date check unchanged.
+- `validateReading()` — passes the connection's latest reading date (`getLatestReading()->entered_at->toDateString()`) into `validateReadingDate()`.
+- `prepareImportRows()` — tracks `$autoFlag` (present < previous) separately from `$csvFlagged`; notes = errors ? errors : autoFlag ? meter-replacement text : csvFlagged ? "Flagged via CSV." : ""; `flagged` still `autoFlag || $csvFlagged` (CSV can never suppress the auto-flag).
+
+**Manual form (`MeterReadingResource.php`):** DatePicker rule closure now reads `$get('service_connection_id')` and passes that connection's latest reading date into `validateReadingDate()` — manual entry enforces the same gap + future rules as CSV.
+
+**Tests:** new `backend/tests/Feature/ReadingServiceTest.php` (7 tests, `RefreshDatabase` on the `gw_system_testing` DB): future rejected; 20-day gap rejected with the new message; exactly 30 days allowed; first reading no age limit; CSV-only flag → "Flagged via CSV."; auto-flag beats CSV `0` with meter-replacement note; import preview invalidates a <30-day-gap row. Full suite **18/18 pass**.
+
+**Docs:** ARCHITECTURE.md bullet (line 71) + both Meter Readings checkboxes rewritten to the gap rule; `docs/insights/product-decisions.md` §4 gained a dated correction (gap rule + flag-note honesty); `docs/prompts/meter-readings-roundtrip.md` context + item 1 rewritten so no future session re-implements the old rule.
+
+**Samples:** deleted stale `samples/meter-readings-preview-20260731-101200.csv` (internally inconsistent artifact of an intermediate build); added `samples/meter-readings-gap-test-run1.csv` + `run2.csv` (two-run test: run 1 imports GW-00030 100.00 on 07-01; run 2 uploads 120.00 on 07-20 → gap error + 130.00 on 07-31 → valid, exactly 30 days). Note: `meter-readings-manual-test.csv` rows 7–8 (GW-00010 07-01 / GW-00011 06-30) are no longer age-rejected on a fresh DB — they're now valid first readings; on a re-upload GW-00005's 25.00 on 07-31 (+1 day after its 75.00 on 07-30) now triggers the gap error.
+
+**Known behavior (documented, not a bug):** the gap check compares against the DB's latest reading only — rows inside the same CSV file don't affect each other's gap check on a first upload (on a second upload, DB state catches them).
+
+**NOT browser-tested (needs user's manual pass):** the manual-form gap rule UI, honest notes in the preview table + downloaded CSV, gap-test CSV two-run flow.
+
+## Addendum 11 — flag levels (0/1/2) instead of boolean (same day, pre-commit)
+
+**Goal:** the user asked — if a row is flagged via CSV but there's nothing wrong with it, can the system tell? Yes: `flagged` became **flag levels** so a flag's *source* is visible and a level-1 flag gets an explicit "no automatic basis" note.
+
+**Semantics:** `0` = not flagged; `1` = flagged by CSV column or manual override (no automatic basis detected); `2` = auto-flagged because `present < previous` (meter replacement). Any non-zero = suspicious for the Billing guard (unchanged).
+
+**Changes:**
+- **Migration** `2026_07_31_000011_change_flagged_to_smallint_on_meter_readings_table.php` — `ALTER TABLE meter_readings ALTER COLUMN flagged TYPE smallint USING flagged::int` (had to `DROP DEFAULT` first — Postgres can't auto-cast a column with a default; first run failed, fixed). Existing rows: false→0, true→1.
+- **Model** `MeterReading.php` — cast `'flagged' => 'integer'`.
+- **`ReadingService::prepareImportRows()`** — `$flagLevel = $autoFlag ? 2 : ($csvFlagged ? 1 : 0)`; notes: level 2 → "Present reading is lower than previous (meter may have been replaced)"; level 1 → "Flagged via CSV - no automatic issue detected"; no-connection/in-file-duplicate branches set csvFlagged as level 1. Auto-detection fires even with no `flagged` column in the file (user's key question — yes, it does).
+- **Manual form** (`MeterReadingResource.php`) — Toggle → Select (Not flagged / Flagged / Meter replacement (present < previous)); auto-sets 2 when present < previous (3 places), user can override. Removed unused `Toggle` import.
+- **Table** — IconColumn → badge: `—` gray / `Flagged` warning / `Meter replacement` danger; filter TernaryFilter → SelectFilter (0/1/2).
+- **Import page** — preview badge per level (warning "Flagged" / danger "Meter replacement"); download CSV writes the real level `0/1/2` instead of boolean 1/0.
+
+**Tests:** `ReadingServiceTest` — CSV-only flag asserts level 1 + "Flagged via CSV - no automatic issue detected"; auto-flag asserts level 2 + meter-replacement note; new `test_no_flagged_column_still_auto_detects_low_reading` (no `flagged` column at all → still level 2). Full suite **19/19 pass**.
+
+**Round-trip stability:** downloaded level-2 rows re-derive level 2 on re-import (present < previous persists in data); level-1 rows re-import as 1. A CSV value of `2` is NOT parsed as a flag (reserved for auto).
+
+**Docs:** ARCHITECTURE.md meter-replacement bullet + CSV round-trip bullet + checkbox 175 updated to levels; product-decisions.md §4 gained "Third correction"; prompt file item 3 rewritten.
+
+**NOT browser-tested (needs user's manual pass):** Select control on manual form, badge/filter in table, preview badges, downloaded CSV values.

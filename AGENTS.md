@@ -109,3 +109,23 @@ Run before suggesting a commit:
 - If `graphify query` returns nothing useful, fall back to grep — don't force it
 - After any significant structural change (new models, renamed services, moved files), re-run `graphify . --update --no-viz` to refresh the graph incrementally
 - Treat `graphify-out/GRAPH_REPORT.md` as a sanity check against `ARCHITECTURE.md` — if they disagree about what exists, flag it
+
+### 8. Documentation workflow (product-decisions.md + session summaries)
+
+This project keeps two kinds of running documentation, in addition to ARCHITECTURE.md's checklist. Both are living documents — append to them, don't rewrite history.
+
+**`docs/insights/product-decisions.md`** — the "why" behind non-obvious choices. Append a new dated section whenever:
+- A design question comes up with real trade-offs (not "what did I build" but "why this way and not the obvious alternative")
+- A domain-specific rule gets discovered or decided (e.g. flag-vs-block logic, PH utility conventions, real-world constraints found from research)
+- A past decision gets revisited or corrected
+
+Format: mirror the existing structure — **Question asked** → **Answer + reasoning**, plain language, written so someone outside the project (a reviewer, a future collaborator, a pitch audience) understands the "why" without reading code.
+
+**`docs/summary/YYYY-MM-DD-topic.md`** — one file per work session. Write this:
+- At the end of any session that completed real work (not every tiny edit — one meaningful session = one file)
+- Proactively **before** hitting the ~80% context/compaction threshold (Rule #2), so nothing gets lost to summarization
+- Must include: goal, files created/modified, bugs found & fixed (with root cause, not just symptom), test results (what was actually verified vs. not), known gaps / next step, git commit hash
+
+**At the start of every session**, read the most recent `docs/summary/*.md` file and skim `docs/insights/product-decisions.md` — not just `ARCHITECTURE.md`/`AGENTS.md` — before continuing work. The summary carries context ARCHITECTURE.md's checklist alone doesn't (what was tried, what broke, what's still unverified).
+
+**Never let these silently go stale.** If a session ends without a summary being written, that's a rule violation worth flagging to the user, not skipping quietly.

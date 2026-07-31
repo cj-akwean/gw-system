@@ -12,7 +12,6 @@ use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables;
@@ -50,7 +49,7 @@ class MeterReadingResource extends Resource
                         }
                         $present = $get('present_reading');
                         if ($present !== null && $present !== '' && (float) $present < (float) $latest?->present_reading) {
-                            $set('flagged', true);
+                            $set('flagged', 2);
                         }
                     })
                     ->getSearchResultsUsing(function (string $search): array {
@@ -79,7 +78,7 @@ class MeterReadingResource extends Resource
                         $present = (float) ($state ?? 0);
                         $set('cu_m_used', (string) round($present - $previous, 2));
                         if ($state !== null && $state !== '' && $present < $previous) {
-                            $set('flagged', true);
+                            $set('flagged', 2);
                         }
                     }),
 
@@ -94,7 +93,7 @@ class MeterReadingResource extends Resource
                         $set('cu_m_used', (string) round($present - $previous, 2));
                         $presentRaw = $get('present_reading');
                         if ($presentRaw !== null && $presentRaw !== '' && $present < $previous) {
-                            $set('flagged', true);
+                            $set('flagged', 2);
                         }
                     }),
 
@@ -110,16 +109,27 @@ class MeterReadingResource extends Resource
                     ->required()
                     ->default(now())
                     ->rules([
-                        fn () => function (string $attribute, mixed $value, Closure $fail): void {
-                            foreach (app(ReadingService::class)->validateReadingDate($value) as $error) {
+                        fn ($get) => function (string $attribute, mixed $value, Closure $fail) use ($get): void {
+                            $service = app(ReadingService::class);
+                            $connectionId = $get('service_connection_id');
+                            $previousDate = $connectionId
+                                ? $service->getLatestReading((int) $connectionId)?->entered_at?->toDateString()
+                                : null;
+
+                            foreach ($service->validateReadingDate($value, $previousDate) as $error) {
                                 $fail($error);
                             }
                         },
                     ]),
 
-                Toggle::make('flagged')
-                    ->label('Flagged (suspicious reading)')
-                    ->default(false),
+                Select::make('flagged')
+                    ->label('Flagged')
+                    ->options([
+                        0 => 'Not flagged',
+                        1 => 'Flagged',
+                        2 => 'Meter replacement (present < previous)',
+                    ])
+                    ->default(0),
 
                 Hidden::make('entered_by')
                     ->default(fn () => Filament::auth()->id()),
@@ -183,9 +193,20 @@ class MeterReadingResource extends Resource
                         default => 'gray',
                     }),
 
-                Tables\Columns\IconColumn::make('flagged')
-                    ->boolean()
-                    ->sortable(),
+                Tables\Columns\TextColumn::make('flagged')
+                    ->label('Flag')
+                    ->badge()
+                    ->sortable()
+                    ->formatStateUsing(fn (int $state): string => match ($state) {
+                        2 => 'Meter replacement',
+                        1 => 'Flagged',
+                        default => '—',
+                    })
+                    ->color(fn (int $state): string => match ($state) {
+                        2 => 'danger',
+                        1 => 'warning',
+                        default => 'gray',
+                    }),
 
                 Tables\Columns\TextColumn::make('enteredBy.name')
                     ->label('Entered By')
@@ -204,8 +225,13 @@ class MeterReadingResource extends Resource
                         'csv_import' => 'CSV Import',
                     ]),
 
-                Tables\Filters\TernaryFilter::make('flagged')
-                    ->label('Flagged only'),
+                Tables\Filters\SelectFilter::make('flagged')
+                    ->label('Flag')
+                    ->options([
+                        0 => 'Not flagged',
+                        1 => 'Flagged',
+                        2 => 'Meter replacement',
+                    ]),
 
                 Tables\Filters\SelectFilter::make('barangay')
                     ->relationship('serviceConnection.barangay', 'name')

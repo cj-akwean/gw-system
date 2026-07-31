@@ -51,9 +51,11 @@
                                     <td class="px-4 py-2">
                                         @if ($result['valid'])
                                             <x-filament::badge color="success">Valid</x-filament::badge>
-                                            @if ($result['flagged'] ?? false)
-                                                <x-filament::badge color="warning">Flagged</x-filament::badge>
-                                            @endif
+                                        @if (($result['flagged'] ?? 0) === 2)
+                                            <x-filament::badge color="danger">Meter replacement</x-filament::badge>
+                                        @elseif (($result['flagged'] ?? 0) === 1)
+                                            <x-filament::badge color="warning">Flagged</x-filament::badge>
+                                        @endif
                                         @else
                                             <x-filament::badge color="danger">Invalid</x-filament::badge>
                                         @endif

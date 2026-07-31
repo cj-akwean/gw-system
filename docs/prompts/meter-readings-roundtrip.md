@@ -13,12 +13,12 @@ CSV import at `/admin/meter-readings/import`: upload (headers: `account_number` 
 valid/invalid + notes → "Import N Valid Reading(s)" imports valid rows.
 
 Current rules in `app/Services/ReadingService.php` (`validateReading()`):
-- Reject: `present_reading < 0`, future `reading_date`, DB duplicate (same connection + date), in-file duplicate
+- Reject: `present_reading < 0`, future `reading_date`, reading date less than 30 days after the connection's last reading (monthly cycle; exactly 30 = allowed), DB duplicate (same connection + date), in-file duplicate
 - Flag (import + flagged=true): present < previous (meter replacement case — see docs/insights/product-decisions.md §1)
 - `resolveConnection()` matches by account_number or meter_number regardless of status; status errors come from `validateReading()`
 - `validateHeaders()` rejects files missing `present_reading` or both `account_number`/`meter_number`
 
-Manual entry (`/admin/meter-readings/create`) has **NO date validation at all** and does not auto-flag.
+Manual entry (`/admin/meter-readings/create`) enforces the same date rules as CSV (future + 30-day gap since the connection's last reading) and auto-flags present < previous.
 
 Key files:
 - `backend/app/Services/ReadingService.php`
@@ -30,9 +30,9 @@ Key files:
 
 ## Phase 1 — Data entry rules (manual + CSV both)
 
-1. **30-day window (HARD BLOCK)**: reject any reading whose date is older than 30 days, and keep rejecting future dates. Applies to manual form AND CSV import. Per-row error: "Reading date is more than 30 days old." Rationale: monthly billing cycle — old/future dates are entry errors (docs/insights §4).
+1. **30-day gap since last reading (HARD BLOCK)**: reject any reading whose date is less than 30 days after the connection's last reading (monthly billing cycle; exactly 30 days = allowed; first readings are exempt — no age limit), and keep rejecting future dates. Applies to manual form AND CSV import. Per-row error: "Reading date must be at least 30 days after the previous reading ({date})." This replaces the earlier "older than 30 days from today" rule — see docs/insights/product-decisions.md §4 correction.
 2. **Manual entry auto-flag**: on manual create, if present < previous, auto-set flagged=true (keep the toggle for override).
-3. **CSV flagged column**: importer reads an optional `flagged` column — accept 1/0, true/false, yes/no, empty = not flagged. Valid rows with flagged=true import with flagged=true. All other extra columns are IGNORED.
+3. **CSV flagged column**: importer reads an optional `flagged` column — accept 1/0, true/false, yes/no, empty = not flagged. Valid rows with flagged=true import with flag level 1 (see below). All other extra columns are IGNORED. Flag levels: 0 = not flagged, 1 = flagged by CSV/manual (no automatic basis), 2 = auto-flagged because present < previous (meter replacement; system-reserved, fires even with no `flagged` column in the file).
 
 ## Phase 2 — CSV round-trip with notes
 
