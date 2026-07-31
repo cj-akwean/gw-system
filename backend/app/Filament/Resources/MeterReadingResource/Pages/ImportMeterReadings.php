@@ -32,8 +32,7 @@ class ImportMeterReadings extends Page
 
     public int $importedCount = 0;
 
-    /** @var ?TemporaryUploadedFile */
-    public $csvFile = null;
+    public array $data = [];
 
     public function mount(): void
     {
@@ -44,6 +43,7 @@ class ImportMeterReadings extends Page
     public function importForm(Schema $schema): Schema
     {
         return $schema
+            ->statePath('data')
             ->components([
                 FileUpload::make('csvFile')
                     ->label('CSV file')
@@ -101,20 +101,26 @@ class ImportMeterReadings extends Page
         ]);
     }
 
-    public function updatedCsvFile(): void
+    public function updatedData(): void
     {
+        if (blank($this->data['csvFile'] ?? null)) {
+            return;
+        }
+
         $this->preview();
     }
 
     public function preview(): void
     {
-        if (! $this->csvFile) {
+        $file = $this->uploadedCsvFile();
+
+        if (! $file) {
             Notification::make()->title('Please upload a CSV file.')->warning()->send();
 
             return;
         }
 
-        $path = $this->csvFile->getRealPath();
+        $path = $file->getRealPath();
 
         $rows = Excel::toArray(new MeterReadingImport(app(ReadingService::class)), $path);
 
@@ -178,7 +184,7 @@ class ImportMeterReadings extends Page
         $this->importedCount = $imported;
         $this->hasPreview = false;
         $this->previewRows = collect();
-        $this->csvFile = null;
+        $this->data = [];
 
         $title = "Imported {$imported} reading(s)."
             . ($failed ? " {$failed} row(s) failed." : '');
@@ -192,6 +198,17 @@ class ImportMeterReadings extends Page
     public function getTitle(): string
     {
         return 'Import Meter Readings';
+    }
+
+    protected function uploadedCsvFile(): ?TemporaryUploadedFile
+    {
+        $file = $this->data['csvFile'] ?? null;
+
+        if (is_array($file)) {
+            $file = collect($file)->first();
+        }
+
+        return $file instanceof TemporaryUploadedFile ? $file : null;
     }
 
     protected function getHeaderActions(): array
