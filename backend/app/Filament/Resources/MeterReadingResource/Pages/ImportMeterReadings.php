@@ -10,6 +10,7 @@ use Filament\Facades\Filament;
 use Filament\Forms\Components\FileUpload;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
+use Filament\Schemas\Schema;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
@@ -37,6 +38,67 @@ class ImportMeterReadings extends Page
     public function mount(): void
     {
         $this->previewRows = collect();
+        $this->cacheSchema('importForm', $this->getImportForm());
+    }
+
+    public function importForm(Schema $schema): Schema
+    {
+        return $schema;
+    }
+
+    public function getImportForm(): Schema
+    {
+        return $this->makeSchema()
+            ->components([
+                FileUpload::make('csvFile')
+                    ->label('CSV file')
+                    ->acceptedFileTypes(['text/csv', 'text/plain', 'application/vnd.ms-excel'])
+                    ->maxSize(2048),
+            ]);
+    }
+
+    public function downloadCsv()
+    {
+        if (! $this->hasPreview) {
+            return;
+        }
+
+        $columns = collect();
+
+        foreach ($this->previewRows as $result) {
+            foreach (array_keys($result['original']) as $key) {
+                if (strtolower((string) $key) === 'flagged' || $columns->contains($key)) {
+                    continue;
+                }
+                $columns->push($key);
+            }
+        }
+
+        $columns = $columns->push('notes', 'flagged');
+
+        return response()->streamDownload(function () use ($columns) {
+            $out = fopen('php://output', 'w');
+
+            fputcsv($out, $columns->all());
+
+            foreach ($this->previewRows as $result) {
+                $row = [];
+
+                foreach ($columns as $column) {
+                    $row[] = match ($column) {
+                        'notes' => $result['notes'],
+                        'flagged' => ($result['data']['flagged'] ?? false) ? 1 : 0,
+                        default => $result['original'][$column] ?? '',
+                    };
+                }
+
+                fputcsv($out, $row);
+            }
+
+            fclose($out);
+        }, 'meter-readings-preview-'.now()->format('Ymd-His').'.csv', [
+            'Content-Type' => 'text/csv',
+        ]);
     }
 
     public function updatedCsvFile(): void

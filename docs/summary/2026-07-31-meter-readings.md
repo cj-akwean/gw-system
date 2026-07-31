@@ -132,3 +132,38 @@ paths accept the same input.
 
 ## Next Step
 Meter Readings gap fixes + CSV round-trip (prompt saved in `docs/prompts/meter-readings-roundtrip.md`), then Billing phase.
+
+## Addendum 4 — round-trip session (same day, prompt meter-readings-roundtrip.md)
+
+**Goal:** 30-day date hard block (manual + CSV), manual auto-flag, CSV `flagged` column, preview download with notes, import page UI polish, case-insensitive search, ARCHITECTURE.md sync. All 5 phases done in one session (user-approved).
+
+**Files changed:**
+- `backend/app/Services/ReadingService.php` — new `validateReadingDate()` (30-day + future, date-only boundary), `parseFlaggedValue()` (1/0/true/false/yes/no); `validateReading()` now delegates to `validateReadingDate()`; `prepareImportRows()` parses optional `flagged` column per row (before connection resolution, so intent survives invalid rows), ORs it with the auto-flag, and every result now carries `notes` (errors joined / meter-replacement message) + `original` (raw CSV row) for the round-trip download
+- `backend/app/Filament/Resources/MeterReadingResource.php` — DatePicker `->rules()` closure calling `ReadingService::validateReadingDate()` (manual form; shared form = edit page also enforces); auto-flag `$set('flagged', true)` in the `afterStateUpdated` closures of connection Select + present/previous (toggle stays user-overridable); dropdown search `like` → `ilike` (item 8)
+- `backend/app/Filament/Resources/MeterReadingResource/Pages/ImportMeterReadings.php` — real form schema (`FileUpload` cached via `cacheSchema('importForm', ...)`, root state path binds `$this->csvFile`), new `downloadCsv()` (streamDownload + fputcsv — no disk storage): all rows, original columns (original `flagged` column dropped) + `notes` + `flagged` 1/0
+- `backend/resources/views/filament/pages/import-meter-readings.blade.php` — rebuilt with `x-filament::section`, `x-filament::badge` (Valid/Flagged/Invalid), `x-filament::button` for Import + Download; notes column now reads `$result['notes']`
+- `ARCHITECTURE.md` — Meter Readings section: 30-day hard-block + CSV round-trip bullets; both Meter Readings checkbox descriptions updated (item 14). Meter-replacement/billing-guard/index notes untouched.
+
+**Key research findings (verified in vendor source, Filament 5.7.3):**
+- Items 9–10 needed NO code: Filament already wraps search in `lower()` on Postgres by default (`generate_search_column_expression`/`generate_search_term_expression` in `vendor/filament/support/src/helpers.php`, pgsql → case-insensitive true). Table + global search were already case-insensitive; only the custom dropdown closure (raw `like`) was broken. Documented so it isn't "fixed" later.
+- Custom-page schema pattern: `BasePage` has `InteractsWithSchemas`; cache via `cacheSchema()` in `mount()`, render `{{ $this->importForm }}` (Schema is Htmlable). `makeSchema()` = `Schema::make($this)` → root state path → FileUpload binds to the plain Livewire property.
+
+**Bugs found & fixed during testing:**
+- 30-day boundary off-by-time: `strtotime('-30 days')` includes time-of-day, so a reading dated exactly 30 days ago was wrongly rejected. Fixed with date-only boundary (`date('Y-m-d', strtotime('-30 days'))`) — exactly 30 days = allowed, 31+ = rejected.
+
+**Test results (tinker, not browser):**
+- `validateReadingDate`: 2026-07-01 ok / 2026-06-30 rejected / future rejected / today ok / null ok ✅
+- `parseFlaggedValue`: 1, true, YES → true; 0, no, '', null, false → false ✅
+- `prepareImportRows` (5-row fixture with flagged/notes/foo junk columns): DB duplicate, in-file duplicate, 30-day error, no-connection — all correct notes + preserved CSV flagged intent; system auto-flag wins over csv `flagged=0` on a backward reading ✅
+- `php artisan test` — 6/6 pass ✅
+- **NOT yet browser-tested**: import page render (FileUpload schema), download CSV round-trip, manual form auto-flag/date rule UI, dropdown ilike. These need the user's manual pass (AGENTS.md: no test suite exists for this area).
+
+**Git:** work + docs uncommitted as of this addendum.
+
+## Addendum 5 — render verification + prod landmine (same day, before commit)
+
+**Render tests (temp, deleted after passing):** a temporary `tests/Feature/TempImportPageRenderTest.php` (NOT committed) rendered both the Create page and the Import page in a test (needed `config()->set('app.env', 'local')` before `actingAs($user, 'admin')` — see landmine below). Create page passes; Import page returns 200 and renders the FileUpload schema wiring (`schemaKey: 'importForm'`, acceptedFileTypes, `$entangle('csvFile')`, `type="file"` input with `fi-fo-file-upload` class — note: NOT `fi-file-input`, which does not exist in Filament 5.7). `php artisan test` full run: 8/8 passed (6 existing + 2 temp). Temp test file deleted before committing.
+
+**PROD LANDMINE (found, NOT fixed):** `vendor/filament/filament/src/Http/Middleware/Authenticate.php` aborts 403 unless the panel user implements `FilamentUser::canAccessPanel()` OR `config('app.env') === 'local'`. Our `app/Models/User.php` does NOT implement FilamentUser, so the `/admin` panel only works because dev env is `local` — in production every admin login would 403. **Fix (next session, before any prod deploy):** add `FilamentUser` contract + `canAccessPanel()` returning `$this->is_admin` (or similar) to the User model. Also the admin login form is Livewire-only (no plain CSRF token; `wire:submit="authenticate"`, `data.email`/`data.password`) — scripted HTTP login won't work; use `test-login`/browser.
+
+**Final git state:** all work + this doc committed in one commit per plan (message `feat: meter readings 30-day rule, CSV round-trip, import UI polish, case-insensitive search`). Pre-existing dirty files not touched: `AGENTS.md` (modified), `temp.txt` (untracked). Dev server (PID 11572) stopped after verification.

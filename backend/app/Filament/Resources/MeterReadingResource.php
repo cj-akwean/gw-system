@@ -18,6 +18,7 @@ use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Closure;
 
 class MeterReadingResource extends Resource
 {
@@ -38,7 +39,7 @@ class MeterReadingResource extends Resource
                     ->searchable()
                     ->required()
                     ->live()
-                    ->afterStateUpdated(function ($state, $set) {
+                    ->afterStateUpdated(function ($state, $get, $set) {
                         if (! $state) {
                             return;
                         }
@@ -47,13 +48,17 @@ class MeterReadingResource extends Resource
                         if ($latest) {
                             $set('previous_reading', (string) $latest->present_reading);
                         }
+                        $present = $get('present_reading');
+                        if ($present !== null && $present !== '' && (float) $present < (float) $latest?->present_reading) {
+                            $set('flagged', true);
+                        }
                     })
                     ->getSearchResultsUsing(function (string $search): array {
                         return ServiceConnection::query()
                             ->where(function (Builder $q) use ($search) {
-                                $q->where('account_number', 'like', "%{$search}%")
-                                    ->orWhere('meter_number', 'like', "%{$search}%")
-                                    ->orWhere('registered_name', 'like', "%{$search}%");
+                                $q->where('account_number', 'ilike', "%{$search}%")
+                                    ->orWhere('meter_number', 'ilike', "%{$search}%")
+                                    ->orWhere('registered_name', 'ilike', "%{$search}%");
                             })
                             ->limit(50)
                             ->get()
@@ -73,6 +78,9 @@ class MeterReadingResource extends Resource
                         $previous = (float) ($get('previous_reading') ?? 0);
                         $present = (float) ($state ?? 0);
                         $set('cu_m_used', (string) round($present - $previous, 2));
+                        if ($state !== null && $state !== '' && $present < $previous) {
+                            $set('flagged', true);
+                        }
                     }),
 
                 TextInput::make('previous_reading')
@@ -84,6 +92,10 @@ class MeterReadingResource extends Resource
                         $present = (float) ($get('present_reading') ?? 0);
                         $previous = (float) ($state ?? 0);
                         $set('cu_m_used', (string) round($present - $previous, 2));
+                        $presentRaw = $get('present_reading');
+                        if ($presentRaw !== null && $presentRaw !== '' && $present < $previous) {
+                            $set('flagged', true);
+                        }
                     }),
 
                 TextInput::make('cu_m_used')
@@ -96,7 +108,14 @@ class MeterReadingResource extends Resource
                 DatePicker::make('entered_at')
                     ->label('Reading Date')
                     ->required()
-                    ->default(now()),
+                    ->default(now())
+                    ->rules([
+                        fn () => function (string $attribute, mixed $value, Closure $fail): void {
+                            foreach (app(ReadingService::class)->validateReadingDate($value) as $error) {
+                                $fail($error);
+                            }
+                        },
+                    ]),
 
                 Toggle::make('flagged')
                     ->label('Flagged (suspicious reading)')

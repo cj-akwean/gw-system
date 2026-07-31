@@ -57,9 +57,7 @@ class ReadingService
             $flagged = true;
         }
 
-        if ($readingDate && strtotime($readingDate) > strtotime('today')) {
-            $errors[] = 'Reading date cannot be in the future.';
-        }
+        $errors = [...$errors, ...$this->validateReadingDate($readingDate)];
 
         $duplicate = MeterReading::where('service_connection_id', $serviceConnectionId)
             ->whereDate('entered_at', $readingDate ?? now())
@@ -74,6 +72,40 @@ class ReadingService
             'errors' => $errors,
             'flagged' => $flagged,
         ];
+    }
+
+    public function validateReadingDate(?string $date): array
+    {
+        if (! $date) {
+            return [];
+        }
+
+        if (strtotime($date) > strtotime('today')) {
+            return ['Reading date cannot be in the future.'];
+        }
+
+        if (strtotime($date) < strtotime(date('Y-m-d', strtotime('-30 days')))) {
+            return ['Reading date is more than 30 days old.'];
+        }
+
+        return [];
+    }
+
+    public function parseFlaggedValue(mixed $value): bool
+    {
+        if ($value === null || $value === '') {
+            return false;
+        }
+
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_numeric($value)) {
+            return (int) $value === 1;
+        }
+
+        return in_array(strtolower((string) $value), ['true', 'yes', 'y'], true);
     }
 
     public function createFromArray(
@@ -106,19 +138,23 @@ class ReadingService
 
         foreach ($csvRows as $index => $row) {
             $rowIndex = $index + 2;
+            $csvFlagged = $this->parseFlaggedValue($row['flagged'] ?? null);
             $connection = $this->resolveConnection($row);
 
             if (! $connection) {
+                $errors = ['No matching service connection found.'];
                 $results->push([
                     'row' => $rowIndex,
                     'valid' => false,
-                    'errors' => ['No matching service connection found.'],
+                    'errors' => $errors,
+                    'notes' => implode('; ', $errors),
                     'data' => [
                         'present_reading' => (float) ($row['present_reading'] ?? 0),
                         'previous_reading' => 0.00,
                         'entered_at' => $row['reading_date'] ?? null,
-                        'flagged' => false,
+                        'flagged' => $csvFlagged,
                     ],
+                    'original' => $row,
                     'connection' => null,
                 ]);
                 continue;
@@ -135,18 +171,21 @@ class ReadingService
             $pairKey = $connection->id.'|'.$dateKey;
 
             if (isset($seenPairs[$pairKey])) {
+                $errors = [
+                    "Duplicate row within this file: connection '{$connection->account_number}' already has a reading on {$dateKey} (row {$seenPairs[$pairKey]}).",
+                ];
                 $results->push([
                     'row' => $rowIndex,
                     'valid' => false,
-                    'errors' => [
-                        "Duplicate row within this file: connection '{$connection->account_number}' already has a reading on {$dateKey} (row {$seenPairs[$pairKey]}).",
-                    ],
+                    'errors' => $errors,
+                    'notes' => implode('; ', $errors),
                     'data' => [
                         'present_reading' => $present,
                         'previous_reading' => $previous,
                         'entered_at' => $readingDate ? now()->parse($readingDate) : now(),
-                        'flagged' => false,
+                        'flagged' => $csvFlagged,
                     ],
+                    'original' => $row,
                     'connection' => $connection,
                 ]);
                 continue;
@@ -161,18 +200,24 @@ class ReadingService
                 $readingDate,
             );
 
+            $flagged = $validation['flagged'] || $csvFlagged;
+
             $results->push([
                 'row' => $rowIndex,
                 'valid' => $validation['valid'],
-                'flagged' => $validation['flagged'],
+                'flagged' => $flagged,
                 'errors' => $validation['errors'],
+                'notes' => empty($validation['errors'])
+                    ? ($flagged ? 'Present reading is lower than previous (meter may have been replaced)' : '')
+                    : implode('; ', $validation['errors']),
                 'data' => [
                     'service_connection_id' => $connection->id,
                     'present_reading' => $present,
                     'previous_reading' => $previous,
                     'entered_at' => $readingDate ? now()->parse($readingDate) : now(),
-                    'flagged' => $validation['flagged'],
+                    'flagged' => $flagged,
                 ],
+                'original' => $row,
                 'connection' => $connection,
             ]);
         }
