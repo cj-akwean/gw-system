@@ -169,9 +169,9 @@ npm run dev
 - [x] `Payment` model + migration (amount, method, paymongo_reference, paid_at, linked invoice(s))
 
 ### Meter Readings
-- [ ] Manual entry form in Filament
-- [ ] CSV bulk import in Filament
-- [ ] Validation on import (reject bad rows, show errors)
+- [x] Manual entry form in Filament (auto-computes cu_m_used, auto-fills previous_reading)
+- [x] CSV bulk import in Filament (upload → preview → validate → import)
+- [x] Validation on import (per-row errors, flags suspicious readings, rejects invalid) (reject bad rows, show errors)
 
 ### Billing
 - [ ] Billing calculation logic in `App\Services\BillingService` (reads RateSchedule + PenaltyRule, never hardcodes rates)

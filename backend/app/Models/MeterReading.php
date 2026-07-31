@@ -17,6 +17,9 @@ class MeterReading extends Model
     protected function casts(): array
     {
         return [
+            'present_reading' => 'decimal:2',
+            'previous_reading' => 'decimal:2',
+            'cu_m_used' => 'decimal:2',
             'entered_at' => 'datetime',
             'flagged' => 'boolean',
         ];

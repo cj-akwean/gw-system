@@ -14,6 +14,7 @@ class DatabaseSeeder extends Seeder
     {
         $this->call(BarangaySeeder::class);
         $this->call(PenaltyRuleSeeder::class);
+        $this->call(ServiceConnectionSeeder::class);
 
         User::factory()->create([
             'name' => 'Admin',

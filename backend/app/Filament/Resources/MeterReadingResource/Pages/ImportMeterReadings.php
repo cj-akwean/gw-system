@@ -1,0 +1,143 @@
+<?php
+
+namespace App\Filament\Resources\MeterReadingResource\Pages;
+
+use App\Filament\Resources\MeterReadingResource;
+use App\Imports\MeterReadingImport;
+use App\Services\ReadingService;
+use Filament\Actions\Action;
+use Filament\Facades\Filament;
+use Filament\Forms\Components\FileUpload;
+use Filament\Notifications\Notification;
+use Filament\Resources\Pages\Page;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
+use Maatwebsite\Excel\Facades\Excel;
+
+class ImportMeterReadings extends Page
+{
+    protected static string $resource = MeterReadingResource::class;
+
+    protected string $view = 'filament.pages.import-meter-readings';
+
+    public Collection $previewRows;
+
+    public bool $hasPreview = false;
+
+    public int $validCount = 0;
+
+    public int $invalidCount = 0;
+
+    public int $importedCount = 0;
+
+    /** @var ?TemporaryUploadedFile */
+    public $csvFile = null;
+
+    public function mount(): void
+    {
+        $this->previewRows = collect();
+    }
+
+    public function updatedCsvFile(): void
+    {
+        $this->preview();
+    }
+
+    public function preview(): void
+    {
+        if (! $this->csvFile) {
+            Notification::make()->title('Please upload a CSV file.')->warning()->send();
+
+            return;
+        }
+
+        $path = $this->csvFile->getRealPath();
+
+        $rows = Excel::toArray(new MeterReadingImport(app(ReadingService::class)), $path);
+
+        if (empty($rows[0])) {
+            Notification::make()->title('CSV file is empty or has no valid rows.')->warning()->send();
+
+            return;
+        }
+
+        $importService = app(ReadingService::class);
+        $headerErrors = $importService->validateHeaders($rows[0][0] ?? []);
+
+        if (! empty($headerErrors)) {
+            Notification::make()
+                ->title('Invalid CSV header')
+                ->body(
+                    'Expected columns: account_number and/or meter_number, present_reading, reading_date (optional). '
+                    .implode(' ', $headerErrors)
+                )
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        $user = Filament::auth()->user();
+        $results = $importService->prepareImportRows($rows[0], $user);
+
+        $this->previewRows = $results;
+        $this->validCount = $results->where('valid', true)->count();
+        $this->invalidCount = $results->where('valid', false)->count();
+        $this->hasPreview = true;
+    }
+
+    public function import(): void
+    {
+        if (! $this->hasPreview || $this->validCount === 0) {
+            Notification::make()->title('No valid rows to import.')->warning()->send();
+
+            return;
+        }
+
+        $user = Filament::auth()->user();
+        $service = app(ReadingService::class);
+        $imported = 0;
+        $failed = 0;
+
+        $validRows = $this->previewRows->where('valid', true);
+
+        DB::transaction(function () use ($service, $user, $validRows, &$imported, &$failed) {
+            foreach ($validRows as $row) {
+                try {
+                    $service->createFromArray($row['data'], $user, 'csv_import');
+                    $imported++;
+                } catch (\Exception $e) {
+                    $failed++;
+                }
+            }
+        });
+
+        $this->importedCount = $imported;
+        $this->hasPreview = false;
+        $this->previewRows = collect();
+        $this->csvFile = null;
+
+        $title = "Imported {$imported} reading(s)."
+            . ($failed ? " {$failed} row(s) failed." : '');
+
+        Notification::make()
+            ->title($title)
+            ->{$failed ? 'warning' : 'success'}()
+            ->send();
+    }
+
+    public function getTitle(): string
+    {
+        return 'Import Meter Readings';
+    }
+
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('back')
+                ->label('Back to Readings')
+                ->url(MeterReadingResource::getUrl('index')),
+        ];
+    }
+}
