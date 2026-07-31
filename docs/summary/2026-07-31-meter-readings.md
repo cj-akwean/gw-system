@@ -200,7 +200,7 @@ Meter Readings gap fixes + CSV round-trip (prompt saved in `docs/prompts/meter-r
 
 **Commit:** `fix: nest import form state under data so Filament uploads don't crash Livewire` (d559536).
 
-## Addendum 9 — manual test CSV committed (same day, commit e6c0b7a)
+## Addendum 9 — manual test CSV committed (same day, commit 44e2a81)
 
 `backend/samples/meter-readings-manual-test.csv` (14 rows) is a purpose-built fixture for the manual checklist — rows are deterministic against the seeded connections (GW-00004..00013 untouched at creation time; row 13 needs GW-00003's pre-existing DB reading). Verified end-to-end through the real pipeline (Excel parse → validateHeaders → prepareImportRows): 9 valid / 5 invalid.
 
@@ -227,4 +227,4 @@ Meter Readings gap fixes + CSV round-trip (prompt saved in `docs/prompts/meter-r
 
 Also: `backend/.gitignore` gained `/storage/framework/livewire-tmp/` and `/samples/meter-readings-preview-*.csv` (user keeps a downloaded preview artifact locally for now — not deleted). The current `meter-readings-preview-20260731-101200.csv` stays untracked+ignored.
 
-**Commit:** `chore: commit manual-test CSV and ignore preview artifacts` (e6c0b7a).
+**Commit:** `chore: commit manual-test CSV and ignore preview artifacts` (44e2a81).
