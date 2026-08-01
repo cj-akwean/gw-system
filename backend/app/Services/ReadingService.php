@@ -61,19 +61,34 @@ class ReadingService
 
         $errors = [...$errors, ...$this->validateReadingDate($readingDate, $previousDate)];
 
-        $duplicate = MeterReading::where('service_connection_id', $serviceConnectionId)
-            ->whereDate('entered_at', $readingDate ?? now())
-            ->exists();
-
-        if ($duplicate) {
-            $errors[] = 'A reading for this connection already exists on this date.';
-        }
+        $errors = [...$errors, ...$this->validateReadingDuplicate($serviceConnectionId, $readingDate ?? now()->format('Y-m-d'))];
 
         return [
             'valid' => empty($errors),
             'errors' => $errors,
             'flagged' => $flagged,
         ];
+    }
+
+    public function validateReadingDuplicate(
+        int $serviceConnectionId,
+        ?string $readingDate,
+        ?int $ignoreReadingId = null,
+    ): array {
+        if (! $readingDate) {
+            return [];
+        }
+
+        $query = MeterReading::where('service_connection_id', $serviceConnectionId)
+            ->whereDate('entered_at', $readingDate);
+
+        if ($ignoreReadingId !== null) {
+            $query->whereKeyNot($ignoreReadingId);
+        }
+
+        return $query->exists()
+            ? ['A reading for this connection already exists on this date.']
+            : [];
     }
 
     public function validateReadingDate(?string $date, ?string $previousReadingDate = null): array

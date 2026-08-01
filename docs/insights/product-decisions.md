@@ -132,6 +132,17 @@ its helper text). The import preview remains a validation snapshot (it does not
 simulate in-file order — consistent with the DB-only gap check); the DB is
 truth.
 
+**Fifth correction (same day):** the manual form could still save a second
+reading for the same connection on the same date (reachable when the last
+reading is ≥30 days old, or on double-submit — the gap rule only blocks within
+30 days). Decided to fix it **twice over**: a form-level rule (good UX error
+before save, on Create and Edit) AND a Postgres unique index on
+`(service_connection_id, entered_at::date)` (absolute guarantee for every path
+including CSV insert races and future API writes). Same-date dups are always
+entry errors — no legitimate case for two readings of one meter on one day.
+(The index needed a one-off data cleanup: the user's earlier bug-hunting left
+two readings for GW-00002 on 07-31; one was deleted.)
+
 ---
 
 ## 5. The product replaces what happens AFTER the meter walk — not the walk

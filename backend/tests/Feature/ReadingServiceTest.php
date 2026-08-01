@@ -17,7 +17,7 @@ class ReadingServiceTest extends TestCase
     {
         $service = new ReadingService;
 
-        $this->assertSame(['Reading date cannot be in the future.'], $service->validateReadingDate('2026-08-01'));
+        $this->assertSame(['Reading date cannot be in the future.'], $service->validateReadingDate('2026-09-01'));
     }
 
     public function test_reading_date_rejects_less_than_30_days_after_previous_reading(): void
@@ -184,6 +184,51 @@ class ReadingServiceTest extends TestCase
         ], $user, 'csv_import');
 
         $this->assertSame(0, $reading->flagged);
+    }
+
+    public function test_validate_reading_duplicate_detects_existing_date(): void
+    {
+        $service = app(ReadingService::class);
+        $connection = ServiceConnection::factory()->create();
+
+        MeterReading::factory()->create([
+            'service_connection_id' => $connection->id,
+            'entered_at' => '2026-07-15',
+        ]);
+
+        $this->assertSame(
+            ['A reading for this connection already exists on this date.'],
+            $service->validateReadingDuplicate($connection->id, '2026-07-15')
+        );
+    }
+
+    public function test_validate_reading_duplicate_passes_for_new_date(): void
+    {
+        $service = app(ReadingService::class);
+        $connection = ServiceConnection::factory()->create();
+
+        MeterReading::factory()->create([
+            'service_connection_id' => $connection->id,
+            'entered_at' => '2026-07-15',
+        ]);
+
+        $this->assertSame([], $service->validateReadingDuplicate($connection->id, '2026-07-16'));
+    }
+
+    public function test_validate_reading_duplicate_ignores_own_record_on_edit(): void
+    {
+        $service = app(ReadingService::class);
+        $connection = ServiceConnection::factory()->create();
+
+        $reading = MeterReading::factory()->create([
+            'service_connection_id' => $connection->id,
+            'entered_at' => '2026-07-15',
+        ]);
+
+        $this->assertSame(
+            [],
+            $service->validateReadingDuplicate($connection->id, '2026-07-15', $reading->id)
+        );
     }
 
     public function test_reading_before_previous_plus_30_days_is_invalid_in_import(): void

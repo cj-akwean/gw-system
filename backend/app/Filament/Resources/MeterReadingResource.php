@@ -109,7 +109,7 @@ class MeterReadingResource extends Resource
                     ->required()
                     ->default(now())
                     ->rules([
-                        fn ($get) => function (string $attribute, mixed $value, Closure $fail) use ($get): void {
+                        fn ($get, $record) => function (string $attribute, mixed $value, Closure $fail) use ($get, $record): void {
                             $service = app(ReadingService::class);
                             $connectionId = $get('service_connection_id');
                             $previousDate = $connectionId
@@ -118,6 +118,12 @@ class MeterReadingResource extends Resource
 
                             foreach ($service->validateReadingDate($value, $previousDate) as $error) {
                                 $fail($error);
+                            }
+
+                            if ($connectionId) {
+                                foreach ($service->validateReadingDuplicate((int) $connectionId, $value, $record?->id) as $error) {
+                                    $fail($error);
+                                }
                             }
                         },
                     ]),

@@ -291,3 +291,19 @@ Also: `backend/.gitignore` gained `/storage/framework/livewire-tmp/` and `/sampl
 **Docs:** ARCHITECTURE meter-replacement bullet (insert-time recompute sentence); product-decisions.md §4 "Fourth correction" (incl. preview-is-a-snapshot rationale).
 
 **Deliberately out of scope:** preview simulating in-file order (contradicts the documented DB-only gap check); pre-existing hole where manual create doesn't check date duplicates (form only validates the date window) — separate fix if ever needed.
+
+## Addendum 13 — manual-entry duplicate-date rejection + DB unique index (same day, third commit this session)
+
+**Goal:** close the last Meter Readings data hole — manual create/edit could save a second reading for the same connection on the same date (reachable when the last reading is ≥30 days old, or via double-submit). The gap rule only partially covered it.
+
+**Changes:**
+- **`ReadingService::validateReadingDuplicate(int $serviceConnectionId, ?string $readingDate, ?int $ignoreReadingId = null)`** — new method (same error string as import: "A reading for this connection already exists on this date."); `validateReading()` refactored to use it. **Regression caught by tests during the refactor:** my first edit accidentally REPLACED the `validateReadingDate()` call with the dup call, silently dropping the gap/future checks from CSV validation — the suite caught it (gap test failed valid=true); restored both calls.
+- **Manual form** (`MeterReadingResource.php`): DatePicker rule closure now also runs the dup check with `$record?->id` (null on Create, current reading on Edit) — editing a reading's date in place stays legal; creating/editing to a date that already has a reading for that connection is blocked.
+- **Migration** `2026_07_31_000012_add_unique_connection_date_index_to_meter_readings_table.php` — `CREATE UNIQUE INDEX meter_readings_connection_date_unique ON meter_readings (service_connection_id, (entered_at::date))` (raw Postgres; expression index not supported by Schema builder). DB-level guarantee for ALL paths (manual, CSV insert races, future API). **Data cleanup before migrating:** GW-00002 had two manual readings on 07-31 (ids 2 and 7) from the user's earlier bug-hunting — id 7 deleted (user approved deleting either; the pair was test data they forgot to clean).
+- **Tests (+3, suite 25/25):** dup detected / passes for new date / ignores own id on edit. Also fixed a **date-rollover staleness**: `test_reading_date_rejects_future_dates` used `2026-08-01` which became "today" on 2026-08-01 — changed to `2026-09-01`. (Lesson: time-sensitive test fixtures need dates far from "today", e.g. fixed months, not ±30 days.)
+
+**Manual verification (user):** done previously — full manual browser pass of the import flow + gap tests (user reported OK). Note: gap-test sample CSVs exist in `backend/samples/` but are gitignored (`/samples/`) by user choice; `temp.txt` also gitignored.
+
+**Commit hashes for addenda 10–12:** Addendum 10/11 (gap rule + flag levels) = `baae8a0`; Addendum 12 (insert-time recompute) = `db153f0`.
+
+**Docs:** ARCHITECTURE checkbox 175 + Meter Readings section (unique-index bullet); product-decisions.md §4 "Fifth correction" (why both form rule AND index); prompt file items 2/4 + context rewritten (flag levels, no more "toggle/1-0" wording).

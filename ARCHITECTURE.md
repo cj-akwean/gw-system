@@ -69,6 +69,7 @@ Payment Gateway (PayMongo) ───────── webhook → marks invoice
 - Each reading stores `present_reading`, `previous_reading`, and computed `cu_m_used` — matches the exact fields printed on real water bills (present/previous/cu.m. used), so admin views map 1:1 to what a customer already recognizes from paper bills
 - **Meter replacement**: when a physical meter is swapped, the new meter starts at 0, so a reading can legitimately be `present < previous` → negative `cu_m_used`. Such readings are stored with `flagged = 2` (auto-detected, never rejected). `previous_reading` and the flag level are recomputed at insert time against the actual latest reading — a reading that ends up lower than a just-imported previous (e.g. a later row in the same CSV file) is stored as level 2, never an unflagged negative. The chain self-corrects on the next reading (previous = new meter's value), but billing must handle the flagged reading (see Billing section). Flag levels: `0` = not flagged, `1` = flagged by CSV/manual with no automatic basis, `2` = auto-flagged (`present < previous`). Any non-zero level means "suspicious" for billing.
 - **Minimum 30-day gap between readings**: a new reading is only accepted when its date is at least 30 days after the connection's last reading (monthly-billing cycle; exactly 30 days = allowed, sooner = hard-blocked). Future dates are rejected outright. First readings are exempt (no age limit). Applies to manual entry and CSV import alike. The gap is checked against the DB's latest reading only — rows inside the same CSV file don't affect each other's gap check on a first upload.
+- **No duplicate reading dates**: one reading per connection per date, enforced three ways — import preview (DB + in-file checks), the manual form rule (Create and Edit), and a DB unique index on `(service_connection_id, entered_at::date)` that backstops every path including insert races.
 - **CSV round-trip**: the importer reads an optional `flagged` column (`1/0`, `true/false`, `yes/no`; empty = not flagged; sets level 1 — the auto-detected `present < previous` level 2 always wins) and silently ignores any other extra columns. After preview, the full preview (valid **and** invalid rows) can be downloaded as CSV — the original columns plus `notes` (per-row errors / flag message) and `flagged` (`0/1/2`) — so rows can be fixed offline and re-imported; already-imported rows are caught by the DB duplicate check, never imported twice.
 
 ## Barangays
@@ -172,7 +173,7 @@ npm run dev
 - [x] `Payment` model + migration (amount, method, paymongo_reference, paid_at, linked invoice(s))
 
 ### Meter Readings
-- [x] Manual entry form in Filament (auto-computes cu_m_used, auto-fills previous_reading, auto-flags present < previous as level 2, minimum 30-day gap since last reading enforced)
+- [x] Manual entry form in Filament (auto-computes cu_m_used, auto-fills previous_reading, auto-flags present < previous as level 2, minimum 30-day gap since last reading enforced, duplicate-date rejection)
 - [x] CSV bulk import in Filament (upload → preview → validate → import)
 - [x] Validation on import (per-row errors, flags suspicious readings, rejects invalid: bad rows, future dates, <30-day gaps since the previous reading, duplicates; optional `flagged` column respected; preview downloadable with notes for fix-and-reimport round-trip)
 
