@@ -27,7 +27,7 @@ gw-system/
 | Email (dev/test) | Mailtrap |
 | SMS | Semaphore (PH) or Twilio (global) |
 | Exports / Reports | Laravel Excel |
-| Codebase context | Graphify knowledge graph (`graphify-out/`) — query before editing shared code |
+| Codebase context | Graphify knowledge graph (`graphify-out/`) — query before editing shared code; `.graphifyignore` excludes `backend/vendor` + `backend/public/js`, so the graph covers project code only (rebuild done 2026-08-01, ~2,135 nodes) |
 
 ## Architecture
 
@@ -201,6 +201,7 @@ npm run dev
 - [ ] SMS notifications wired up (Semaphore/Twilio) — optional, later
 
 ### Infra / Ops
+- [x] Graphify graph rebuilt vendor-free (`.graphifyignore` added: `backend/vendor/`, `backend/public/js/`; graph pruned 72,935 → 2,135 nodes, 2026-08-01)
 - [ ] Queue worker running (database driver)
 - [ ] Automatic daily DB backups enabled on host
 - [ ] Basic rate limiting on public API routes

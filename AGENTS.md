@@ -42,6 +42,7 @@ gw-system/
 | Queue driver | database (no extra service needed) |
 | Invoices | Generate PDF → email on payment; no permanent storage |
 | Meter readings | CSV import + manual entry via Filament |
+| Knowledge graph | `.graphifyignore` excludes vendor; graph = project code only |
 | Testing | Manual for money-critical flows |
 | Backups | Auto daily DB backups on host |
 
@@ -107,7 +108,9 @@ Run before suggesting a commit:
 ### 7. Use the knowledge graph, not just grep
 - Before editing shared code (models, services, anything with callers), run `graphify query "<term>"` first to see what depends on it — the graph knows relationships grep can't
 - If `graphify query` returns nothing useful, fall back to grep — don't force it
-- After any significant structural change (new models, renamed services, moved files), re-run `graphify . --update --no-viz` to refresh the graph incrementally
+- After any significant structural change (new models, renamed services, moved files), re-run `graphify . --update` to refresh the graph incrementally — no `--no-viz`, the graph is small enough to render
+- `backend/vendor` and `backend/public/js` are excluded via `.graphifyignore`; the graph covers project code only, so vendor questions go to grep
+- If `--update` ever reports thousands of changed files, the previous run's `graphify-out/manifest.json` baseline is stale — verify it covers the full corpus before re-extracting (don't blindly re-extract vendor churn)
 - Treat `graphify-out/GRAPH_REPORT.md` as a sanity check against `ARCHITECTURE.md` — if they disagree about what exists, flag it
 
 ### 8. Documentation workflow (product-decisions.md + session summaries)
