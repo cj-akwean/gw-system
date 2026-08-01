@@ -292,7 +292,7 @@ Also: `backend/.gitignore` gained `/storage/framework/livewire-tmp/` and `/sampl
 
 **Deliberately out of scope:** preview simulating in-file order (contradicts the documented DB-only gap check); pre-existing hole where manual create doesn't check date duplicates (form only validates the date window) — separate fix if ever needed.
 
-## Addendum 13 — manual-entry duplicate-date rejection + DB unique index (same day, third commit this session)
+## Addendum 13 — manual-entry duplicate-date rejection + DB unique index (same day, commit e22cff8)
 
 **Goal:** close the last Meter Readings data hole — manual create/edit could save a second reading for the same connection on the same date (reachable when the last reading is ≥30 days old, or via double-submit). The gap rule only partially covered it.
 
