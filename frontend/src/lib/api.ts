@@ -19,11 +19,16 @@ export async function loginApi(
   email: string,
   password: string
 ): Promise<LoginResponse> {
-  const res = await fetch(`${API_URL}/api/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+  } catch {
+    throw new Error("Unable to reach the server. Please try again.");
+  }
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));

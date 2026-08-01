@@ -224,3 +224,44 @@ masquerade as code bugs — and that's exactly what seeders exist for (15 connec
 readers note the day, not the hour. Carbon parses date-only strings to midnight. The
 manual form was switched from `DateTimePicker` to `DatePicker` so both entry paths accept
 the same input.
+
+---
+
+## 10. Login error messages: differentiate the admin panel, keep the customer portal generic
+
+**Question asked:** "When the password is wrong it says 'These credentials do not match
+our records.' — make sure it's handled correctly on both the admin site and the customer
+site."
+
+**Answer:** the default message is Filament's (`filament-panels::auth/pages/login.messages.failed`),
+thrown from `Filament\Auth\Pages\Login::authenticate()` for **two different reasons**: wrong
+credentials AND valid-credentials-but-no-panel-access (`canAccessPanel()` false). A customer
+email on `/admin` got a message that made it sound like their password was wrong.
+
+**The fix (Aug 2026):**
+- **Admin panel** (`App\Filament\Auth\Login`, registered via `->login(...)`): `authenticate()`
+  is a copy of the v5.7.3 vendor method with the two failure points split —
+  invalid credentials → "Incorrect email or password."; valid login but not an admin →
+  "This account does not have access to the admin panel." (internal staff tool: no
+  enumeration risk, clearer ops UX). NOTE: must be re-diffed on Filament upgrades.
+- **Customer portal** (`POST /api/login`): one generic "Incorrect email or password." for
+  both unknown email and wrong password. Deliberate: **email enumeration is a real
+  security problem on public sites** — distinct messages let attackers harvest valid
+  customer emails (targeted phishing, credential-stuffing optimization, reset-password
+  spam against customers). Same generic message also on the admin panel's wrong-credential
+  path; only the "you're not an admin" case is revealed there.
+- **Rate limiting**: `/api/login` now has `throttle:10,1` (10/min per IP) — the admin panel
+  already had Filament's built-in 5/min; public vs admin limits now actually differ per
+  AGENTS.md.
+- **Frontend**: `loginApi()` maps network failures to "Unable to reach the server. Please
+  try again." instead of leaking the raw `Failed to fetch` TypeError.
+
+**Correction (same session):** the session summary for 2026-07-31 claimed the `admins`
+provider "filters where is_admin = true" — **that is dead config**. Laravel 13's
+`EloquentUserProvider` constructor takes only hasher + model; a `where` key in
+`config/auth.php` is ignored (verified in `vendor/laravel/framework/src/Illuminate/Auth/CreatesUserProviders.php`
+and `EloquentUserProvider.php`). Admin gating actually works through
+`FilamentUser::canAccessPanel()` in the login page + the `Authenticate` middleware's 403 —
+defense in depth is fine, but the config is misleading. Left in place; removing it is
+cosmetic only.
+

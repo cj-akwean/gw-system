@@ -160,6 +160,7 @@ npm run dev
 - [x] Sanctum installed, Bearer token issuance on login working
 - [x] Token revocation / logout working
 - [x] Filament admin auth guard set up separately from API guard (is_admin flag + filter)
+- [x] Login failure handling per site: Filament admin differentiates wrong credentials vs valid-but-not-admin ("This account does not have access to the admin panel." — custom `App\Filament\Auth\Login`); customer `/api/login` returns one generic message (no email enumeration) + `throttle:10,1`; frontend shows a friendly error when the server is unreachable
 
 ### Core Data Models
 - [x] `Barangay` model + migration (seed 15 real Guinobatan barangays)

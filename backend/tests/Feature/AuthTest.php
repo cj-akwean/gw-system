@@ -39,7 +39,7 @@ class AuthTest extends TestCase
         ]);
 
         $response->assertStatus(401)
-            ->assertJson(['message' => 'Invalid credentials']);
+            ->assertJson(['message' => 'Incorrect email or password.']);
     }
 
     public function test_user_can_logout_with_valid_token(): void
