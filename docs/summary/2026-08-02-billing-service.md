@@ -182,3 +182,5 @@ User's request: "is the Billing implementation bug-free — fix edge/error cases
 
 ## Git state
 Still uncommitted (user explicitly deferred commit — wants to keep hunting bugs). Next recommended step: commit after user review, then queued billing job (checklist item 2).
+
+**Commit (Aug 2):** `8bbac7e` — "feat: billing calculation service with flat+tiered rates, arrears and compound penalty (checklist item 1)". All 17 files (implementation + robustness pass + decision catalogs incl. meter-readings) committed as one checklist item; working tree clean.
