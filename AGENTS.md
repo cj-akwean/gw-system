@@ -101,8 +101,11 @@ Run before suggesting a commit:
 - **Sanity check**: `php artisan test` (or `php -l` on changed files) + `php artisan route:list` if routes changed
 - If no test suite exists for the touched area, say so explicitly
 
-### 6. Commit cadence
-- Suggest a commit after each **meaningfully complete, working** checklist item
+### 6. Commit cadence — NEVER commit without approval, suggestion only at the bottom
+- NEVER run `git commit`/`push`/`amend` unless the user explicitly asks. No exceptions, no "I'll commit this for you", even for small fixes
+- Commit suggestions appear ONLY in the last line/block at the bottom of a response — never mid-task
+- When only small/unverified changes remain → advise WAITING: small bugs stay undetected until a real scenario exercises them; don't rush a commit of code that hasn't been run/verified
+- Suggest a commit only after a **meaningfully complete, working** checklist item
 - Not after every small edit, and not after multiple features bundled together
 
 ### 7. Use the knowledge graph, not just grep
