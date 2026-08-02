@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['account_number', 'meter_number', 'registered_name', 'barangay_id', 'address', 'status', 'connection_date'])]
+#[Fillable(['account_number', 'meter_number', 'registered_name', 'barangay_id', 'address', 'status', 'connection_date', 'rate_schedule_id'])]
 class ServiceConnection extends Model
 {
     /** @use HasFactory<ServiceConnectionFactory> */
@@ -25,6 +25,11 @@ class ServiceConnection extends Model
     public function barangay(): BelongsTo
     {
         return $this->belongsTo(Barangay::class);
+    }
+
+    public function rateSchedule(): BelongsTo
+    {
+        return $this->belongsTo(RateSchedule::class);
     }
 
     public function connectionLinks(): HasMany

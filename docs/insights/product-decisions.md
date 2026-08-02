@@ -265,3 +265,112 @@ and `EloquentUserProvider.php`). Admin gating actually works through
 defense in depth is fine, but the config is misleading. Left in place; removing it is
 cosmetic only.
 
+## 11. Billing: what gets billed, what gets skipped, and how arrears + penalty accrue
+
+**Question asked (Aug 2026, Billing phase kickoff):** "I want to start billing — which
+task should I do?" and the four follow-ups below.
+
+**Answer — the three "skip" rules (all confirmed with the user, not invented):**
+
+1. **Rate assignment = per-connection FK + global fallback.** `ServiceConnection` now has a
+   nullable `rate_schedule_id`; billing uses it if effective for the period, else the single
+   globally-active schedule. Rationale: MVP has one flat rate (₱10/cu.m. seeded), but the
+   Invoice model already snapshots `rate_schedule_id` per bill, and real PH water districts
+   bill **residential vs commercial at different rates** — a per-connection FK means that
+   split (deferred, see ARCHITECTURE.md Deferred) is data, not another migration of billing
+   code.
+2. **Flagged readings (level 1 or 2) are SKIPPED and reported, never billed.** The flagged
+   reading can hold negative `cu_m_used`; billing it makes a negative/zero bill. User's
+   ground truth: meter swaps are rare — **well under 10 per year** — so automation adds
+   complexity for almost nothing. The workflow is: skip → the report names the account →
+   the office investigates → the bill is written **manually/offline**. Billing math simply
+   never sees a flagged reading; there is no "treat as 0" or "manual override" code path
+   yet, and none was built — that would be guessing consumption, which is worse than not
+   billing.
+3. **Connections with no reading in the period are SKIPPED and reported.** Real PH bills
+   have a minimum monthly charge, but our schema has no minimum-charge field and the user
+   confirmed first-month connections pay **offline over the counter** before entering the
+   online cycle — so a minimum-charge column is deferred until the utility states a real
+   value. Billing a zero-reading connection at 0.00 would just generate noise invoices.
+
+**Penalty + arrears model (matches the real "ARREARS" table on PH bills):** at each run,
+unpaid invoices past their due date become `overdue`; the new invoice then carries
+`previous_balance` (sum of unpaid totals), `penalty_amount` (2%/month on each, computed
+from its due date + 15-day grace, full 30-day buckets), and `base_amount` (usage × rate).
+Total = all three. This is why Invoice stores the breakdown as separate columns — it's the
+"show your work" structure for bill disputes, per the original design.
+
+**Why `php artisan billing:run` exists (not a queued job yet):** the checklist's next item
+is the queued job; the command exists now so the billing math is manually verifiable
+end-to-end before it gets wrapped in the queue. The job will call the same `BillingService::run()`.
+
+**Offline payments are a real gap, now tracked:** the user pointed out that the utility
+takes most payments over the counter, and nothing in the system records who paid offline
+(no admin UI, and PayMongo only covers online). Added as an unchecked Payments checklist
+item ("Record offline/manual payments in admin") — needs the Admin Panel phase, then a
+`Payment` row with `method='cash'` etc.
+
+## 12. Billing penalty is compound, not simple — and three bugs found on review
+
+**Question asked (Aug 2026, BillingService review pass):** "The monthly 2% penalty is
+computed on each unpaid invoice's `total_amount` — which already includes last month's
+penalty, and every old invoice keeps accruing each month. Is that right?"
+
+**Answer — YES, compound, confirmed by the user:** penalty applies to the full unpaid
+total, including previously-accrued penalty — the same "interest on unpaid balance" model
+real PH utilities use, and the code already worked this way. No math change; the review
+added a regression test (`test_penalty_compounds_on_full_carried_total`) so the behavior
+is locked in and can't be "simplified" later into principal-only by accident. If the
+utility ever wants simple interest, the per-invoice principal component must be tracked
+explicitly — it isn't today.
+
+**Three bugs found during the same review (all fixed + regression-tested):**
+
+1. **Invoice number collision past 9 invoices.** `generateInvoiceNumber()` found the
+   "latest" number with `orderByDesc('invoice_number')` — a *lexicographic* sort, so
+   `GW-2026-00010` sorts *below* `GW-2026-00009` (`'9' > '1'`). With ≥10 invoices in a
+   year, every generated number repeated `00010` → violated the DB `unique` constraint →
+   the billing run died mid-way. The dev run only ever created 9 invoices, which is why
+   it never fired. Fixed by deriving the sequence from `orderByDesc('id')` (creation
+   order is monotonic). The old test only seeded 1 invoice; new test seeds 11.
+2. **Billing window leaked into the previous month.** `periodStart` was `periodEnd - 30
+   days`, so a February run (28 days) included Jan 29–31 readings. The `alreadyBilled`
+   check masked it only when the January run actually happened. Fixed to the calendar
+   month: `date('Y-m-01', strtotime($periodEnd))`.
+3. **Run not atomic.** `BillingService::run()` wrote invoices one-by-one with no
+   transaction; a mid-run failure (e.g. bug #1) left partial invoices. The loop now runs
+   inside `DB::transaction()` — a failed run rolls back cleanly (idempotency remains as
+   a second safety net).
+
+## 13. Zero-usage readings: skip, don't bill ₱0.00 — and invalid input never reaches math
+
+**Question asked (Aug 2026, BillingService robustness pass):** "A reading exists with
+`cu_m_used = 0` (meter didn't move — vacant property, long vacation). Billing it creates
+a ₱0.00 invoice that lingers as 0.00 'arrears' and eventually flips to 'overdue'. Should
+it be billed anyway?"
+
+**Answer — skip and report ("Zero usage — verify meter locked/closed, or bill
+manually"):** a 0.00 invoice is pure noise — it can't be paid into anything, it shows up
+as arrears forever, and it makes the overdue list lie. The user's real-world workflow:
+for long-vacation accounts the office can **lock/close the physical meter**, so zero
+consumption is expected and no invoice should exist. The report row tells the office
+which account to verify. If the utility ever confirms a minimum monthly charge (see
+Deferred), zero-usage handling changes to "bill the minimum" — the skip rule is
+documented in `docs/insights/billing-decisions.md` for exactly that revisit.
+
+**Related decision, same pass:** invalid math input never reaches billing math.
+Unflagged negative usage (data-entry hole), a flat schedule with no rate, or a tiered
+schedule with no tiers — all skip + report per account ("Non-positive usage (X cu.m.) —
+investigate" / "Rate schedule misconfigured"), so the run completes and names the
+accounts instead of silently billing 0.00 or negative, and instead of aborting the run.
+And `--period` is now validated as a real calendar date (`checkdate`) at both the CLI
+and the service level — `strtotime` silently normalizing `2026-02-31` into a wrong month
+was the last "silent wrong money" path left.
+
+**The full decision catalog** — every Billing-phase decision as
+Question → Decision → Status → Code ref → Office-verify note, including the assumptions
+still to confirm with the Guinobatan Waterworks office (rate value, grace days, penalty
+cap, minimum charge, rate classes, 30-day buckets, cadence, zero-usage practice) — lives
+in `docs/insights/billing-decisions.md`, kept in sync with this document.
+
+

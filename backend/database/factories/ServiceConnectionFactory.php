@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\Barangay;
+use App\Models\RateSchedule;
 use App\Models\ServiceConnection;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -24,6 +25,7 @@ class ServiceConnectionFactory extends Factory
             'address' => fake()->streetAddress(),
             'status' => 'active',
             'connection_date' => fake()->dateTimeBetween('-5 years', 'now')->format('Y-m-d'),
+            'rate_schedule_id' => RateSchedule::factory(),
         ];
     }
 }

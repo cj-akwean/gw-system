@@ -94,8 +94,22 @@ Real PH utility bills (electric co-op and municipal water alike) identify an acc
 Based on real Sorsogon-area water bills reviewed:
 - Some municipal water systems bill a **simple flat rate per cu.m.** (not tiered blocks) — e.g. ₱10/cu.m. flat. Design `RateSchedule` to support **either** a flat rate or tiered blocks (via a `RateTier` child table: `min_cu_m`, `max_cu_m`, `rate_per_cu_m`), so it works for a flat-rate MVP now and tiered billing later without a schema change.
 - `RateSchedule` must have `effective_from` / `effective_to` dates — rates change over time, and historical invoices must keep reflecting the rate that applied when they were billed, not today's rate.
+- **Rate assignment**: `ServiceConnection.rate_schedule_id` (nullable FK) — billing uses the connection's schedule when it's effective for the period, otherwise falls back to the single globally-active schedule. Seeded: one flat ₱10/cu.m. schedule ("Standard Flat Rate", 2026-01-01 → ∞) assigned to all connections. **Post-MVP: residential vs commercial rate classes** (real PH water districts bill them differently) — add a `class`/`rate_class` column on `ServiceConnection` + seed a commercial schedule; deferred until after Payments/Admin are done (see Deferred).
 - **Penalty**: confirmed from a real bill — **2% per month interest** on any unpaid balance, disconnection follows after due date. Store this as data (`PenaltyRule`: `percent_per_month`, `grace_period_days`, `disconnection_after_days`), not hardcoded in billing logic, since municipalities can and do change these.
 - **Arrears**: real bills carry forward unpaid balances month over month with accruing interest (see the "ARREARS" table on the sample bills — one row per month). `Invoice` must store `previous_balance` (carried arrears) separately from the current period's `base_amount`, so the itemized breakdown is transparent — customers will dispute bills, and this is what lets you show your work.
+
+## Billing
+
+- **Flagged readings must not feed billing math**: a flagged reading (meter replacement, `present < previous`) stores negative `cu_m_used`. Feeding it into billing produces negative consumption → negative/zero bill → breaks the system. **BillingService skips flagged readings (level 1 or 2) and reports them** (`billing:run` report: "Flagged reading (level N) — investigate, then bill manually"). These are rare (<10/year — a physical meter swap) and are handled by investigation + manual invoice entry, which for now happens offline (no admin billing UI yet — that's the Admin Panel phase; offline payment recording is a tracked Payments item). Billing math can never see a flagged reading.
+- **No minimum charge** for connections without a reading in the period: **BillingService skips and reports them** ("No reading in the billing period"). Real PH bills carry a minimum monthly charge, but the schema has no minimum-charge field — do not add one until the utility confirms the value (see Deferred). First-month connections pay offline over the counter, then enter the online billing cycle.
+- **Zero-usage readings are skipped and reported, not billed at ₱0.00**: a reading with `cu_m_used = 0` (vacant property, vacation) would create a 0.00 invoice that lingers as noise arrears and flips to "overdue". Skipped instead ("Zero usage — verify meter locked/closed, or bill manually") — the office can lock/close the physical meter for long-vacation accounts (offline workflow). If a minimum monthly charge is ever added (see Deferred), revisit this.
+- **Invalid billing inputs never reach billing math — skip + report, run keeps going**: unflagged negative usage → "Non-positive usage (X cu.m.) — investigate"; a schedule that cannot compute a rate (flat with null/zero rate, tiered with no tiers) → "Rate schedule misconfigured". The run completes and names the accounts instead of silently billing 0.00/negative, and instead of aborting the whole run.
+- **Invalid `--period` is rejected, not normalized**: only real calendar dates (`checkdate`) are accepted; `billing:run` exits 1 and `run()` throws `InvalidArgumentException` — `strtotime` never silently normalizes e.g. `2026-02-31` into a wrong month.
+- **Penalty model**: at each billing run, unpaid invoices with `due_date` before the period end are marked `overdue`. A connection's new invoice carries `previous_balance` = sum of unpaid invoice totals, `penalty_amount` = accrued 2%-per-month interest on each (starts after due date + grace period, full 30-day buckets), and `base_amount` = current period usage × rate. Total = all three. Due date = period end + grace days.
+- **Billing window**: one run per calendar month, `period_end` = last day of the month being billed (default) or explicit `--period=YYYY-MM-DD`; readings must fall within the exact calendar month of `period_end` (timestamps from month start 00:00:00 to period end + 1 day, exclusive). Latest reading in the window wins (the 30-day reading gap keeps this to at most one meaningful reading per cycle). Idempotent: a reading already covered by an invoice is skipped on re-runs — enforced by a DB unique constraint on `invoices (service_connection_id, meter_reading_id)` as well as the app-level check, so a concurrent run fails loudly instead of double-billing.
+- **Rate fallback is visible**: when a connection's assigned schedule is not effective for the period and the global schedule is used instead, the billed report row notes "Global rate (assigned schedule not effective for this period)."
+- Composite index on `meter_readings (service_connection_id, entered_at)` — added (billing queries readings per connection by date; the window query uses timestamp ranges, not `whereDate`, so the index is actually used).
+- Full decision catalog (what was decided, what still needs office confirmation): `docs/insights/billing-decisions.md`.
 
 ## Security
 
@@ -179,9 +193,7 @@ npm run dev
 - [x] Validation on import (per-row errors, flags suspicious readings, rejects invalid: bad rows, future dates, <30-day gaps since the previous reading, duplicates; optional `flagged` column respected; preview downloadable with notes for fix-and-reimport round-trip)
 
 ### Billing
-- **Flagged readings must not feed billing math**: a flagged reading (meter replacement, `present < previous`) stores negative `cu_m_used`. Feeding it into billing produces negative consumption → negative/zero bill → breaks the system. `BillingService` must define behavior for flagged readings (skip / treat as 0 / manual override before billing). Revisit `flagged` handling in the Billing phase.
-- Add composite index on `meter_readings (service_connection_id, entered_at)` with billing work — billing queries readings per connection by date.
-- [ ] Billing calculation logic in `App\Services\BillingService` (reads RateSchedule + PenaltyRule, never hardcodes rates)
+- [x] Billing calculation logic in `App\Services\BillingService` (reads RateSchedule + PenaltyRule, never hardcodes rates; flat + tiered; arrears carryover + 2%/month penalty after grace; flagged readings and no-reading connections skipped + reported; `php artisan billing:run` for manual runs)
 - [ ] Billing run as a queued job (not synchronous)
 - [ ] Invoice PDF generation (dompdf) — itemized, matches real bill breakdown (current charges, arrears, penalty, total)
 
@@ -190,6 +202,7 @@ npm run dev
 - [ ] PayMongo webhook route (signature verified, idempotent)
 - [ ] Invoice marked paid on webhook confirmation
 - [ ] Invoice PDF emailed to customer on payment confirmation
+- [ ] **Record offline/manual payments in admin** (cash / over-the-counter): mark invoice paid with method + reference — the real utility pays many bills offline (first-month connections, flagged-reading manual invoices); nothing records that today. Needs an admin view (see Admin Panel phase) + a `Payment` row with `method='cash'` etc.
 
 ### Admin Panel (Filament)
 - [ ] Dashboard with key metrics (customers, unpaid invoices, revenue)
@@ -214,3 +227,5 @@ npm run dev
 
 ### Deferred (noted, not scheduled)
 - **Meter replacement marker**: dedicated flag/note on a reading when a physical meter is swapped (present < previous is legitimate then), so a backward reading isn't mistaken for an error by another user. Deferred — the current `flagged` workflow suffices; the billing guard above (Billing section) is the functional requirement.
+- **Residential vs commercial rate classes**: real PH water districts bill them at different rates. Add `rate_class` to `ServiceConnection` + a commercial `RateSchedule` + assign per class. Deferred until after Payments + Admin Panel phases (MVP = one flat rate for all, per-connection override already possible via `rate_schedule_id`).
+- **Minimum monthly charge**: real PH bills carry a minimum charge (e.g. first X cu.m. billed at a fixed amount). Not in the schema and NOT implemented — billing skips connections without a reading instead. Add `minimum_charge` to `RateSchedule` only when the utility confirms the exact value.
