@@ -38,9 +38,15 @@ DB truth.
   - `test_command_rejects_an_unknown_invoice_number` — friendly message + failure exit.
 
 ## Test results
-- PdfServiceTest: 5/5 (39 assertions, incl. PDF size-regression guard). (Before the
-  formatDate fix, 4/5 errored on the TypeError; 5/5 after.)
-- Full suite: **87/87 pass, 277 assertions**. No regressions.
+- PdfServiceTest: 6/6 (>50 assertions incl. PDF size-regression guard). The 6th test is a new
+  `BillingService`-integration assertion that proves the PDF breakdown mirrors a real invoice:
+  bills a connection across two cycles (June 1,000 → August with the June bill now overdue),
+  then asserts the PDF view data is `currentCharges=1000 / arrears=1000 / penalty=20 / total=2020`,
+  the four lines sum to the total, the penalty label reads `Penalty (2.00%/mo on unpaid)`, and
+  `generate()` returns a valid `%PDF`. This is the proof that the itemized breakdown matches the
+  real bill when arrears + accrued penalty are nonzero (previously only the zero-arrears path
+  was exercised).
+- Full suite: **88/88 pass, 295 assertions**. No regressions.
 - `php -l` clean on all changed files (`PdfService.php`, `BillingPdfCommand.php`,
   `PdfServiceTest.php`).
 
@@ -83,14 +89,22 @@ DB truth.
 
 ## Bugs found
 - **Blocking TypeError in `PdfService::buildViewData()` (found during review, now fixed).**
-  `Invoice` casts `billing_period_start`/`billing_period_end`/`due_date` to `date`
-  (returns Carbon), but `$formatDate` was typed `?string`. PHP throws `TypeError`
-  for any object passed to a `string` scalar param — so every date field in the
-  closure threw on a real Invoice. Consequence: `billing:pdf <n>` crashed and 4/5
-  PdfService tests errored (only the "unknown invoice" test passed); the prior
-  "5/5 pass" + "wrote a 1.61 MB PDF" notes were stale. Fixed by retyping the
-  closure to `Carbon|string|null` and formatting Carbon instances directly via
-  `->format('M d, Y')`.
+   `Invoice` casts `billing_period_start`/`billing_period_end`/`due_date` to `date`
+   (returns Carbon), but `$formatDate` was typed `?string`. PHP throws `TypeError`
+   for any object passed to a `string` scalar param — so every date field in the
+   closure threw on a real Invoice. Consequence: `billing:pdf <n>` crashed and 4/5
+   PdfService tests errored (only the "unknown invoice" test passed); the prior
+   "5/5 pass" + "wrote a 1.61 MB PDF" notes were stale. Fixed by retyping the
+   closure to `Carbon|string|null` and formatting Carbon instances directly via
+   `->format('M d, Y')`.
+- **Latent `InvoiceFactory` total invariant (found during pre-commit review, now fixed).**
+   The factory computed `total_amount = base_amount + penalty_amount`, **omitting
+   `previous_balance`** — so any factory-produced invoice carrying arrears would
+   print a PDF whose `current + arrears + penalty` disagrees with the stored
+   `total_amount`, i.e. the printed bill contradicted itself. Corrected to
+   `round(previous_balance + base_amount + penalty_amount, 2)` to match
+   `BillingService::billConnection()`. Only used by `PaymentFactory`; full suite
+   stays green.
 
 ## Corrections / hardening applied (this review pass)
 - Removed `['compress' => 0]` from `PdfService::generate()` (stream compression
@@ -109,7 +123,8 @@ DB truth.
 - Removed stray leading space in the `Penalty` `<td>` cell in the view.
 
 ## Git state
-All work **uncommitted** (user has not requested a commit). HEAD: `a540f0b`.
+Committed (commit `d95f2af`) — `feat: itemized invoice PDF via dompdf matching real bill breakdown (checklist item 3)`.
+HEAD: `d95f2af`.
 
 ## Next recommended step (unchecked item)
 Payments phase: PayMongo integration (create payment intent/checkout) → webhook
