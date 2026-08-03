@@ -147,8 +147,9 @@ proves a mid-run exception persists NO invoices and reverts the overdue pass).
 ### 13. How is the run triggered?
 **Question:** CLI or queue?
 **Decision:** `php artisan billing:run` (manual), default period = last day of the
-previous month; `--period=YYYY-MM-DD` overrides. A queued job is the NEXT checklist item
-(item 2) and will call the same `run()`. Invalid periods (bad format **or** impossible
+previous month; `--period=YYYY-MM-DD` overrides. Since checklist item 2 (Aug 2026) the
+command **dispatches a queued job by default** and `--sync` runs inline (see decision 22).
+Invalid periods (bad format **or** impossible
 calendar dates like 2026-02-31) are rejected — exit code 1, nothing billed.
 **Status:** Confirmed.
 **Code ref:** `BillingRunCommand::isValidPeriod()`; `run()` throws
@@ -237,6 +238,28 @@ query, the unique one enforces the one-reading-per-date data rule.
 **Status:** Confirmed.
 **Code ref:** `run()` reading query + migration `2026_08_02_000002_add_composite_index_to_meter_readings_table`.
 
+### 22. How does the queued billing job run, and where does its report live?
+**Question (checklist item 2):** the run must not block a request, and the command can no
+longer print the report synchronously — where does the per-connection report go?
+**Decision:** `php artisan billing:run` **dispatches `App\Jobs\RunBillingJob` by default**
+(queued, `database` driver); `--sync` keeps the old inline behavior for tests/manual
+verification. Every run — queued **or** sync — writes a row to a new `billing_runs` table
+(`period_end`, `status` running/completed/failed, `report` JSONB, `error`, `finished_at`):
+a durable audit trail for a money-critical flow, survives cache clears, and is what the
+Admin Panel phase's "Run billing" page will read. A Postgres **partial unique index**
+(`billing_runs (period_end) WHERE status = 'running'`, migration `2026_08_03_000001`)
+blocks two concurrent runs for the same month even across a check/insert race; the command
+also pre-checks and refuses with exit 1. Completed/failed rows don't block re-runs
+(idempotent re-runs stay possible). `php artisan billing:report {id}` prints a stored
+report without a UI. The job retries up to 3 times (`$tries = 3`) — safe because a failed
+run persists nothing (`run()` is one transaction) and re-execution is idempotent; the run
+row is re-marked `running` on retry. The monthly **scheduler** wiring is deferred to the
+Infra phase (needs a host running cron + a worker).
+**Status:** Confirmed (Aug 2026, checklist item 2 — 72/72 tests green; live-verified:
+dispatch → `queue:work --once` → completed report; duplicate-running refused).
+**Code ref:** `RunBillingJob`, `BillingRunCommand` (`--sync`, running pre-check),
+`BillingReportCommand`, migration `2026_08_03_000001_create_billing_runs_table`.
+
 ---
 
 ## Part 2 — Assumptions to verify with the Guinobatan Waterworks office
@@ -257,6 +280,7 @@ Each should be confirmed with the office; the question is phrased exactly as to 
 | A9 | Zero-usage accounts are **skipped**; office can lock/close the physical meter for vacation accounts | How does the office currently handle accounts with zero consumption (vacation, locked meters)? | `run()` zero-usage branch |
 | A10 | Due date = **period end + grace days** (15) | When is the bill actually due? Does the office move due dates off weekends/holidays? | `billConnection()` due date |
 | A11 | Penalty **accrues across skipped (no-reading) months** — it catches up on the next bill because months are counted from the due date | Does penalty keep accruing in months where the account wasn't billed (no reading)? | `computePenalty()` (months from due date) |
+| A12 | Meter **malfunction / abnormally high readings → billed manually/offline today**; a data-driven **estimate rule is deferred** (documented in Part 3; heard from an electricity-co-op context — last correct bill, or highest of the last 3) | When a meter malfunctions or a reading comes out impossibly high (e.g. unnoticed buried leak), how does the office settle the bill — last correct bill, highest of last 3, average of last 3, or a one-time waiver? Does it apply only to flagged readings, or to disputed-but-unflagged ones too? | Part 3 (deferred estimate entry) |
 
 ### Quick printable checklist (bring to the office)
 1. Rate per cu.m. — flat or tiered blocks? Exact figures.
@@ -270,6 +294,7 @@ Each should be confirmed with the office; the question is phrased exactly as to 
 9. Handling of zero-consumption / vacant / locked-meter accounts.
 10. Due date convention — weekends/holidays?
 11. Does penalty accrue in months the account wasn't billed (no reading)?
+12. **Meter malfunction / impossibly high reading (e.g. buried leak): how is the bill settled — last correct bill, highest of last 3, average of last 3, or one-time waiver? Applies to flagged readings only, or disputed ones too?**
 
 ---
 
@@ -284,8 +309,23 @@ Each should be confirmed with the office; the question is phrased exactly as to 
 - **Manual invoice entry UI** — flagged / zero-usage / misconfigured accounts are billed
   "offline" today; the Admin Panel phase needs a billing view to record those manual
   invoices in-system.
-- **Queued billing job** — checklist item 2; the job calls the same `run()`.
+- **Queued billing job** — DONE (checklist item 2, decision 22; the job calls the same
+  `run()`). Remaining queued-work items: PDF generation (checklist item 3) and the
+  monthly scheduler wiring (Infra phase).
 - **Offline/manual payment recording** — tracked under Payments checklist.
+- **Estimated billing for malfunctioning / abnormally high meters** (documented
+  Aug 2026, user-raised; see product-decisions.md §14). Today flagged readings are
+  investigated + billed manually/offline. The deferred feature is a **data-driven
+  estimate rule** (e.g. settle at the last correct bill, or the highest of the last
+  3 bills — the office must confirm which, and whether average-of-3 or a one-time
+  waiver is their actual practice; office question A12). Integration point: the
+  Admin Panel phase's **manual-invoice entry UI** — when a flagged reading is
+  investigated, the screen *suggests* the estimate from history, the admin confirms,
+  and the invoice records its basis. It is NOT an automatic branch inside
+  `billing:run` — human confirms, system does arithmetic. "Unusually high but
+  positive" readings are a separate case (leak detection → Smart Features section;
+  readers can already flag them level 1 today). Not scheduled into the current
+  billing phase.
 
 ---
 

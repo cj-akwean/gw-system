@@ -59,6 +59,8 @@ Payment Gateway (PayMongo) ───────── webhook → marks invoice
 - Billing runs, SMS blasts, PDF generation, bulk exports → Laravel Queues
 - Start with `database` driver (no extra service needed)
 - Prevents request timeouts during bulk operations
+- Dev worker: `php artisan queue:work --tries=3` (or `--once` to process a single job and exit); failed jobs land in `failed_jobs` — check with `php artisan queue:failed`
+- The monthly billing run is dispatched by `billing:run` (queued by default) — see Billing section; automatic scheduling deferred to Infra (needs cron + a running worker on the host)
 
 ## Meter Readings
 
@@ -109,6 +111,7 @@ Based on real Sorsogon-area water bills reviewed:
 - **Billing window**: one run per calendar month, `period_end` = last day of the month being billed (default) or explicit `--period=YYYY-MM-DD`; readings must fall within the exact calendar month of `period_end` (timestamps from month start 00:00:00 to period end + 1 day, exclusive). Latest reading in the window wins (the 30-day reading gap keeps this to at most one meaningful reading per cycle). Idempotent: a reading already covered by an invoice is skipped on re-runs — enforced by a DB unique constraint on `invoices (service_connection_id, meter_reading_id)` as well as the app-level check, so a concurrent run fails loudly instead of double-billing.
 - **Rate fallback is visible**: when a connection's assigned schedule is not effective for the period and the global schedule is used instead, the billed report row notes "Global rate (assigned schedule not effective for this period)."
 - Composite index on `meter_readings (service_connection_id, entered_at)` — added (billing queries readings per connection by date; the window query uses timestamp ranges, not `whereDate`, so the index is actually used).
+- **Billing run is a queued job, not synchronous**: `php artisan billing:run` dispatches `App\Jobs\RunBillingJob` (database queue driver) by default; `--sync` runs inline for tests/manual verification. Every run — queued or sync — records a row in `billing_runs` (`period_end`, status `running`/`completed`/`failed`, JSON report of billed/skipped rows, `error`, `finished_at`): durable audit trail for a money-critical flow and the data source for the Admin Panel phase's "Run billing" page (`billing:report {id}` prints it from the CLI until then). A Postgres partial unique index blocks two concurrent `running` runs for the same month (command pre-check + DB backstop); re-runs of completed/failed periods stay possible (idempotent). The job retries 3× — a failed run persists nothing (`run()` is one transaction). Run the worker with `php artisan queue:work --tries=3` (dev) — the monthly scheduler wiring (run on the 1st) is deferred to the Infra phase, which needs a host running cron + a worker; until then monthly runs are a manual `billing:run`.
 - Full decision catalog (what was decided, what still needs office confirmation): `docs/insights/billing-decisions.md`.
 
 ## Security
@@ -194,7 +197,7 @@ npm run dev
 
 ### Billing
 - [x] Billing calculation logic in `App\Services\BillingService` (reads RateSchedule + PenaltyRule, never hardcodes rates; flat + tiered; arrears carryover + 2%/month penalty after grace; flagged readings and no-reading connections skipped + reported; `php artisan billing:run` for manual runs)
-- [ ] Billing run as a queued job (not synchronous)
+- [x] Billing run as a queued job (not synchronous) — `RunBillingJob` + `billing_runs` table (status + JSON report per run), `billing:run --sync` for inline runs, `billing:report {id}` to view a stored report, Postgres partial unique index blocking concurrent runs per period
 - [ ] Invoice PDF generation (dompdf) — itemized, matches real bill breakdown (current charges, arrears, penalty, total)
 
 ### Payments
@@ -229,3 +232,4 @@ npm run dev
 - **Meter replacement marker**: dedicated flag/note on a reading when a physical meter is swapped (present < previous is legitimate then), so a backward reading isn't mistaken for an error by another user. Deferred — the current `flagged` workflow suffices; the billing guard above (Billing section) is the functional requirement.
 - **Residential vs commercial rate classes**: real PH water districts bill them at different rates. Add `rate_class` to `ServiceConnection` + a commercial `RateSchedule` + assign per class. Deferred until after Payments + Admin Panel phases (MVP = one flat rate for all, per-connection override already possible via `rate_schedule_id`).
 - **Minimum monthly charge**: real PH bills carry a minimum charge (e.g. first X cu.m. billed at a fixed amount). Not in the schema and NOT implemented — billing skips connections without a reading instead. Add `minimum_charge` to `RateSchedule` only when the utility confirms the exact value.
+- **Estimated billing for malfunctioning / abnormally high meters** (documented 2026-08-03, user-raised): settle a bad reading at the last correct bill, or the highest of the last 3 bills — office must confirm the actual rule (question A12 in `billing-decisions.md`). Deferred to the Admin Panel phase's manual-invoice entry UI (suggest estimate → admin confirms → invoice records its basis). NOT an automatic branch in `billing:run` — flagged readings stay investigate-then-bill-manually. "Unusually high but positive" readings are a separate case → leak/anomaly detection (Smart Features).

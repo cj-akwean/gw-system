@@ -373,4 +373,52 @@ still to confirm with the Guinobatan Waterworks office (rate value, grace days, 
 cap, minimum charge, rate classes, 30-day buckets, cadence, zero-usage practice) — lives
 in `docs/insights/billing-decisions.md`, kept in sync with this document.
 
+---
+
+## 14. Estimated billing for malfunctioning / abnormally high meters (deferred, not MVP)
+
+**Question asked (Aug 2026, before the queued-billing phase):** "When a meter
+malfunctions or a reading comes out negative / unusually high (e.g. a buried pipe
+leak that goes unnoticed), how does the utility settle the bill? I heard that for
+electricity they look at the last correct bill and settle the same amount — or take
+the last three bills and settle the *highest* of them. Should we build that into
+billing now, or later?"
+
+**Answer — document it now, build it AFTER the MVP, not in this phase:**
+it's a real-world practice, but this is the wrong phase to build it in, for four
+reasons:
+
+**a) The MVP is already safe for the bad-reading case.** Flagged readings (level 1/2,
+including `present < previous` → negative usage) are skipped by `BillingService` and
+reported for manual investigation — billing math can never see them
+(`billing-decisions.md` §2). Nothing wrong gets auto-billed today, so this feature
+isn't filling a correctness hole; it's automating a rare (<10/yr) manual step.
+
+**b) It's a money rule that the office hasn't confirmed.** The source for the rule
+is an *electricity* context; Guinobatan Waterworks may settle differently (average
+of last 3, highest of last 3, last bill, or a one-time waiver). Money rules get
+office-confirmed before they become code (see the printable checklist in
+`billing-decisions.md` Part 2, new item A12). When it's built, the rule must be
+**data, not hardcoded** — a config (like `PenaltyRule`) that the office's answer
+feeds into.
+
+**c) Auto-billing by estimate is risky without a human step.** A flag can mean
+tampering or a wrong digit, not a malfunction. The natural integration point is the
+**Admin Panel phase's manual-invoice entry UI**: when the office investigates a
+flagged reading, the screen *suggests* the estimate (last correct bill / highest of
+last 3), the admin confirms, and the invoice is recorded with that basis. Human
+confirms; the system does the arithmetic.
+
+**d) The "unusually high" case is a different problem.** A buried-pipe leak isn't
+a meter malfunction — the meter reads *correctly*, the water was consumed, and the
+dispute is a settlement/waiver negotiation, not a re-billing rule. Auto-detecting
+"high but positive" readings is the deferred **leak/anomaly detection** item (Smart
+Features section of ARCHITECTURE.md — compare a reading to the customer's own
+trailing average); readers can already flag such readings manually (level 1) today.
+
+**Where it lands:** `billing-decisions.md` Part 3 (Deferred) + ARCHITECTURE.md
+Deferred section; office question A12 added to the Part 2 checklist; the
+meter-readings G2 gap ("estimated readings") now points at this entry. Status:
+documented + queued for the office, NOT scheduled into the current billing phase.
+
 

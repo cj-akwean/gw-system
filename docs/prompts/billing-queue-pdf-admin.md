@@ -1,5 +1,8 @@
 # Prompt: Billing — Queued Job + PDF + Admin UI (next phases)
 
+> **Status: Phase 1 (queued job) is DONE (2026-08-03, committed as part of checklist
+> item 2).** This file now describes Phase 2 (PDF) and Phase 3 (admin UI). Read
+> `docs/summary/2026-08-03-billing-queue.md` for what Phase 1 actually built and verified.
 > Copy-paste this whole file into the next session. Read `docs/summary/2026-08-02-billing-service.md`,
 > `docs/insights/product-decisions.md` (§11 = the billing decisions), and ARCHITECTURE.md's
 > Billing section first. Do phases in order; one phase per session if needed (AGENTS.md rule).
@@ -8,15 +11,23 @@
 
 GW-System (Laravel 13 + Filament 5 admin, Postgres dev = prod). **Billing checklist item 1
 is DONE**: `App\Services\BillingService` with `php artisan billing:run` for manual runs.
+**Checklist item 2 (queued job) is DONE too**: `billing:run` dispatches `RunBillingJob` by
+default (`--sync` for inline), every run records to `billing_runs` (status + JSON report),
+`billing:report {id}` prints stored reports, and a Postgres partial unique index blocks
+concurrent runs per period.
 
-Current behavior (all verified by tests, 50/50 suite green):
+Current behavior (all verified by tests, 72/72 suite green):
 - **Run** (`BillingService::run(?string $periodEnd)`): period end defaults to end of last
-  month; window = `[period_end − 30 days, period_end]`. For each **active** connection:
+  month; window = the exact calendar month of `period_end`. For each **active** connection:
   latest reading in window → if none: `skipped` "No reading in the billing period"; if
   flagged ≠ 0: `skipped` "Flagged reading (level N) — investigate, then bill manually"
   (negative `cu_m_used` can never feed math); if already invoiced for that reading:
   `skipped` "Already billed" (idempotent); if no effective schedule: `skipped`. Else
   `billConnection()` → returns a per-connection report Collection.
+- **Queue**: `RunBillingJob` (ShouldQueue, `$tries = 3`) calls `run()` and writes the
+  report to its `billing_runs` row; failures mark the row `failed` + rethrow into
+  `failed_jobs`. `billing:run` refuses to dispatch a second `running` run for the same
+  period (exit 1). Scheduler wiring deferred to Infra phase.
 - **Math**: `computeBaseAmount` (flat: usage × rate; tiered: walks RateTier blocks),
   `findEffectiveSchedule` (connection's schedule if effective, else global active),
   `computePenalty` (2%/month on unpaid total, starts after due date + grace, full 30-day
@@ -31,23 +42,13 @@ Current behavior (all verified by tests, 50/50 suite green):
 
 Key files:
 - `backend/app/Services/BillingService.php`
-- `backend/app/Console/Commands/BillingRunCommand.php`
-- `backend/tests/Feature/BillingServiceTest.php` (17 tests)
+- `backend/app/Jobs/RunBillingJob.php`
+- `backend/app/Console/Commands/BillingRunCommand.php` (`--period`, `--sync`)
+- `backend/app/Console/Commands/BillingReportCommand.php`
+- `backend/app/Models/BillingRun.php` (+ migration `2026_08_03_000001`)
+- `backend/tests/Feature/BillingServiceTest.php`, `backend/tests/Feature/RunBillingJobTest.php`
 - `backend/app/Models/Invoice.php`, `RateSchedule.php`, `RateTier.php`, `PenaltyRule.php`
 - `backend/database/seeders/RateScheduleSeeder.php`
-
-## Phase 1 — Queued billing job (checklist item 2)
-
-1. New `App\Jobs\RunBillingJob` that calls `BillingService::run()` (with optional period).
-   `billing:run` command becomes: dispatch job with `--sync` option for immediate run
-   (tests/manual) vs queued (default). Keep the report printing: either the job stores its
-   report (cache/DB column) or the command stays synchronous-only and a separate
-   `billing:run --queue` option dispatches without output.
-2. Queue driver is `database` — worker: `php artisan queue:work` (document; no systemd
-   setup yet — Infra checklist "Queue worker running" stays unchecked until then).
-3. Tests: assert the job is dispatched from the command and that the job produces invoices
-   when run through the queue (QUEUE_CONNECTION=sync in tests).
-4. Update ARCHITECTURE.md checkbox + this prompt.
 
 ## Phase 2 — Invoice PDF (checklist item 3)
 
@@ -65,7 +66,8 @@ Key files:
 
 8. Filament resource for Invoices (list by status, view detail with breakdown, mark paid —
    ties into the "Record offline/manual payments" Payments item) and a "Run billing"
-   action page that shows the report from the last queued run.
+   action page that reads the report from the `billing_runs` table (status + JSON report
+   per run, already in place from Phase 1).
 9. Only after Phases 1–2 are verified end-to-end with the user's manual pass.
 
 ## NOT in scope here

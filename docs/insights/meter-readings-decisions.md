@@ -330,7 +330,12 @@ column still notes what the office answer would *change* if it ever differed.
   NOT on the manual form. Fix candidates: `min:0` rule + status check via
   `validateReading()` in the form.
 - **G2 — Estimated readings:** no concept in the schema or services. Whether it's ever
-  needed depends on the office's answer to Q13/Q15 (missed or unreadable meters).
+  needed depends on the office's answer to Q13/Q15 (missed or unreadable meters) and on
+  the billing-side **estimate rule** (malfunctioning / abnormally high meters —
+  documented in `billing-decisions.md` Part 3 as Deferred; office question A12).
+  When that lands, the estimate suggestion belongs in the Admin Panel phase's
+  manual-invoice entry UI, not in `billing:run` (human confirms, system does
+  arithmetic — see product-decisions.md §14).
 - **G3 — Editing/deleting readings after billing:** the Edit page freely rewrites
   `present_reading`/date of any reading, including one already covered by an invoice
   (the Billing phase's unique constraint references `meter_reading_id`; a changed or

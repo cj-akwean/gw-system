@@ -2,12 +2,16 @@
 
 namespace App\Console\Commands;
 
+use App\Jobs\RunBillingJob;
+use App\Models\BillingRun;
 use App\Services\BillingService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
+use Throwable;
 
 class BillingRunCommand extends Command
 {
-    protected $signature = 'billing:run {--period= : Billing period end date (Y-m-d). Defaults to the end of last month.}';
+    protected $signature = 'billing:run {--period= : Billing period end date (Y-m-d). Defaults to the end of last month.} {--sync : Run synchronously instead of dispatching a queued job.}';
 
     protected $description = 'Run the monthly billing cycle for all active connections';
 
@@ -21,8 +25,63 @@ class BillingRunCommand extends Command
             return self::FAILURE;
         }
 
-        $report = $billing->run($period ? (string) $period : null);
+        $periodEnd = $period ? (string) $period : date('Y-m-d', strtotime('last day of previous month'));
 
+        $inProgress = BillingRun::where('period_end', $periodEnd)
+            ->where('status', 'running')
+            ->first();
+
+        if ($inProgress) {
+            $this->error("A billing run (#{$inProgress->id}) for {$periodEnd} is already in progress.");
+            $this->error("Inspect it with: php artisan billing:report {$inProgress->id}");
+
+            return self::FAILURE;
+        }
+
+        $run = BillingRun::create([
+            'period_end' => $periodEnd,
+            'status' => 'running',
+        ]);
+
+        if ($this->option('sync')) {
+            try {
+                $report = $billing->run($periodEnd);
+            } catch (Throwable $exception) {
+                $run->forceFill([
+                    'status' => 'failed',
+                    'error' => $exception->getMessage(),
+                    'finished_at' => now(),
+                ])->save();
+
+                throw $exception;
+            }
+
+            $run->forceFill([
+                'status' => 'completed',
+                'report' => $report->all(),
+                'finished_at' => now(),
+            ])->save();
+
+            $this->printReport($report);
+
+            $billed = $report->where('status', 'billed')->count();
+            $skipped = $report->count() - $billed;
+
+            $this->info("Billing run complete: {$billed} invoice(s) created, {$skipped} connection(s) skipped.");
+
+            return self::SUCCESS;
+        }
+
+        RunBillingJob::dispatch($periodEnd, $run->id);
+
+        $this->info("Billing run #{$run->id} for {$periodEnd} dispatched to the queue.");
+        $this->info("Check its result with: php artisan billing:report {$run->id}");
+
+        return self::SUCCESS;
+    }
+
+    private function printReport(Collection $report): void
+    {
         $this->table(
             ['Account', 'Status', 'Reason', 'Invoice', 'Total (PHP)'],
             $report->map(fn (array $row) => [
@@ -33,13 +92,6 @@ class BillingRunCommand extends Command
                 $row['total_amount'] !== null ? number_format($row['total_amount'], 2) : '',
             ])->all(),
         );
-
-        $billed = $report->where('status', 'billed')->count();
-        $skipped = $report->count() - $billed;
-
-        $this->info("Billing run complete: {$billed} invoice(s) created, {$skipped} connection(s) skipped.");
-
-        return self::SUCCESS;
     }
 
     private function isValidPeriod(string $period): bool

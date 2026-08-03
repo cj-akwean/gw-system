@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\RunBillingJob;
+use App\Models\BillingRun;
 use App\Models\Invoice;
 use App\Models\MeterReading;
 use App\Models\PenaltyRule;
@@ -11,6 +13,7 @@ use App\Models\ServiceConnection;
 use App\Services\BillingService;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use InvalidArgumentException;
 use RuntimeException;
 use Tests\TestCase;
@@ -393,10 +396,84 @@ class BillingServiceTest extends TestCase
         $connection = ServiceConnection::factory()->create(['rate_schedule_id' => $schedule->id]);
         $this->reading($connection->id, 75.00, '2026-07-30');
 
-        $this->artisan('billing:run', ['--period' => '2026-07-31'])->assertSuccessful();
+        $this->artisan('billing:run', ['--period' => '2026-07-31', '--sync' => true])->assertSuccessful();
 
         $this->assertSame(1, Invoice::count());
         $this->assertSame(750.00, (float) Invoice::first()->total_amount);
+
+        $run = BillingRun::first();
+        $this->assertSame('completed', $run->status);
+        $this->assertSame('billed', $run->report[0]['status']);
+    }
+
+    public function test_billing_run_command_dispatches_job_by_default(): void
+    {
+        Queue::fake();
+
+        $this->seedPenaltyRule();
+        $schedule = $this->flatSchedule(10.00);
+        $connection = ServiceConnection::factory()->create(['rate_schedule_id' => $schedule->id]);
+        $this->reading($connection->id, 75.00, '2026-07-30');
+
+        $this->artisan('billing:run', ['--period' => '2026-07-31'])->assertSuccessful();
+
+        Queue::assertPushed(RunBillingJob::class, fn (RunBillingJob $job) => $job->periodEnd === '2026-07-31');
+
+        $this->assertSame(0, Invoice::count(), 'Nothing may be billed synchronously on the default path.');
+
+        $run = BillingRun::first();
+        $this->assertSame('running', $run->status);
+        $this->assertSame('2026-07-31', $run->period_end->toDateString());
+    }
+
+    public function test_billing_run_command_refuses_a_second_running_run_for_the_same_period(): void
+    {
+        Queue::fake();
+
+        $this->seedPenaltyRule();
+        $schedule = $this->flatSchedule(10.00);
+        $connection = ServiceConnection::factory()->create(['rate_schedule_id' => $schedule->id]);
+        $this->reading($connection->id, 75.00, '2026-07-30');
+        BillingRun::create(['period_end' => '2026-07-31', 'status' => 'running']);
+
+        $this->artisan('billing:run', ['--period' => '2026-07-31'])->assertExitCode(1);
+
+        Queue::assertNotPushed(RunBillingJob::class);
+        $this->assertSame(1, BillingRun::count());
+        $this->assertSame(0, Invoice::count());
+    }
+
+    public function test_billing_report_command_prints_the_stored_report(): void
+    {
+        $this->seedPenaltyRule();
+        $schedule = $this->flatSchedule(10.00);
+        $connection = ServiceConnection::factory()->create(['rate_schedule_id' => $schedule->id]);
+        $this->reading($connection->id, 75.00, '2026-07-30');
+
+        $this->artisan('billing:run', ['--period' => '2026-07-31', '--sync' => true])->assertSuccessful();
+        $run = BillingRun::first();
+
+        $this->artisan('billing:report', ['run' => $run->id])
+            ->assertSuccessful()
+            ->expectsOutputToContain($connection->account_number);
+
+        $this->artisan('billing:report', ['run' => $run->id])
+            ->assertSuccessful()
+            ->expectsOutputToContain('750.00');
+    }
+
+    public function test_billing_report_command_reports_a_failed_run(): void
+    {
+        $run = BillingRun::create([
+            'period_end' => '2026-07-31',
+            'status' => 'failed',
+            'error' => 'boom',
+            'finished_at' => now(),
+        ]);
+
+        $this->artisan('billing:report', ['run' => $run->id])
+            ->assertExitCode(1)
+            ->expectsOutputToContain('boom');
     }
 
     public function test_run_rejects_invalid_calendar_period(): void
@@ -417,6 +494,7 @@ class BillingServiceTest extends TestCase
         $this->artisan('billing:run', ['--period' => '2026-02-31'])->assertExitCode(1);
 
         $this->assertSame(0, Invoice::count());
+        $this->assertSame(0, BillingRun::count());
     }
 
     public function test_run_skips_unflagged_negative_usage(): void
