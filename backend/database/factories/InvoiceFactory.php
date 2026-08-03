@@ -18,6 +18,7 @@ class InvoiceFactory extends Factory
     {
         static::$counter++;
 
+        $previousBalance = fake()->optional(0.4)->randomFloat(2, 0, 1000) ?? 0;
         $baseAmount = fake()->randomFloat(2, 100, 5000);
         $penaltyAmount = fake()->optional(0.3)->randomFloat(2, 10, 200) ?? 0;
 
@@ -28,10 +29,10 @@ class InvoiceFactory extends Factory
             'rate_schedule_id' => RateSchedule::factory(),
             'billing_period_start' => fake()->dateTimeBetween('-3 months', '-2 months')->format('Y-m-d'),
             'billing_period_end' => fake()->dateTimeBetween('-1 month', 'now')->format('Y-m-d'),
-            'previous_balance' => fake()->optional(0.4)->randomFloat(2, 0, 1000) ?? 0,
+            'previous_balance' => $previousBalance,
             'base_amount' => $baseAmount,
             'penalty_amount' => $penaltyAmount,
-            'total_amount' => $baseAmount + $penaltyAmount,
+            'total_amount' => round($previousBalance + $baseAmount + $penaltyAmount, 2),
             'due_date' => fake()->dateTimeBetween('now', '+1 month')->format('Y-m-d'),
             'status' => fake()->randomElement(['unpaid', 'paid', 'overdue']),
         ];

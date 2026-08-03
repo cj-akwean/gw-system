@@ -122,7 +122,13 @@ Based on real Sorsogon-area water bills reviewed:
 
 ## Invoices & Storage
 
-- PDF generated on payment confirmation via dompdf
+- PDF generated via dompdf from the Invoice row + relations (read-only) — `App\Services\PdfService`
+  renders the `pdfs.invoice` Blade view in-memory (no permanent storage); Payment phase reuses
+  `PdfService::generate()` to email the attachment. `billing:pdf {invoice-number} [--output=]`
+  writes the file for manual verification (default: storage disk `pdf-verification/<number>.pdf`).
+- Itemized breakdown matches the real bill: Current Charges (base_amount from usage × rate),
+  Arrears (previous_balance), Penalty (penalty_amount), Total. Letterhead "GUINOBATAN WATERWORKS"
+  is a placeholder to be confirmed with the office (single edit point in the view).
 - Emailed to customer as attachment — no permanent file storage
 - If "download past invoices" feature needed later, regenerate PDF from DB data (bill amount, date, customer) — no files to host
 - Real municipal water bills reviewed don't yet have a QR/online payment option (unlike the electric co-op bill, which does) — this is the actual gap GW-System fills. PayMongo checkout can generate its own QR/payment link per invoice; no need to replicate SOReco's QR format specifically.
@@ -198,7 +204,7 @@ npm run dev
 ### Billing
 - [x] Billing calculation logic in `App\Services\BillingService` (reads RateSchedule + PenaltyRule, never hardcodes rates; flat + tiered; arrears carryover + 2%/month penalty after grace; flagged readings and no-reading connections skipped + reported; `php artisan billing:run` for manual runs)
 - [x] Billing run as a queued job (not synchronous) — `RunBillingJob` + `billing_runs` table (status + JSON report per run), `billing:run --sync` for inline runs, `billing:report {id}` to view a stored report, Postgres partial unique index blocking concurrent runs per period
-- [ ] Invoice PDF generation (dompdf) — itemized, matches real bill breakdown (current charges, arrears, penalty, total)
+    - [x] Invoice PDF generation (dompdf) — itemized, matches real bill breakdown (current charges, arrears, penalty, total)
 
 ### Payments
 - [ ] PayMongo integration (create payment intent/checkout)

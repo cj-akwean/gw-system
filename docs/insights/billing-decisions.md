@@ -346,7 +346,8 @@ Each should be confirmed with the office; the question is phrased exactly as to 
 - **Manual invoice entry UI** — flagged / zero-usage / misconfigured accounts are billed
   "offline" today; the Admin Panel phase needs a billing view to record those manual
   invoices in-system.
-- **Queued billing job** — DONE (checklist item 2, decisions 22–24; the job calls the same `run()`; robustness passes 23 & 24 — race handling, `--force` stale recovery, retry backoff, and job-level source-of-truth / superseded / force-failed guards). Remaining queued-work items: PDF generation (checklist item 3) and the monthly scheduler wiring (Infra phase).
+- **Queued billing job** — DONE (checklist item 2, decisions 22–24; the job calls the same `run()`; robustness passes 23 & 24 — race handling, `--force` stale recovery, retry backoff, and job-level source-of-truth / superseded / force-failed guards). Remaining queued-work items: monthly scheduler wiring (Infra phase). PDF generation
+  (checklist item 3) is DONE — see Part 4.
 - **Offline/manual payment recording** — tracked under Payments checklist.
 - **Estimated billing for malfunctioning / abnormally high meters** (documented
   Aug 2026, user-raised; see product-decisions.md §14). Today flagged readings are
@@ -361,6 +362,45 @@ Each should be confirmed with the office; the question is phrased exactly as to 
   positive" readings are a separate case (leak detection → Smart Features section;
   readers can already flag them level 1 today). Not scheduled into the current
   billing phase.
+
+---
+
+## Part 4 — Invoice PDF generation (checklist item 3)
+
+**Decision 25 — What goes in the PDF and where the work lives:**
+
+1. **Four-line itemized breakdown only** (no per-month ARREARS table). Real PH bills
+   print a per-month arrears table, but our `Invoice` row only stores the *aggregate*
+   `previous_balance` / `penalty_amount` / `base_amount`. Reconstructing per-month rows
+   at render time would drift from the stored totals once a partial payment is recorded
+   (Payments phase), and the office's exact arrears presentation is unconfirmed. The
+   PDF therefore itemizes at the same granularity as the stored row — **Current Charges,
+   Arrears, Penalty, Total Amount Due** — so the printed breakdown can never disagree
+   with the bill's recorded total. (Per-month arrears detail stays deferred until the
+   office confirms it and we snapshot it at billing time.)
+2. **Generation is pure presentation, in-memory — no storage.** `PdfService::generate()`
+   renders the `pdfs.invoice` Blade view and returns raw dompdf bytes; the Payments
+   phase reuses it to build the email attachment. No PDF is ever written to permanent
+   storage (consistent with ARCHITECTURE.md "no permanent file storage").
+3. **Rate is shown per cu.m. where deterministic.** For a flat schedule the view
+   displays `base_amount / cu_m_used` rounded to 2dp (= e.g. ₱10.00/cu.m.); for tiered
+   schedules it shows the schedule name. Derived from stored data only, never recomputed.
+4. **Guaranteed peso glyph.** CSS forces `font-family: 'DejaVu Sans'` (shipped with
+   dompdf) and the view emits `&#8369;` (U+20B1) for every amount, so the ₱ sign renders
+   rather than falling back to a core pdf font (Helvetica/cp1252, no ₱). A4 portrait,
+   single page; no remote assets (dompdf remote fetch is off).
+5. **Letterhead is a confirmed placeholder.** "GUINOBATAN WATERWORKS" + "Guinobatan,
+   Albay" + "Official Statement of Account" — editable in one place
+   (`resources/views/pdfs/invoice.blade.php`). The office should confirm the exact legal
+   name and registered address before the customer-facing letterhead is final.
+6. **Manual-verify command.** `billing:pdf {invoice-number} [--output=]` writes the PDF
+   to the storage disk (`pdf-verification/<number>.pdf` by default, or `--output=`) for
+   a visual spot-check — money-critical, so the user opens the file and confirms itemized
+   amounts match `billing:report` and that the ₱ glyph renders.
+
+**Status:** Implemented + tested (5/5 PdfServiceTest; full suite 87/87 green).
+**Code ref:** `app/Services/PdfService.php`, `resources/views/pdfs/invoice.blade.php`,
+`app/Console/Commands/BillingPdfCommand.php`, `tests/Feature/PdfServiceTest.php`.
 
 ---
 

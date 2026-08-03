@@ -1,7 +1,9 @@
 # Prompt: Billing — Queued Job + PDF + Admin UI (next phases)
 
 > **Status: Phase 1 (queued job) is DONE (2026-08-03, committed as part of checklist
-> item 2).** This file now describes Phase 2 (PDF) and Phase 3 (admin UI). Read
+> item 2).** Phase 2 (PDF) is DONE (2026-08-03: `PdfService`, `billing:pdf` command,
+> `pdfs.invoice` view, PdfServiceTest 5/5 — see decision 25 in `billing-decisions.md`
+> Part 4). This file now describes Phase 3 (admin UI). Read
 > `docs/summary/2026-08-03-billing-queue.md` for what Phase 1 actually built and verified.
 > Copy-paste this whole file into the next session. Read `docs/summary/2026-08-02-billing-service.md`,
 > `docs/insights/product-decisions.md` (§11 = the billing decisions), and ARCHITECTURE.md's
@@ -50,17 +52,22 @@ Key files:
 - `backend/app/Models/Invoice.php`, `RateSchedule.php`, `RateTier.php`, `PenaltyRule.php`
 - `backend/database/seeders/RateScheduleSeeder.php`
 
-## Phase 2 — Invoice PDF (checklist item 3)
+## Phase 2 — Invoice PDF (checklist item 3) — DONE (2026-08-03)
 
-5. dompdf (barryvdh/laravel-dompdf) is already in composer.json per Key Packages. Generate
-   the invoice PDF **in memory** from the Invoice row + relations (service connection,
+5. dompdf (barryvdh/laravel-dompdf v3.1.2, already in composer.json) generates the
+   invoice PDF **in memory** from the Invoice row + relations (service connection,
    rate schedule, reading): itemized breakdown matching real PH water bills — current
    charges (base_amount), arrears (previous_balance), penalty (penalty_amount), total,
-   due date, account + meter numbers. **No permanent file storage** (AGENTS.md).
-6. Emailing on payment is a Payments-phase task — PDF generation itself goes in a
-   `App\Services\PdfService` (business logic stays in services, never Filament).
-7. Add a `billing:pdf {invoice-number}` command (or similar) for manual verification +
-   a test asserting the PDF string starts with `%PDF`.
+   due date, account + meter numbers. **No permanent file storage** (business logic
+   stays in `App\Services\PdfService`, not in Filament views).
+6. Emailing on payment is a Payments-phase task — PDF generation itself lives in
+   `App\Services\PdfService` (`generate()` returns raw dompdf bytes, reused by the
+   Payments phase to email the attachment; `buildViewData()` does the date/rate math
+   so the view stays pure presentation).
+7. `billing:pdf {invoice-number} [--output=]` writes the PDF to the storage disk for
+   manual verification (default `pdf-verification/<invoice_number>.pdf`). A Feature test
+   (`PdfServiceTest.php`, 5/5) asserts the view renders every itemized field and that
+   `generate()` output starts with `%PDF`.
 
 ## Phase 3 — Admin billing views (Admin Panel checklist)
 
