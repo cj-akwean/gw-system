@@ -12,6 +12,7 @@ use App\Models\RateTier;
 use App\Models\ServiceConnection;
 use App\Services\BillingService;
 use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use InvalidArgumentException;
@@ -441,6 +442,85 @@ class BillingServiceTest extends TestCase
         Queue::assertNotPushed(RunBillingJob::class);
         $this->assertSame(1, BillingRun::count());
         $this->assertSame(0, Invoice::count());
+    }
+
+    public function test_billing_run_unique_index_blocks_concurrent_running_rows(): void
+    {
+        BillingRun::create(['period_end' => '2026-07-31', 'status' => 'running']);
+
+        $this->expectException(UniqueConstraintViolationException::class);
+
+        BillingRun::create(['period_end' => '2026-07-31', 'status' => 'running']);
+    }
+
+    public function test_billing_run_command_force_fails_a_stale_run_and_dispatches_fresh(): void
+    {
+        Queue::fake();
+
+        $this->seedPenaltyRule();
+        $schedule = $this->flatSchedule(10.00);
+        $connection = ServiceConnection::factory()->create(['rate_schedule_id' => $schedule->id]);
+        $this->reading($connection->id, 75.00, '2026-07-30');
+
+        $stale = BillingRun::create([
+            'period_end' => '2026-07-31',
+            'status' => 'running',
+        ]);
+        $stale->forceFill(['created_at' => now()->subDays(2)])->save();
+        $this->assertTrue($stale->fresh()->isStale());
+
+        $this->artisan('billing:run', ['--period' => '2026-07-31', '--force' => true])->assertSuccessful();
+
+        Queue::assertPushed(RunBillingJob::class);
+
+        $this->assertSame('failed', $stale->fresh()->status);
+        $this->assertStringContainsString('forced failed', $stale->fresh()->error);
+        $this->assertNotNull($stale->fresh()->finished_at);
+
+        $fresh = BillingRun::where('status', 'running')->first();
+        $this->assertNotNull($fresh);
+        $this->assertNotSame($stale->id, $fresh->id);
+    }
+
+    public function test_billing_run_command_force_wont_touch_a_fresh_running_run(): void
+    {
+        Queue::fake();
+
+        $this->seedPenaltyRule();
+        $schedule = $this->flatSchedule(10.00);
+        $connection = ServiceConnection::factory()->create(['rate_schedule_id' => $schedule->id]);
+        $this->reading($connection->id, 75.00, '2026-07-30');
+
+        BillingRun::create(['period_end' => '2026-07-31', 'status' => 'running']);
+
+        $this->artisan('billing:run', ['--period' => '2026-07-31', '--force' => true])->assertExitCode(1);
+
+        Queue::assertNotPushed(RunBillingJob::class);
+        $this->assertSame(1, BillingRun::where('status', 'running')->count());
+    }
+
+    public function test_billing_report_command_hints_an_abandoned_run(): void
+    {
+        $run = BillingRun::create([
+            'period_end' => '2026-07-31',
+            'status' => 'running',
+        ]);
+        $run->forceFill(['created_at' => now()->subDays(2)])->save();
+
+        $this->artisan('billing:report', ['run' => BillingRun::first()->id])
+            ->assertSuccessful()
+            ->expectsOutputToContain('may be abandoned')
+            ->expectsOutputToContain('--force');
+    }
+
+    public function test_billing_report_command_does_not_hint_a_fresh_run(): void
+    {
+        BillingRun::create(['period_end' => '2026-07-31', 'status' => 'running']);
+
+        $this->artisan('billing:report', ['run' => BillingRun::first()->id])
+            ->assertSuccessful()
+            ->expectsOutputToContain('still in progress')
+            ->doesntExpectOutputToContain('may be abandoned');
     }
 
     public function test_billing_report_command_prints_the_stored_report(): void

@@ -6,12 +6,13 @@ use App\Jobs\RunBillingJob;
 use App\Models\BillingRun;
 use App\Services\BillingService;
 use Illuminate\Console\Command;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
 use Throwable;
 
 class BillingRunCommand extends Command
 {
-    protected $signature = 'billing:run {--period= : Billing period end date (Y-m-d). Defaults to the end of last month.} {--sync : Run synchronously instead of dispatching a queued job.}';
+    protected $signature = 'billing:run {--period= : Billing period end date (Y-m-d). Defaults to the end of last month.} {--sync : Run synchronously instead of dispatching a queued job.} {--force : Mark a stale running run failed and start a fresh one.}';
 
     protected $description = 'Run the monthly billing cycle for all active connections';
 
@@ -32,16 +33,37 @@ class BillingRunCommand extends Command
             ->first();
 
         if ($inProgress) {
-            $this->error("A billing run (#{$inProgress->id}) for {$periodEnd} is already in progress.");
-            $this->error("Inspect it with: php artisan billing:report {$inProgress->id}");
+            if (! $this->option('force') || ! $inProgress->isStale()) {
+                $this->error("A billing run (#{$inProgress->id}) for {$periodEnd} is already in progress.");
+                $this->error("Inspect it with: php artisan billing:report {$inProgress->id}");
+
+                return self::FAILURE;
+            }
+
+            $inProgress->forceFill([
+                'status' => 'failed',
+                'error' => 'Abandoned run — forced failed by billing:run --force on '.now()->toDateTimeString().'.',
+                'finished_at' => now(),
+            ])->save();
+
+            $this->info("Marked stale billing run #{$inProgress->id} for {$periodEnd} as failed and started a fresh run.");
+        }
+
+        try {
+            $run = BillingRun::create([
+                'period_end' => $periodEnd,
+                'status' => 'running',
+            ]);
+        } catch (UniqueConstraintViolationException $exception) {
+            $racer = BillingRun::where('period_end', $periodEnd)
+                ->where('status', 'running')
+                ->first();
+
+            $this->error('A concurrent billing run ('.($racer?->id ? "#{$racer->id} " : '')."for {$periodEnd}) is already in progress.");
+            $this->error('Inspect it with: php artisan billing:report '.($racer?->id ?? '?').'.');
 
             return self::FAILURE;
         }
-
-        $run = BillingRun::create([
-            'period_end' => $periodEnd,
-            'status' => 'running',
-        ]);
 
         if ($this->option('sync')) {
             try {

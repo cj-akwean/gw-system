@@ -260,6 +260,43 @@ dispatch → `queue:work --once` → completed report; duplicate-running refused
 **Code ref:** `RunBillingJob`, `BillingRunCommand` (`--sync`, running pre-check),
 `BillingReportCommand`, migration `2026_08_03_000001_create_billing_runs_table`.
 
+### 23. What happens when a billing run races, goes stale, or retries? (robutness pass on decision 22)
+**Question:** The queued-run design (decision 22) was reviewed for failure modes —
+what fails when two `billing:run` calls race, when a dispatched job is never picked up,
+and when the job retries?
+**Decision:** three failure modes closed (Aug 2026 robustness pass):
+1. **Concurrent-create race**: the command pre-check and the `BillingRun::create()` are
+   non-atomic — two simultaneous invocations could both pass the check and the loser
+   would hit the partial unique index with a raw `QueryException`. The create is now
+   wrapped in a `try/catch (UniqueConstraintViolationException)` that prints the same
+   friendly "already in progress" message and exits 1 (DB backstop stays authoritative).
+2. **Stuck `running` rows**: a dispatched job the worker never picks up leaves a `running`
+   row that the partial unique index then lets block that period *forever*. Recovery is a
+   new `billing:run --force`: it flips a **stale** `running` row (`created_at` older than
+   `BillingRun::STALE_AFTER` = 10 hours) to `failed` (with an "Abandoned run — forced
+   failed" audit error) and starts a fresh run. A *fresh* running row is never touched —
+   an admin only forces after confirming the worker is actually dead. No auto-recovery:
+   a genuinely slow-but-alive run must not be double-billed by the system.
+3. **Immediate retries**: `RunBillingJob` now backoffs `[30, 60, 120]` seconds instead of
+   retrying instantly three times.
+`billing:report` now prints how long a `running` run has been going and, if it exceeds
+`STALE_AFTER`, warns it may be abandoned and suggests `billing:run --force`.
+**Status:** Confirmed (78/78 tests green: unique-constraint collision, `--force` stale
+recovery, `--force` refuses fresh rows, `--force` stale hint, backoff).
+**Code ref:** `BillingRunCommand::handle()` (`--force`, try/catch), `BillingRun::isStale()`
++ `STALE_AFTER`, `RunBillingJob::$backoff`, `BillingReportCommand` stale hint.
+
+### 24. What does a queued billing job do when it races, is force-abandoned, or is redispatched for the wrong period? (robustness pass 2 — source-of-truth & job resilience, Aug 2026)
+**Question:** Decision 23 closed the obvious holes (concurrent `create` race, stuck rows, backoff) and tests passed 78/78. A focused re-audit of `RunBillingJob::handle()` found four more failure modes the suite did **not** cover.
+**Decision:** four fixes (Aug 2026, 82/82 tests green):
+1. **Wrong-period dispatch.** `RunBillingJob::handle()` now reads the period from the run row (`$run->period_end`), not the constructor argument; if a caller dispatches with a mismatched `periodEnd`, the job marks the run `failed` with a "Mismatched period … refusing to bill the wrong month." audit error and **returns without retrying** (permanent logic error, captured on the row). Prevents money being billed for month B against an audit row (and unique-index guard) for month A.
+2. **Job update tripping the partial unique index on a live constraint.** The "reset to `running`" update now runs **inside the `try`**, and the collision path `catch (UniqueConstraintViolationException)` marks the run `failed` ("Superseded … not resumed") instead of surfacing a raw SQL error to the worker.
+3. **Probe before colliding.** The job now **SELECT-probes** for any *other* `running` row for the same `period_end` before attempting the reset. The common superseded case (operator ran `billing:run --force`, or a retry after a fresh run) is therefore handled by a clean `SELECT`, not by deliberately violating the unique index. The `catch` remains as a backstop for a true race (two jobs both passing the probe), which only manifests in production where there's no outer test transaction.
+4. **Never resurrect a force-failed run.** A run whose `error` contains "forced failed" (the operator `--force` audit string) is treated as terminal: an old, delayed job for that row logs "force-failed by an operator — not resuming" and returns, leaving the audit row as `failed`. The retry path that clears a *normal* failure still works (only `force failed` rows are shielded).
+Also: an unknown/zero `billingRunId` now throws a clear `RuntimeException` instead of looping retries on a `ModelNotFoundException`.
+**Status:** Confirmed (78/78 → 82/82, 223 → 238 assertions).
+**Code ref:** `RunBillingJob::handle()`, `RunBillingJobTest::test_job_refuses_to_bill_the_wrong_period`, `test_job_does_not_resurrect_a_force_failed_run`, `test_job_fails_cleanly_when_a_newer_run_holds_the_period`, `test_job_guard_billing_run_not_found`.
+
 ---
 
 ## Part 2 — Assumptions to verify with the Guinobatan Waterworks office
@@ -309,9 +346,7 @@ Each should be confirmed with the office; the question is phrased exactly as to 
 - **Manual invoice entry UI** — flagged / zero-usage / misconfigured accounts are billed
   "offline" today; the Admin Panel phase needs a billing view to record those manual
   invoices in-system.
-- **Queued billing job** — DONE (checklist item 2, decision 22; the job calls the same
-  `run()`). Remaining queued-work items: PDF generation (checklist item 3) and the
-  monthly scheduler wiring (Infra phase).
+- **Queued billing job** — DONE (checklist item 2, decisions 22–24; the job calls the same `run()`; robustness passes 23 & 24 — race handling, `--force` stale recovery, retry backoff, and job-level source-of-truth / superseded / force-failed guards). Remaining queued-work items: PDF generation (checklist item 3) and the monthly scheduler wiring (Infra phase).
 - **Offline/manual payment recording** — tracked under Payments checklist.
 - **Estimated billing for malfunctioning / abnormally high meters** (documented
   Aug 2026, user-raised; see product-decisions.md §14). Today flagged readings are

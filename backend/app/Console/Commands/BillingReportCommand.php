@@ -24,6 +24,11 @@ class BillingReportCommand extends Command
         if ($run->status === 'running') {
             $this->info("Billing run #{$run->id} for {$run->period_end->toDateString()} is still in progress.");
 
+            if ($run->isStale()) {
+                $this->warn("It has been running since {$run->created_at->toDateTimeString()} ({$run->created_at->diffForHumans()}) and may be abandoned — the queue worker may never have picked it up.");
+                $this->warn("If the worker is down, recover with: php artisan billing:run --period={$run->period_end->toDateString()} --force");
+            }
+
             return self::SUCCESS;
         }
 
