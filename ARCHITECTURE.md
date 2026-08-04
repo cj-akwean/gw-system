@@ -204,7 +204,7 @@ npm run dev
 ### Billing
 - [x] Billing calculation logic in `App\Services\BillingService` (reads RateSchedule + PenaltyRule, never hardcodes rates; flat + tiered; arrears carryover + 2%/month penalty after grace; flagged readings and no-reading connections skipped + reported; `php artisan billing:run` for manual runs)
 - [x] Billing run as a queued job (not synchronous) — `RunBillingJob` + `billing_runs` table (status + JSON report per run), `billing:run --sync` for inline runs, `billing:report {id}` to view a stored report, Postgres partial unique index blocking concurrent runs per period
-    - [x] Invoice PDF generation (dompdf) — itemized, matches real bill breakdown (current charges, arrears, penalty, total)
+- [x] Invoice PDF generation (dompdf) — itemized, matches real bill breakdown (current charges, arrears, penalty, total)
 
 ### Payments
 - [ ] PayMongo integration (create payment intent/checkout)

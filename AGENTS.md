@@ -24,6 +24,10 @@ gw-system/
 - **No permanent file storage** — PDFs generated in-memory and emailed; regenerate from DB on demand
 - **PayMongo webhook must be idempotent** — check if invoice is already paid before processing; verify signature
 
+## PayMongo — relevant docs only (don't guess from memory)
+
+PayMongo's API surface is broad. Before implementing or modifying anything payment-related, check the specific page for what's being built — https://docs.paymongo.com/docs/.
+
 ## Admin Credentials
 
 | Email | Password | Role | Access |
