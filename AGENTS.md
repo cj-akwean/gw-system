@@ -26,7 +26,9 @@ gw-system/
 
 ## PayMongo — relevant docs only (don't guess from memory)
 
-PayMongo's API surface is broad. Before implementing or modifying anything payment-related, check the specific page for what's being built — https://docs.paymongo.com/docs/.
+PayMongo's API surface is broad. Before implementing or modifying anything payment-related, check the specific page for what's being built. Entry points: platform overview / what PayMongo covers — https://docs.paymongo.com/docs/get-started-what-is-paymongo ; API reference (endpoints, schemas) — https://docs.paymongo.com/reference/getting-started-with-your-api ; full docs index — https://docs.paymongo.com/docs/.
+
+> **Doc trap (learned 2026-08-04):** `developer-tools-best-practices-1`'s webhook verification sample is **wrong** (signs the body alone, compares against the whole header). The real signature format — `t=<ts>,te=<test sig>,li=<live sig>`, signed string `"<t>.<rawBody>"`, compare `te`/`li` — is documented only on `developer-tools-webhook-setup-management`. The old `developers.paymongo.com` site is retired (dead links). When a docs page links to a dead page for a critical detail, search for the literal header value/format and cross-check the official SDK (`paymongo/paymongo-node`) — never trust a code sample alone.
 
 ## Admin Credentials
 

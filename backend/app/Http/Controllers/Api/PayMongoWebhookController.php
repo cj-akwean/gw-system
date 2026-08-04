@@ -1,0 +1,88 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Services\PayMongoService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+
+class PayMongoWebhookController extends Controller
+{
+    /**
+     * Event types this integration understands. Anything else is acknowledged
+     * and skipped — an error response would trigger PayMongo's retry logic.
+     */
+    private const KNOWN_EVENT_TYPES = [
+        'payment.paid',
+        'payment.failed',
+        'payment_intent.succeeded',
+        'payment_intent.awaiting_payment_method',
+    ];
+
+    public function store(Request $request, PayMongoService $payMongo): JsonResponse
+    {
+        $rawBody = $request->getContent();
+
+        // Current docs spell the header "Paymongo-Signature"; older docs used
+        // "X-Paymongo-Signature". Log which spelling actually arrives.
+        $signature = $request->header('Paymongo-Signature')
+            ?? $request->header('X-Paymongo-Signature');
+
+        Log::channel('paymongo')->info('PayMongo webhook received', [
+            'header_spelling' => $request->header('Paymongo-Signature') !== null
+                ? 'Paymongo-Signature'
+                : 'X-Paymongo-Signature',
+        ]);
+
+        if (! $payMongo->verifyWebhookSignature($rawBody, $signature, (bool) config('services.paymongo.livemode'))) {
+            Log::channel('paymongo')->warning('PayMongo webhook rejected: signature verification failed');
+
+            return response()->json(['message' => 'Invalid signature.'], 401);
+        }
+
+        $payload = json_decode($rawBody, true);
+        $type = $payload['data']['attributes']['type'] ?? null;
+        $livemode = $payload['data']['attributes']['livemode'] ?? null;
+
+        if ($type === null || ! is_bool($livemode)) {
+            Log::channel('paymongo')->warning('PayMongo webhook skipped: malformed payload', [
+                'event_type' => $type,
+            ]);
+
+            return $this->acknowledge();
+        }
+
+        if ($livemode !== (bool) config('services.paymongo.livemode')) {
+            Log::channel('paymongo')->warning('PayMongo webhook skipped: livemode mismatch', [
+                'event_type' => $type,
+                'event_livemode' => $livemode,
+            ]);
+
+            return $this->acknowledge();
+        }
+
+        if (! in_array($type, self::KNOWN_EVENT_TYPES, true)) {
+            Log::channel('paymongo')->info('PayMongo webhook acknowledged: unknown event type', [
+                'event_type' => $type,
+            ]);
+
+            return $this->acknowledge();
+        }
+
+        // Known event type — acknowledged and queued for processing in the
+        // next Payments item (invoice marked paid by ProcessPayMongoWebhook).
+        Log::channel('paymongo')->info('PayMongo webhook acknowledged: known event type', [
+            'event_id' => $payload['data']['id'] ?? null,
+            'event_type' => $type,
+        ]);
+
+        return $this->acknowledge();
+    }
+
+    private function acknowledge(): JsonResponse
+    {
+        return response()->json(['received' => true]);
+    }
+}

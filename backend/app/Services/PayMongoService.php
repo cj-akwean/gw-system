@@ -201,6 +201,62 @@ class PayMongoService
         return $methods;
     }
 
+    /**
+     * Verifies a webhook request signature per PayMongo's documented scheme
+     * (docs.paymongo.com/docs/developer-tools-webhook-setup-management).
+     *
+     * The Paymongo-Signature header holds three comma-separated parts:
+     *   t=<unix timestamp>,te=<test-mode sig>,li=<live-mode sig>
+     * The signed string is "<t>.<raw body>"; the digest is HMAC-SHA256 with
+     * the endpoint's webhook secret, HEX-encoded. Compare against te for
+     * test-mode events, li for live-mode events.
+     *
+     * NOTE: two earlier implementations (base64 digest of the body, then hex
+     * digest of the body alone) rejected every real delivery with 401 — the
+     * missing pieces were the timestamp prefix and the te/li selection. The
+     * unit tests passed because the test helper signed in the same wrong
+     * format; only a real delivery exposed it. Fails closed (returns false)
+     * when the secret, signature, timestamp, or the selected part is
+     * missing/empty.
+     */
+    public function verifyWebhookSignature(string $rawBody, ?string $signature, bool $isLivemode = false): bool
+    {
+        $secret = config('services.paymongo.webhook_secret');
+
+        if (! is_string($secret) || $secret === '' || ! is_string($signature) || $signature === '') {
+            Log::channel('paymongo')->warning('PayMongo webhook verification skipped', [
+                'signature_present' => is_string($signature) && $signature !== '',
+                'secret_configured' => is_string($secret) && $secret !== '',
+            ]);
+
+            return false;
+        }
+
+        $parts = [];
+
+        foreach (explode(',', $signature) as $pair) {
+            [$key, $value] = array_pad(explode('=', $pair, 2), 2, '');
+            $parts[trim($key)] = trim($value);
+        }
+
+        $timestamp = $parts['t'] ?? '';
+        $expected = $isLivemode ? ($parts['li'] ?? '') : ($parts['te'] ?? '');
+
+        if ($timestamp === '' || $expected === '') {
+            Log::channel('paymongo')->warning('PayMongo webhook verification skipped: malformed signature parts', [
+                'timestamp_present' => $timestamp !== '',
+                'selected_part_present' => $expected !== '',
+                'livemode' => $isLivemode,
+            ]);
+
+            return false;
+        }
+
+        $computed = hash_hmac('sha256', $timestamp.'.'.$rawBody, $secret);
+
+        return hash_equals($computed, $expected);
+    }
+
     protected function secretKey(): string
     {
         $key = config('services.paymongo.secret_key');
