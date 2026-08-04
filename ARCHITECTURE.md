@@ -184,6 +184,7 @@ npm run dev
 - [x] Token revocation / logout working
 - [x] Filament admin auth guard set up separately from API guard (is_admin flag + filter)
 - [x] Login failure handling per site: Filament admin differentiates wrong credentials vs valid-but-not-admin ("This account does not have access to the admin panel." — custom `App\Filament\Auth\Login`); customer `/api/login` returns one generic message (no email enumeration) + `throttle:10,1`; frontend shows a friendly error when the server is unreachable
+- [x] API unauthenticated responses: `/api/login` route is named `login` so `auth:sanctum` failures on API routes never crash with `RouteNotFoundException`. With `Accept: application/json` the response is a clean `401 {"message":"Unauthenticated."}`; without it, Laravel redirects to the named route instead of 500ing. REST clients (Thunder Client) inject `Accept: */*` by default — duplicate `Accept` headers make the first one win and produce the 500 (see README → Testing the customer API)
 
 ### Core Data Models
 - [x] `Barangay` model + migration (seed 15 real Guinobatan barangays)
@@ -211,12 +212,12 @@ npm run dev
 > Detailed flow spec: `docs/prompts/payments-customer-portal-flow.md`. Sub-bullets are the
 > small, individually-testable steps — one sub-bullet at a time per session.
 
-- [ ] PayMongo integration (create payment intent/checkout)
-  - Env vars: `PAYMONGO_SECRET_KEY`, `PAYMONGO_PUBLIC_KEY`, `PAYMONGO_WEBHOOK_SECRET`, `PAYMONGO_LIVEMODE` + `config/services.php` entry (+ `.env.example`)
-  - Migration: add `paymongo_payment_intent_id` (nullable string) to `invoices`
-  - `App\Services\PayMongoService::createPaymentIntent(Invoice $invoice, array $methods)` — POST `/v1/payment_intents` (Http::withBasicAuth secret key), amount in centavos (`total_amount * 100`), returns intent id + `client_key`; stores intent id on the invoice
-  - API endpoint: `POST /api/invoices/{invoice}/pay` (Sanctum) — rejects already-paid invoices, returns `client_key` + payment intent id
-  - Tests (faked HTTP): PayMongoService + endpoint feature test
+- [x] PayMongo integration (create payment intent/checkout)
+  - [x] Env vars: `PAYMONGO_SECRET_KEY`, `PAYMONGO_PUBLIC_KEY`, `PAYMONGO_WEBHOOK_SECRET`, `PAYMONGO_LIVEMODE` + `config/services.php` entry (+ `.env.example`)
+  - [x] Migration: add `paymongo_payment_intent_id` (nullable string, **unique index** — one intent per invoice) to `invoices`
+  - [x] `App\Services\PayMongoService` — `createPaymentIntent()` POSTs `/v1/payment_intents` (Basic auth secret key, amount in centavos `round(total*100)`, returns intent id + `client_key`, persists on invoice, `Idempotency-Key: invoice-pay-{id}` guards double-submit; `payment_method_allowed` validated against PayMongo's whitelist). `getPaymentIntent($id, $invoice)` (GET) verifies the intent's `metadata.invoice_id` matches the invoice. `getOrCreatePaymentIntent($invoice)` runs check-then-act inside a `DB::transaction` + `lockForUpdate()` on the invoice row (rejects non-`unpaid`/`overdue` statuses with `InvoiceNotPayableException`), so concurrent pay calls can't create duplicate intents or pay a just-paid invoice. HTTP: 15s timeout, manual retry (up to 3 attempts) on 5xx + connection errors — safe because POST carries an Idempotency-Key; `paymongo` log channel.
+  - [x] API endpoint: `POST /api/invoices/{invoice}/pay` (Sanctum, `throttle:20,1`) — rejects non-payable invoices (409: "already paid" or "not payable"), checks active link to the connection (403), returns `client_key` + payment intent id; PayMongo/network failure → 502 + `report()`
+  - [x] Tests (faked HTTP): PayMongoService + endpoint feature test (incl. intent-ownership mismatch, non-payable statuses, method whitelist, 5xx retry, 429 rate limit)
 - [ ] PayMongo webhook route (signature verified, idempotent)
   - `POST /api/paymongo/webhook` (no Sanctum, no CSRF) — acknowledge HTTP 200 within 30s; all real work in a queued job
   - Signature verify: HMAC-SHA256 of the **raw** body (`php://input`) with the webhook secret; parse `Paymongo-Signature` header (`t`/`te`/`li`); log which header spelling actually arrives in test

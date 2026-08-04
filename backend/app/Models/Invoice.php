@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'invoice_number', 'service_connection_id', 'meter_reading_id', 'rate_schedule_id',
     'billing_period_start', 'billing_period_end',
     'previous_balance', 'base_amount', 'penalty_amount', 'total_amount',
-    'due_date', 'status',
+    'due_date', 'status', 'paymongo_payment_intent_id',
 ])]
 class Invoice extends Model
 {

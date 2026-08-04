@@ -32,6 +32,50 @@ Two PHP installations on this machine:
 
 The Winget PHP is first in `PATH`. Use `php -v` to confirm you're on **8.5.8** (PHP Group build).
 
+## PHP HTTPS / SSL (mandatory on Windows — "cURL error 60")
+
+Windows does **not** ship a CA bundle, so PHP's cURL cannot verify outbound HTTPS
+certificates by default. Every external API call from the backend (PayMongo, Resend,
+Mailtrap, any HTTPS endpoint reached with `Http::`) fails with:
+
+```
+cURL error 60: SSL certificate OpenSSL verify result: unable to get local issuer certificate
+```
+
+This machine is **already fixed** — the steps below are the repeat recipe for a new
+machine / fresh PHP install, or if the error comes back after a PHP upgrade:
+
+1. Download the Mozilla/curl CA bundle:
+   ```powershell
+   Invoke-WebRequest -Uri "https://curl.se/ca/cacert.pem" `
+     -OutFile "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\PHP.PHP.8.5_Microsoft.Winget.Source_8wekyb3d8bbwe\cacert.pem"
+   ```
+2. In that same directory's `php.ini` (run `php --ini` to find it), uncomment and set:
+   ```ini
+   [curl]
+   curl.cainfo = "C:\Users\akwean\AppData\Local\Microsoft\WinGet\Packages\PHP.PHP.8.5_Microsoft.Winget.Source_8wekyb3d8bbwe\cacert.pem"
+
+   [openssl]
+   openssl.cafile="C:\Users\akwean\AppData\Local\Microsoft\WinGet\Packages\PHP.PHP.8.5_Microsoft.Winget.Source_8wekyb3d8bbwe\cacert.pem"
+   ```
+3. **Restart any running `php artisan serve`** — it reads php.ini only at startup.
+4. Confirm the fix:
+   ```powershell
+   php -r "echo ini_get('curl.cainfo'), PHP_EOL;"
+   # must print the .pem path (not empty)
+   ```
+   Then hit PayMongo with a dummy key — a `401` JSON response means TLS verified (before the
+   fix this was `curl error 60`):
+   ```powershell
+   curl.exe -s -o NUL -w "%{http_code}" https://api.paymongo.com/v1/payment_intents
+   ```
+   (401 = reachable. A `command not found`-style output is unrelated to this check.)
+
+> **Why it matters for GW-System:** the `POST /api/invoices/{id}/pay` flow calls
+> `PayMongoService` → `api.paymongo.com`. Without this fix it fails with a 502
+> (`"Payment gateway unavailable"`) even though the PayMongo keys and code are correct.
+> Don't chase it as a code bug — check `storage/logs/laravel.log` for `cURL error 60` first.
+
 ## PostgreSQL
 
 - **Service name:** `PostgreSQL`
@@ -67,6 +111,47 @@ npm run dev
 cd backend
 php artisan make:filament-user
 ```
+
+## Testing the customer API (Thunder Client / REST clients)
+
+The customer portal is a **JSON API** (`POST /api/login` → Bearer token → authenticated
+routes). When testing with Thunder Client or any REST client, two header rules apply:
+
+1. **Every request needs `Authorization: Bearer <token>`** (except `/api/login`).
+2. **Send `Accept: application/json` — and only that.** Thunder Client injects a default
+   `Accept: */*` header automatically; do **not** add a second `Accept:
+   application/json` row on top of it, because the first `Accept` wins and Laravel
+   treats the request as a browser request.
+
+   Symptom of the duplicate-header mistake: an unauthenticated call returns
+   **500 `Route [login] not defined`** instead of a clean `401 {"message":"Unauthenticated."}`.
+   Fix: in the request's Headers tab, **edit** the existing `Accept` row to
+   `application/json` — don't add a second row.
+
+   The backend also names the login route `login` (2026-08-04), so headerless requests
+   no longer crash — but only `Accept: application/json` yields the proper 401 JSON.
+
+Quick smoke test sequence:
+
+```text
+POST http://127.0.0.1:8000/api/login      {"email":"test@example.com","password":"password"}
+    → {"token":"1|...","user":{...}}        (copy the token)
+
+POST http://127.0.0.1:8000/api/links        headers: Bearer <token>
+    {"account_number":"GW-00001","meter_number":"MTR-00001"}
+
+POST http://127.0.0.1:8000/api/invoices/{id}/pay   headers: Bearer <token>
+    → {"client_key":"pi_...","payment_intent_id":"pi_..."}
+```
+
+Expected edge cases:
+
+| Call | Result |
+|---|---|
+| No Bearer token | `401` `{"message":"Unauthenticated."}` |
+| Pay an already-paid invoice | `409` `{"message":"Invoice is already paid."}` |
+| Invoice of a connection you're not linked to | `403` `{"message":"Forbidden"}` |
+| PayMongo API down / SSL broken | `502` `{"message":"Payment gateway unavailable..."}` — check `storage/logs/laravel.log` for `cURL error 60` first (see PHP HTTPS / SSL above) |
 
 ## Links
 

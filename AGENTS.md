@@ -75,6 +75,11 @@ cd frontend && npm run dev
 
 - Laravel: `http://127.0.0.1:8000`
 - Next.js: `http://localhost:3000`
+- **Windows PHP SSL prerequisite:** outbound HTTPS from PHP fails with `cURL error 60`
+  until the CA bundle is configured (PayMongo calls return 502). Already set up on this
+  machine; see README.md → "PHP HTTPS / SSL" for the recipe, diagnosis, and fix. If a
+  PayMongo/Resend call ever 502s, check `storage/logs/laravel.log` for `cURL error 60`
+  BEFORE touching service code.
 
 ---
 
