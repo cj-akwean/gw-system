@@ -207,11 +207,48 @@ npm run dev
 - [x] Invoice PDF generation (dompdf) — itemized, matches real bill breakdown (current charges, arrears, penalty, total)
 
 ### Payments
+
+> Detailed flow spec: `docs/prompts/payments-customer-portal-flow.md`. Sub-bullets are the
+> small, individually-testable steps — one sub-bullet at a time per session.
+
 - [ ] PayMongo integration (create payment intent/checkout)
+  - Env vars: `PAYMONGO_SECRET_KEY`, `PAYMONGO_PUBLIC_KEY`, `PAYMONGO_WEBHOOK_SECRET`, `PAYMONGO_LIVEMODE` + `config/services.php` entry (+ `.env.example`)
+  - Migration: add `paymongo_payment_intent_id` (nullable string) to `invoices`
+  - `App\Services\PayMongoService::createPaymentIntent(Invoice $invoice, array $methods)` — POST `/v1/payment_intents` (Http::withBasicAuth secret key), amount in centavos (`total_amount * 100`), returns intent id + `client_key`; stores intent id on the invoice
+  - API endpoint: `POST /api/invoices/{invoice}/pay` (Sanctum) — rejects already-paid invoices, returns `client_key` + payment intent id
+  - Tests (faked HTTP): PayMongoService + endpoint feature test
 - [ ] PayMongo webhook route (signature verified, idempotent)
+  - `POST /api/paymongo/webhook` (no Sanctum, no CSRF) — acknowledge HTTP 200 within 30s; all real work in a queued job
+  - Signature verify: HMAC-SHA256 of the **raw** body (`php://input`) with the webhook secret; parse `Paymongo-Signature` header (`t`/`te`/`li`); log which header spelling actually arrives in test
+  - Guard `livemode` (test vs live events); register **separate** webhook endpoints for test and live in the PayMongo dashboard
+  - Unknown event types → acknowledge + skip (never return an error → would trigger retries)
 - [ ] Invoice marked paid on webhook confirmation
+  - `App\Jobs\ProcessPayMongoWebhook` (ShouldQueue, tries=3)
+  - Dedupe two ways: `processed_webhook_events` table (unique event id) **and** skip when the invoice is already `paid`; only ever transition `unpaid → paid`
+  - On `payment.paid`: find invoice by `paymongo_payment_intent_id`, create `Payment` row (method `paymongo`, amount, `paymongo_reference` = intent id, `paid_at`), set invoice `status = paid`
+  - On `payment.failed` / expiry events: log only, no state change
 - [ ] Invoice PDF emailed to customer on payment confirmation
+  - `App\Jobs\SendPaymentConfirmationEmail` (ShouldQueue) — reuses `PdfService::generate(Invoice)` as the attachment (no permanent storage)
+  - Mailtrap in dev, Resend in prod; email template (invoice number, amount paid, billing period)
 - [ ] **Record offline/manual payments in admin** (cash / over-the-counter): mark invoice paid with method + reference — the real utility pays many bills offline (first-month connections, flagged-reading manual invoices); nothing records that today. Needs an admin view (see Admin Panel phase) + a `Payment` row with `method='cash'` etc.
+
+### Customer Portal (Next.js) — buildable later
+
+> Blocks: the Payments backend items (above) must work first — the UI consumes their API
+> endpoints. Portal shell (dashboard + unpaid-bills list) must exist before any payment
+> screen. Detailed spec: `docs/prompts/payments-customer-portal-flow.md` (frontstage spec).
+
+- [ ] Portal shell: dashboard + unpaid-bills list (blocks all payment UI)
+- [ ] Payment flow Screen 1 — Payment Method (three tappable cards: E-wallet, Card, Digital Wallet)
+  - QR Ph (E-wallet, recommended/default): render in-page from the intent's `next_action.code.image_url` (Base64); countdown driven by the backend deadline (`expiry_seconds: 600`), never a hardcoded timer
+  - GCash (E-wallet, second option): redirect to `next_action.redirect.url`; PayMongo's own page handles the `gcash://` deep link on mobile; 4-hr window, no countdown
+  - E-wallet cap ₱1.00–₱100,000.00 — large commercial bills must go Card
+- [ ] Payment flow Screen 2 — Review & Pay (line item, total, selected method + Change link, Pay button; pending state until the webhook confirms — never mark paid on redirect)
+- [ ] Success / pending / expiry states + receipt line ("confirmation emailed to ...")
+- [ ] Card form — collect details client-side, create Payment Method via PayMongo `/v1/payment_methods` with the **public key** (never through the Laravel backend; PCI note in the prompt file); 3DS redirect handling, re-fetch the intent server-side on return
+- [ ] Tooltips: hover ⓘ on desktop, tap-to-toggle popover on touch — one consistent pattern, seed the `frontend-design` doc
+- [ ] Save-card checkbox + vaulting — deferred, added in the same release as the card form, never before
+- [ ] Digital Wallet (Google Pay) — showcase only; needs the account capability + Google Pay Console verification; mark "Coming soon" in the UI until verified
 
 ### Admin Panel (Filament)
 - [ ] Dashboard with key metrics (customers, unpaid invoices, revenue)

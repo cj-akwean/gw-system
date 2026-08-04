@@ -1,10 +1,12 @@
 # Prompt: Payments — Customer Portal Payment Flow (PayMongo)
 
-> **Status:** Phase 1 (backend) is the active item. The customer-portal UI plan below is
+> **Status:** This file is the **implementation spec**; work is tracked in
+> ARCHITECTURE.md — Payments section (backend items, one sub-bullet per session) and
+> Customer Portal section (UI, buildable later). The customer-portal UI plan below is
 > **spec only**, not yet built — do **not** start the generic UI until the portal shell
 > (dashboard + unpaid-bills list) exists. Copy-paste this whole file into the next session.
 > Read `docs/summary/2026-08-03-invoice-pdf.md`, `docs/insights/product-decisions.md`
-> (§11 billing decisions), and ARCHITECTURE.md's Payments section (lines 209-215) first.
+> (§11 billing decisions), and ARCHITECTURE.md's Payments section first.
 
 ## Context
 
