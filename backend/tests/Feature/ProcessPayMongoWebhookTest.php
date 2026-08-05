@@ -3,10 +3,14 @@
 namespace Tests\Feature;
 
 use App\Jobs\ProcessPayMongoWebhook;
+use App\Jobs\SendPaymentConfirmationEmail;
+use App\Models\ConnectionLink;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\User;
 use App\Services\PaymentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -402,5 +406,43 @@ class ProcessPayMongoWebhookTest extends TestCase
         $payment = Payment::where('invoice_id', $invoice->id)->sole();
         $this->assertSame('paid', $invoice->fresh()->status);
         $this->assertLessThan(2, $payment->paid_at->diffInMinutes(now()));
+    }
+
+    public function test_payment_paid_dispatches_the_confirmation_email(): void
+    {
+        Queue::fake();
+
+        $invoice = $this->invoiceFor('pi_test_1');
+        ConnectionLink::factory()->create([
+            'user_id' => User::factory(),
+            'service_connection_id' => $invoice->service_connection_id,
+            'status' => 'active',
+        ]);
+
+        $this->runJob($this->paymentPaidPayload());
+
+        Queue::assertPushed(SendPaymentConfirmationEmail::class);
+    }
+
+    public function test_an_already_paid_invoice_does_not_dispatch_the_confirmation_email(): void
+    {
+        Queue::fake();
+
+        $this->invoiceFor('pi_test_1', 'paid', 40.00);
+
+        $this->runJob($this->paymentPaidPayload());
+
+        Queue::assertNotPushed(SendPaymentConfirmationEmail::class);
+    }
+
+    public function test_an_amount_mismatch_does_not_dispatch_the_confirmation_email(): void
+    {
+        Queue::fake();
+
+        $this->invoiceFor('pi_test_1', 'unpaid', 50.00);
+
+        $this->runJob($this->paymentPaidPayload());
+
+        Queue::assertNotPushed(SendPaymentConfirmationEmail::class);
     }
 }

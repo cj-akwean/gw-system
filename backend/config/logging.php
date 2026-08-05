@@ -119,8 +119,8 @@ return [
         ],
 
         'paymongo' => [
-            'driver' => 'single',
-            'path' => storage_path('logs/paymongo.log'),
+            'driver' => env('PAYMONGO_LOG_DRIVER', 'single'),
+            'path' => env('PAYMONGO_LOG_PATH', storage_path('logs/paymongo.log')),
             'level' => env('LOG_LEVEL', 'debug'),
             'replace_placeholders' => true,
         ],

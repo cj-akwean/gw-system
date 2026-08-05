@@ -92,3 +92,73 @@ Payment row. Re-POST `/pay` on the same invoice → 409 "Invoice is already paid
 - `signature verification failed` → dashboard webhook secret drifted from `.env`.
 - Old failed deliveries in the dashboard resend automatically on retry — harmless, they log
   `no invoice for intent`.
+
+---
+
+## Addendum — email delivery verification (Payments item 4, Mailtrap)
+
+> Added 2026-08-05 after the first full round (payment → webhook → mark paid → email with PDF
+> attachment received in Mailtrap). Run this after any change to the mail/email-job code.
+
+### Gotcha that WILL silently skip the email (hit 2026-08-05)
+
+The email job sends only to portal users with an **active** `ConnectionLink` on the *paid
+invoice's* connection. In the seeded dev DB only `test@example.com` → connection 1
+(`GW-00001`/`MTR-00001`) is linked, and invoice 1 is already paid. Paying any other invoice
+works (payment records fine) but logs
+`Payment confirmation email skipped: no linked users with a valid email` — **no email is sent**.
+Link the user to the target connection first (self-serve `/api/links`, needs `account_number` +
+`meter_number` from the connection):
+
+```powershell
+$body = @{ email = 'test@example.com'; password = 'password' } | ConvertTo-Json
+$login = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/login' -Method Post -ContentType 'application/json' -Body $body
+$headers = @{ Authorization = "Bearer $($login.token)" }
+$link = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/links' -Method Post -Headers $headers -ContentType 'application/json' -Body (@{ account_number = 'GW-00002'; meter_number = 'MTR-00002' } | ConvertTo-Json)
+$link | ConvertTo-Json
+```
+
+### Prereqs (on top of the main doc's four)
+
+1. Mailtrap account (free) with a Testing inbox; copy its SMTP creds (host `sandbox.smtp.mailtrap.io`,
+   port `2525`, inbox-specific username/password) into `backend/.env`:
+   `MAIL_MAILER=smtp` · `MAIL_SCHEME=null` · `MAIL_HOST=sandbox.smtp.mailtrap.io` · `MAIL_PORT=2525`
+   · username/password · `MAIL_FROM_ADDRESS=noreply@example.com`.
+2. **Restart `php artisan serve` and `php artisan queue:work --tries=3` after any `.env` mail
+   change** — a worker started before the edit keeps the old config and "sent" logs appear with
+   nothing in Mailtrap.
+3. Optional: `APP_NAME=GW-System` so the From name isn't "Laravel".
+
+### Smoke-check SMTP alone (isolates Mailtrap from the payment flow)
+
+```powershell
+cd C:\Users\akwean\Downloads\gw-system\backend
+php artisan tinker
+# >>> interactive prompt (--execute is flaky with closures):
+Mail::raw('smtp check', fn ($m) => $m->to('test@example.com')->subject('smtp check'));
+```
+
+Message appears in mailtrap.io → **Email Testing → the SAME inbox whose creds you pasted** (creds
+are per-inbox; wrong inbox = nothing visible).
+
+### Full round (after the main doc's Phases: link → `/pay` → pay-checkout.html test card)
+
+1. Pay an unpaid invoice **on the connection you linked** (e.g. invoice 2, `GW-2026-00002`).
+2. Mailtrap inbox: "Payment received — Invoice GW-2026-00002" (subject) — body table (invoice
+   number, billing period, amount paid, invoice total, date paid) + **Attachments tab:
+   `invoice-GW-2026-00002.pdf`** (download, verify itemized breakdown).
+3. `paymongo.log` — expected chain ending in
+   `local.INFO: Payment confirmation email sent {"invoice_id":2,...,"recipients":["test@example.com"]}`.
+   Note: `testing.INFO` entries in the same file are the phpunit suite (see below — fixed
+   2026-08-05 so tests no longer write there).
+4. Dashboard → Webhooks → Deliveries → **Resend** the `payment.paid` delivery → log
+   `skipped: event already processed` → Mailtrap still shows **exactly one** message (no
+   duplicate email).
+
+### Timestamp gotcha (not a bug)
+
+Mailtrap's inbox **list** displays UTC ("07:33") while the email header says
+`Date: Wed, 05 Aug 2026 15:33:06 +0800` — the header is correct (Asia/Manila); the list view is
+Mailtrap's account timezone display (change it in Mailtrap settings if it confuses you). The
+only genuinely inconsistent rows in the dev DB are invoice 1's UTC-era `paid_at`/`processed_at`
+from before the app timezone fix — known, dev DB gets wiped before prod.

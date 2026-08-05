@@ -12,7 +12,7 @@
 | API Auth | Laravel Sanctum (Bearer tokens) |
 | Queue | Database driver |
 | Email (prod) | Resend |
-| Email (dev) | Mailtrap (via `MAIL_MAILER=log` for now) |
+| Email (dev) | Mailtrap (fallback: `MAIL_MAILER=log` — writes to `storage/logs`, nothing delivered) |
 
 ## Prerequisites
 
@@ -75,6 +75,40 @@ machine / fresh PHP install, or if the error comes back after a PHP upgrade:
 > `PayMongoService` → `api.paymongo.com`. Without this fix it fails with a 502
 > (`"Payment gateway unavailable"`) even though the PayMongo keys and code are correct.
 > Don't chase it as a code bug — check `storage/logs/laravel.log` for `cURL error 60` first.
+
+## Email (dev) with Mailtrap
+
+Payment confirmations (invoice PDF attachment) are sent by a queued job. In dev, mail goes to a
+**Mailtrap** testing inbox (captured in the web UI, never delivered) unless you opt out:
+`MAIL_MAILER=log` writes every message to `storage/logs` instead of sending.
+
+Setup (one-time):
+
+1. Sign up at mailtrap.io (free) → **Email Testing** → your inbox → copy its SMTP credentials
+   (host `sandbox.smtp.mailtrap.io`, port `2525`, username/password — these are **per-inbox**).
+2. In `backend/.env`:
+   ```
+   MAIL_MAILER=smtp
+   MAIL_SCHEME=null
+   MAIL_HOST=sandbox.smtp.mailtrap.io
+   MAIL_PORT=2525
+   MAIL_USERNAME=<mailtrap inbox username>
+   MAIL_PASSWORD=<mailtrap inbox password>
+   MAIL_FROM_ADDRESS=noreply@example.com
+   MAIL_FROM_NAME="GW-System"        # optional; defaults to APP_NAME
+   ```
+3. **Restart `php artisan serve` and `php artisan queue:work --tries=3`** — a worker started
+   before a `.env` mail change keeps the old config.
+4. Verify: `php artisan tinker` → `Mail::raw('hi', fn ($m) => $m->to('test@example.com')->subject('test'));`
+   → message appears in the Mailtrap inbox.
+
+The full payment→email round is scripted in `docs/manual-tests/paymongo-payment-e2e.md`
+(addendum "email delivery verification" — includes the link-the-connection gotcha that silently
+skips the email).
+
+Production uses **Resend** (`MAIL_MAILER=resend` + `RESEND_API_KEY`, sending domain verified in
+Resend with SPF/DKIM/DMARC) — deferred until go-live; Laravel 13 ships the resend transport
+natively.
 
 ## PostgreSQL
 

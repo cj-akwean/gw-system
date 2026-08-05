@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\SendPaymentConfirmationEmail;
 use App\Models\Invoice;
 use App\Models\Payment;
 use Illuminate\Support\Carbon;
@@ -82,6 +83,11 @@ class PaymentService
                 'paymongo_reference' => $paymentId,
                 'paid_at' => $paidAt !== null ? Carbon::createFromTimestamp($paidAt, config('app.timezone')) : now(),
             ]);
+
+            // Only dispatched when a payment row was actually created, and only
+            // after the outer transaction commits — the email job must never
+            // render against an uncommitted invoice/payment.
+            SendPaymentConfirmationEmail::dispatch($locked, $payment)->afterCommit();
 
             Log::channel('paymongo')->info('PayMongo webhook processed: invoice marked paid', [
                 'invoice_id' => $locked->id,
