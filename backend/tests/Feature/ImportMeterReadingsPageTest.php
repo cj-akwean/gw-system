@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Filament\Resources\MeterReadingResource\Pages\ImportMeterReadings;
 use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Str;
 use Livewire\Features\SupportFileUploads\FileUploadConfiguration;
@@ -13,6 +14,8 @@ use Tests\TestCase;
 
 class ImportMeterReadingsPageTest extends TestCase
 {
+    use RefreshDatabase;
+
     protected function setUp(): void
     {
         parent::setUp();

@@ -5,6 +5,8 @@ namespace App\Jobs;
 use App\Mail\PaymentConfirmation;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\User;
+use Filament\Notifications\Notification;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -34,9 +36,7 @@ class SendPaymentConfirmationEmail implements ShouldQueue
 
     public function handle(): void
     {
-        $connection = $this->invoice->serviceConnection;
-
-        if ($connection === null) {
+        if ($this->invoice->serviceConnection === null) {
             Log::channel('paymongo')->warning('Payment confirmation email skipped: invoice has no service connection', [
                 'invoice_id' => $this->invoice->id,
                 'invoice_number' => $this->invoice->invoice_number,
@@ -45,21 +45,7 @@ class SendPaymentConfirmationEmail implements ShouldQueue
             return;
         }
 
-        $recipients = $connection->connectionLinks()
-            ->where('status', 'active')
-            ->whereNull('unlinked_at')
-            ->with('user:id,email')
-            ->get()
-            ->pluck('user.email')
-            ->filter(function (mixed $email): bool {
-                return is_string($email)
-                    && trim($email) !== ''
-                    && filter_var(trim($email), FILTER_VALIDATE_EMAIL) !== false;
-            })
-            ->map(fn (string $email): string => strtolower(trim($email)))
-            ->unique()
-            ->values()
-            ->all();
+        $recipients = static::recipientsFor($this->invoice);
 
         if ($recipients === []) {
             Log::channel('paymongo')->warning('Payment confirmation email skipped: no linked users with a valid email', [
@@ -79,6 +65,38 @@ class SendPaymentConfirmationEmail implements ShouldQueue
         ]);
     }
 
+    /**
+     * Resolve the distinct, lowercase, valid email addresses that should
+     * receive the confirmation for the given invoice. Empty when the invoice
+     * has no service connection or no active linked user has a valid email.
+     *
+     * @return array<int, string>
+     */
+    public static function recipientsFor(Invoice $invoice): array
+    {
+        $connection = $invoice->serviceConnection;
+
+        if ($connection === null) {
+            return [];
+        }
+
+        return $connection->connectionLinks()
+            ->where('status', 'active')
+            ->whereNull('unlinked_at')
+            ->with('user:id,email')
+            ->get()
+            ->pluck('user.email')
+            ->filter(function (mixed $email): bool {
+                return is_string($email)
+                    && trim($email) !== ''
+                    && filter_var(trim($email), FILTER_VALIDATE_EMAIL) !== false;
+            })
+            ->map(fn (string $email): string => strtolower(trim($email)))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
     public function failed(?Throwable $exception): void
     {
         Log::channel('paymongo')->error('Payment confirmation email failed permanently', [
@@ -87,5 +105,21 @@ class SendPaymentConfirmationEmail implements ShouldQueue
             'payment_id' => $this->payment->id,
             'error' => $exception?->getMessage(),
         ]);
+
+        $admins = User::query()->where('is_admin', true)->get();
+
+        if ($admins->isEmpty()) {
+            return;
+        }
+
+        Notification::make()
+            ->danger()
+            ->title('Payment confirmation email failed')
+            ->body(
+                'Invoice '.$this->invoice->invoice_number
+                .' (payment #'.$this->payment->id.') never reached the customer. '
+                .'Fix the mailer, then resend with: php artisan paymongo:send-receipt '.$this->invoice->id
+            )
+            ->sendToDatabase($admins);
     }
 }

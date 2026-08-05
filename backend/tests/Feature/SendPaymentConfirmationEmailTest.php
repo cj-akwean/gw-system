@@ -8,6 +8,7 @@ use App\Models\ConnectionLink;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\User;
+use Filament\Notifications\DatabaseNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -218,5 +219,34 @@ class SendPaymentConfirmationEmailTest extends TestCase
         $this->assertSame(Logger::ERROR, $last['level']);
         $this->assertStringContainsString('failed permanently', $last['message']);
         $this->assertSame($payment->id, $last['context']['payment_id']);
+    }
+
+    public function test_failed_job_sends_a_database_notification_to_every_admin(): void
+    {
+        $admin = User::factory()->create(['email' => 'admin@example.com', 'is_admin' => true]);
+        $regular = User::factory()->create(['email' => 'boarder@example.com']);
+        $invoice = Invoice::factory()->create(['status' => 'paid']);
+        $payment = $this->paymentFor($invoice);
+
+        (new SendPaymentConfirmationEmail($invoice, $payment))->failed(new RuntimeException('SMTP unreachable'));
+
+        $this->assertDatabaseCount('notifications', 1);
+        $this->assertDatabaseHas('notifications', [
+            'notifiable_id' => $admin->id,
+            'notifiable_type' => User::class,
+            'type' => DatabaseNotification::class,
+        ]);
+        $this->assertDatabaseMissing('notifications', ['notifiable_id' => $regular->id]);
+    }
+
+    public function test_failed_job_creates_no_notification_when_there_are_no_admins(): void
+    {
+        User::factory()->create(['email' => 'boarder@example.com']);
+        $invoice = Invoice::factory()->create(['status' => 'paid']);
+        $payment = $this->paymentFor($invoice);
+
+        (new SendPaymentConfirmationEmail($invoice, $payment))->failed(new RuntimeException('SMTP unreachable'));
+
+        $this->assertDatabaseCount('notifications', 0);
     }
 }

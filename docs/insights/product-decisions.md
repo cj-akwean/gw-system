@@ -542,3 +542,32 @@ test setting therefore did *not* discard logs — it just moved them to laravel.
 the test suite at a throwaway path (`PAYMONGO_LOG_PATH=storage/logs/testing/paymongo.log`, under the
 `*.log` gitignore) so `php artisan test` never touches the real `paymongo.log`. Monolog 3 also dropped
 `ArrayHandler`; the in-memory test logger is `Monolog\Handler\TestHandler`.
+
+## 19. Failed receipts surface in the admin bell; a human resends
+
+**Question asked (2026-08-05, Phase 1 of Notifications):** a payment confirmation email that
+permanently fails is only visible in ailed_jobs + the paymongo log. Is that loud enough?
+
+**Answer + reasoning:** no. Ops only looks at logs when something else goes wrong, and a missed
+receipt is a customer-comms failure that should not wait to be discovered. So the job's ailed()
+hook now also writes a **Filament database notification to every admin** (danger pill with invoice
+#, payment #, and the resend command). The admin bell (->databaseNotifications()) is the zero-cost
+home for it: no new UI to build, no SMS dependency, and the reader is exactly the person who can act.
+
+**The human is the fallback path.** The notification body literally contains
+php artisan paymongo:send-receipt {invoice} — a new command that re-runs the job's handle() for a
+paid invoice (exit 0 sent/skipped, exit 1 unknown/unpaid). We chose a command over an in-panel
+"Resend" button because the action needs no UI, runs headless (scheduled/SSH), and is one step
+toward the Phase-2 notifications hub without committing to a button's placement now.
+
+**Two concurrency guardrails stay intact (verified again in tests):** the same invoice can only be
+credited once (lockForUpdate in `PaymentService::markPaidFromWebhook`, plus unique
+`payments.paymongo_reference` and `processed_webhook_events.event_id`), so two payments arriving
+at once cannot double-credit — the loser sees `paid` and skips, exactly like the webhook path. The
+resend command adds nothing new here because it only reads state; it cannot create a second payment.
+
+**Postgres gotcha (fixed the same session):** Filament's published notifications migration uses
+`->text('data')`, which breaks the bell's `data->>'format'` query on Postgres
+(`text ->>` does not exist). Filament's own docs say Postgres must use `->json('data')`.
+Also found: `ImportMeterReadingsPageTest` had no `RefreshDatabase`, so its committed admin user
+was leaking into later tests (my new notification-count assertions caught it). Both fixed.
