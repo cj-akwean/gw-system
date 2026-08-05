@@ -31,7 +31,8 @@
         <env name="DB_USERNAME" value="postgres"/>
         <env name="DB_PASSWORD" value="postgres"/>
         <env name="MAIL_MAILER" value="array"/>
-        <env name="PAYMONGO_LOG_DRIVER" value="array"/>
+        <env name="PAYMONGO_LOG_DRIVER" value="single"/>
+        <env name="PAYMONGO_LOG_PATH" value="storage/logs/testing/paymongo.log"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>

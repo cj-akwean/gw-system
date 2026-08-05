@@ -9,6 +9,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Throwable;
 
 /**
  * Emails the payment confirmation (with the itemized invoice PDF attached) to
@@ -33,9 +34,20 @@ class SendPaymentConfirmationEmail implements ShouldQueue
 
     public function handle(): void
     {
-        $recipients = $this->invoice->serviceConnection
-            ?->connectionLinks()
+        $connection = $this->invoice->serviceConnection;
+
+        if ($connection === null) {
+            Log::channel('paymongo')->warning('Payment confirmation email skipped: invoice has no service connection', [
+                'invoice_id' => $this->invoice->id,
+                'invoice_number' => $this->invoice->invoice_number,
+            ]);
+
+            return;
+        }
+
+        $recipients = $connection->connectionLinks()
             ->where('status', 'active')
+            ->whereNull('unlinked_at')
             ->with('user:id,email')
             ->get()
             ->pluck('user.email')
@@ -64,6 +76,16 @@ class SendPaymentConfirmationEmail implements ShouldQueue
             'invoice_id' => $this->invoice->id,
             'invoice_number' => $this->invoice->invoice_number,
             'recipients' => $recipients,
+        ]);
+    }
+
+    public function failed(?Throwable $exception): void
+    {
+        Log::channel('paymongo')->error('Payment confirmation email failed permanently', [
+            'invoice_id' => $this->invoice->id,
+            'invoice_number' => $this->invoice->invoice_number,
+            'payment_id' => $this->payment->id,
+            'error' => $exception?->getMessage(),
         ]);
     }
 }

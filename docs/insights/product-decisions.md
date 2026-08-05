@@ -476,11 +476,11 @@ from our local dev origin.
 
 **Question asked (2026-08-05 hardening of Payments item 3):** when an invoice carries a stored
 PayMongo payment intent that has already succeeded but the invoice was never marked paid (the
-`payment.paid` webhook was missed, or is still in flight), what should `/pay` do — let the customer
+`payment.paid` webhook was missed, or is still in flight), what should `/pay` do ï¿½ let the customer
 pay again, or refuse?
 
 **Answer:** refuse. **If PayMongo says a payment succeeded, the customer's money has left their
-account** — our invoice record being stale does not change that. Letting them pay again would either
+account** ï¿½ our invoice record being stale does not change that. Letting them pay again would either
 fail at PayMongo (you cannot attach a new payment method to a `succeeded` intent) or, worse, charge
 the customer twice for one bill. `getOrCreatePaymentIntent` re-hydrates the stored intent by status:
 `succeeded` ? 409 with a "being confirmed, contact support if not credited" message; unknown/expired
@@ -489,19 +489,56 @@ the database" workaround is now a code path); `awaiting_payment_method`/`awaitin
 `processing` ? the customer just continues checkout. 5xx stays 5xx (nothing is mutated during an
 API outage).
 
-**But refusing forever with no escape hatch would strand real customers and real money** — that's
+**But refusing forever with no escape hatch would strand real customers and real money** ï¿½ that's
 what `php artisan paymongo:reconcile` is for. It is deliberately **read-only and never auto-credits**
 an invoice: marking an invoice paid IS an accounting action, and a nightly cron misunderstanding a
 transient status is the exact failure mode a billing system cannot afford. Reconcile's job is to
-*find and name* the discrepancies — an unpaid invoice whose intent succeeded ("CHARGED BUT NOT
+*find and name* the discrepancies ï¿½ an unpaid invoice whose intent succeeded ("CHARGED BUT NOT
 CREDITED") and a paid PayMongo payment with no local `Payment` row ("PAYMENT WITHOUT LOCAL RECORD",
-which also surfaces orphans from the "no invoice for intent" webhook path) — print them to the
+which also surfaces orphans from the "no invoice for intent" webhook path) ï¿½ print them to the
 console/`paymongo` log, exit non-zero, and let a human credit or refund against the PayMongo
 dashboard. Money-critical flows stay manual; automation stops at detection.
 
 **Design notes that fell out:** the "double-charge guard" (409) and the "never auto-credit" rule
-(reconcile) are two halves of the same decision — block the wrong action, surface the right one,
+(reconcile) are two halves of the same decision ï¿½ block the wrong action, surface the right one,
 keep the mutation human. PayMongo intents have no `failed`/`expired` terminal status worth branching
 on (a failed attempt returns the intent to `awaiting_payment_method`), so the only status that
 triggers the guard is `succeeded`. The reconcile window is filterable with `--days` (default 7) and
 paged via the payments API's `after` cursor.
+
+---
+
+## 17. Payment-confirmation email: shared To-header, at-least-once, and failure visibility
+
+**Question asked (2026-08-05 audit of Payments item 4):** the confirmation email goes to every
+valid email of users with an active link to the invoice's connection ï¿½ should each boarder get a
+private copy, or may the email show the whole recipient list?
+
+**Answer:** a **single message with all recipients in the `To` header**, sending separately per
+recipient if privacy ever matters. Laravel's `Mail::to($array)->send()` builds ONE message whose
+`To` header carries every address (`Mailable::buildRecipients`), so today the co-boarders visible to
+each other is simply how it ships. Rationale: (a) boarders sharing one bill already know each other,
+so the visual To-list costs nothing and avoids the false privacy promise of a fake per-recipient
+loop; (b) one message means the PDF renders once, not N times; (c) it keeps the delivery path one
+SMTP call to reason about. **Documented alternative:** if a future stakeholder objects to shared
+addresses, switch the job to loop-and-send per recipient (N renders, N sends) â€” the decision lives
+in the job, not the mailable.
+
+**At-least-once is accepted.** The job allows `tries=3` + backoff; if the transport accepts a
+message but the job still fails, the retry re-sends to everyone â€” a duplicate receipt, never a lost
+one. The money is unaffected either way: the payment row + invoice state are committed **before**
+the email job is even dispatched (`->afterCommit()`), so email failures can never roll money flows
+back. Duplicates for a receipt are acceptable; a *lost* receipt is not.
+
+**Permanent failures are loud, not silent.** When the job exhausts its retries, Laravel calls the
+job's `failed()` hook, which logs a clear `paymongo`-channel error with invoice, invoice_number, and
+payment id. Ops can therefore reconcile "payment recorded but no receipt delivered" from the log /
+`failed_jobs` table.
+
+**Testing gotcha worth remembering:** Laravel 13 has **no `array` log driver** (`LogManager` has no
+`createArrayDriver`; using `driver=array` throws "Driver not supported" and silently falls back to
+the emergency logger writing to `storage/logs/laravel.log`). The earlier "PAYMONGO_LOG_DRIVER=array"
+test setting therefore did *not* discard logs â€” it just moved them to laravel.log. Fixed by pointing
+the test suite at a throwaway path (`PAYMONGO_LOG_PATH=storage/logs/testing/paymongo.log`, under the
+`*.log` gitignore) so `php artisan test` never touches the real `paymongo.log`. Monolog 3 also dropped
+`ArrayHandler`; the in-memory test logger is `Monolog\Handler\TestHandler`.

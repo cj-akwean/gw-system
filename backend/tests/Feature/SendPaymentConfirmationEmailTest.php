@@ -9,7 +9,11 @@ use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Monolog\Handler\TestHandler;
+use Monolog\Logger;
+use RuntimeException;
 use Tests\TestCase;
 
 class SendPaymentConfirmationEmailTest extends TestCase
@@ -58,6 +62,7 @@ class SendPaymentConfirmationEmailTest extends TestCase
 
         $this->runJob($invoice, $payment);
 
+        Mail::assertSent(PaymentConfirmation::class, 1);
         Mail::assertSent(PaymentConfirmation::class, fn (PaymentConfirmation $mail) => $mail->hasTo('renter@example.com'));
         Mail::assertSent(PaymentConfirmation::class, fn (PaymentConfirmation $mail) => $mail->hasTo('boarder@example.com'));
     }
@@ -151,5 +156,67 @@ class SendPaymentConfirmationEmailTest extends TestCase
 
         $this->assertStringContainsString('GW-2026-67890', $html);
         $this->assertStringContainsString('40.00', $html);
+    }
+
+    public function test_active_link_with_unlinked_at_set_is_excluded(): void
+    {
+        Mail::fake();
+
+        $invoice = Invoice::factory()->create(['status' => 'paid']);
+        $this->linkUser($invoice, 'current@example.com');
+
+        $odd = User::factory()->create(['email' => 'odd@example.com']);
+        ConnectionLink::factory()->create([
+            'user_id' => $odd->id,
+            'service_connection_id' => $invoice->service_connection_id,
+            'status' => 'active',
+            'linked_at' => now(),
+            'unlinked_at' => now()->subDay(),
+        ]);
+        $payment = $this->paymentFor($invoice);
+
+        $this->runJob($invoice, $payment);
+
+        Mail::assertSent(PaymentConfirmation::class, fn (PaymentConfirmation $mail) => $mail->hasTo('current@example.com'));
+        Mail::assertNotSent(PaymentConfirmation::class, fn (PaymentConfirmation $mail) => $mail->hasTo('odd@example.com'));
+    }
+
+    public function test_invoice_without_a_service_connection_does_not_crash(): void
+    {
+        Mail::fake();
+
+        $invoice = Invoice::factory()->create(['status' => 'paid']);
+        $invoice->service_connection_id = null;
+        $payment = $this->paymentFor($invoice);
+
+        $this->runJob($invoice, $payment);
+
+        Mail::assertNothingSent();
+    }
+
+    public function test_failed_job_logs_to_the_paymongo_channel(): void
+    {
+        config()->set('logging.channels.paymongo', [
+            'driver' => 'monolog',
+            'handler' => TestHandler::class,
+        ]);
+
+        $invoice = Invoice::factory()->create(['status' => 'paid']);
+        $payment = $this->paymentFor($invoice);
+
+        (new SendPaymentConfirmationEmail($invoice, $payment))->failed(new RuntimeException('SMTP unreachable'));
+
+        /** @var \Illuminate\Log\Logger $logger */
+        $logger = Log::channel('paymongo');
+        /** @var Logger $monolog */
+        $monolog = $logger->getLogger();
+        /** @var TestHandler $handler */
+        $handler = $monolog->getHandlers()[0];
+        $records = $handler->getRecords();
+        $last = end($records);
+
+        $this->assertSame(Logger::ERROR, $last['level']);
+        $this->assertStringContainsString('failed permanently', $last['message']);
+        $this->assertSame($payment->id, $last['context']['payment_id']);
     }
 }
