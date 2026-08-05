@@ -50,4 +50,4 @@ Admin Panel phase: dashboard with key metrics (customers, unpaid invoices, reven
 unchecked Admin Panel item; Phase 2 notifications hub after that.
 
 ## Git
-Not committed — awaiting explicit user approval (AGENTS.md rule 8). Commit hash to be backfilled here.
+Committed as `88081bd` — "feat(notifications): admin bell alert on failed payment receipts + paymongo:send-receipt resend" (10 files). Manual verification of the bell alert, resend happy path, and both failure paths passed on dev before committing (AGENTS.md rule 8: explicit user approval).
