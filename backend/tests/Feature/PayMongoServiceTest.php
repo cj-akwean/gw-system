@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Exceptions\InvoiceNotPayableException;
+use App\Exceptions\PaymentAlreadyCompletedException;
 use App\Models\Invoice;
 use App\Services\PayMongoService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -262,6 +263,213 @@ class PayMongoServiceTest extends TestCase
         $this->expectException(InvoiceNotPayableException::class);
 
         app(PayMongoService::class)->getOrCreatePaymentIntent($invoice);
+    }
+
+    public function test_get_or_create_blocks_new_payment_when_stored_intent_already_succeeded(): void
+    {
+        $invoice = $this->makeUnpaidInvoice();
+        $invoice->update(['paymongo_payment_intent_id' => 'pi_test_succeeded']);
+
+        Http::fake([
+            'api.paymongo.com/v1/payment_intents/pi_test_succeeded' => Http::response([
+                'data' => [
+                    'id' => 'pi_test_succeeded',
+                    'attributes' => [
+                        'status' => 'succeeded',
+                        'client_key' => 'pi_test_succeeded_client_key',
+                        'metadata' => ['invoice_id' => (string) $invoice->id],
+                    ],
+                ],
+            ]),
+        ]);
+
+        $this->expectException(PaymentAlreadyCompletedException::class);
+
+        app(PayMongoService::class)->getOrCreatePaymentIntent($invoice);
+
+        $this->assertSame('pi_test_succeeded', $invoice->fresh()->paymongo_payment_intent_id);
+        Http::assertNotSent(fn (Request $request) => $request->method() === 'POST');
+    }
+
+    public function test_get_or_create_clears_stale_stored_intent_and_creates_fresh(): void
+    {
+        $invoice = $this->makeUnpaidInvoice();
+        $invoice->update(['paymongo_payment_intent_id' => 'pi_test_stale']);
+
+        Http::fake([
+            'api.paymongo.com/v1/payment_intents/pi_test_stale' => Http::response(['errors' => []], 404),
+            'api.paymongo.com/v1/payment_intents' => Http::response([
+                'data' => [
+                    'id' => 'pi_test_fresh',
+                    'attributes' => ['client_key' => 'pi_test_fresh_client_key'],
+                ],
+            ]),
+        ]);
+
+        $result = app(PayMongoService::class)->getOrCreatePaymentIntent($invoice);
+
+        $this->assertSame('pi_test_fresh', $result['intent_id']);
+        $this->assertSame('pi_test_fresh', $invoice->fresh()->paymongo_payment_intent_id);
+        Http::assertSent(fn (Request $request) => $request->method() === 'POST'
+            && $request->url() === PayMongoService::API_BASE.'/payment_intents');
+    }
+
+    public function test_get_or_create_clears_stored_intent_with_ownership_mismatch_and_creates_fresh(): void
+    {
+        $invoice = $this->makeUnpaidInvoice();
+        $other = $this->makeUnpaidInvoice();
+        $invoice->update(['paymongo_payment_intent_id' => 'pi_test_mismatch_2']);
+
+        Http::fake([
+            'api.paymongo.com/v1/payment_intents/pi_test_mismatch_2' => Http::response([
+                'data' => [
+                    'id' => 'pi_test_mismatch_2',
+                    'attributes' => [
+                        'status' => 'awaiting_payment_method',
+                        'client_key' => 'pi_test_mismatch_2_client_key',
+                        'metadata' => ['invoice_id' => (string) $other->id],
+                    ],
+                ],
+            ]),
+            'api.paymongo.com/v1/payment_intents' => Http::response([
+                'data' => [
+                    'id' => 'pi_test_fresh_2',
+                    'attributes' => ['client_key' => 'pi_test_fresh_2_client_key'],
+                ],
+            ]),
+        ]);
+
+        $result = app(PayMongoService::class)->getOrCreatePaymentIntent($invoice);
+
+        $this->assertSame('pi_test_fresh_2', $result['intent_id']);
+        $this->assertSame('pi_test_fresh_2', $invoice->fresh()->paymongo_payment_intent_id);
+    }
+
+    public function test_get_or_create_keeps_stored_intent_and_throws_on_5xx_retrieval(): void
+    {
+        $invoice = $this->makeUnpaidInvoice();
+        $invoice->update(['paymongo_payment_intent_id' => 'pi_test_unreachable']);
+
+        Http::fake([
+            'api.paymongo.com/v1/payment_intents/pi_test_unreachable' => Http::response(['errors' => []], 500),
+        ]);
+
+        $this->expectException(RuntimeException::class);
+
+        app(PayMongoService::class)->getOrCreatePaymentIntent($invoice);
+
+        $this->assertSame('pi_test_unreachable', $invoice->fresh()->paymongo_payment_intent_id);
+        Http::assertNotSent(fn (Request $request) => $request->method() === 'POST');
+    }
+
+    public function test_get_payment_intent_status_returns_status(): void
+    {
+        Http::fake([
+            'api.paymongo.com/v1/payment_intents/pi_test_status' => Http::response([
+                'data' => [
+                    'id' => 'pi_test_status',
+                    'attributes' => ['status' => 'processing'],
+                ],
+            ]),
+        ]);
+
+        $this->assertSame('processing', app(PayMongoService::class)->getPaymentIntentStatus('pi_test_status'));
+    }
+
+    public function test_get_payment_intent_status_returns_null_when_intent_is_unknown(): void
+    {
+        Http::fake([
+            'api.paymongo.com/v1/payment_intents/pi_test_gone' => Http::response(['errors' => []], 404),
+        ]);
+
+        $this->assertNull(app(PayMongoService::class)->getPaymentIntentStatus('pi_test_gone'));
+    }
+
+    public function test_get_payment_intent_status_throws_on_server_error(): void
+    {
+        Http::fake([
+            'api.paymongo.com/v1/payment_intents/pi_test_down' => Http::response(['errors' => []], 500),
+        ]);
+
+        $this->expectException(RuntimeException::class);
+
+        app(PayMongoService::class)->getPaymentIntentStatus('pi_test_down');
+    }
+
+    public function test_list_paid_payments_fetches_all_pages(): void
+    {
+        $pageOne = collect(range(0, 49))->map(fn (int $i) => [
+            'id' => 'pay_page1_'.$i,
+            'type' => 'payment',
+            'attributes' => [
+                'amount' => 4000,
+                'currency' => 'PHP',
+                'status' => 'paid',
+                'payment_intent_id' => 'pi_page1_'.$i,
+                'livemode' => false,
+            ],
+        ])->all();
+
+        Http::fake([
+            'api.paymongo.com/v1/payments*' => Http::sequence()
+                ->push(['data' => $pageOne])
+                ->push(['data' => [
+                    [
+                        'id' => 'pay_page2_0',
+                        'type' => 'payment',
+                        'attributes' => [
+                            'amount' => 4000,
+                            'currency' => 'PHP',
+                            'status' => 'paid',
+                            'payment_intent_id' => 'pi_page2_0',
+                            'livemode' => false,
+                        ],
+                    ],
+                ]]),
+        ]);
+
+        $payments = app(PayMongoService::class)->listPaidPayments(now()->subDays(7)->timestamp, now()->timestamp);
+
+        $this->assertCount(51, $payments);
+        $this->assertSame('pay_page1_0', $payments[0]['id']);
+        $this->assertSame('pay_page2_0', $payments[50]['id']);
+
+        Http::assertSent(function (Request $request): bool {
+            if (! str_contains($request->url(), '/v1/payments')) {
+                return false;
+            }
+
+            return $request->data()['status'] === 'paid'
+                && (int) $request->data()['limit'] === 50
+                && isset($request->data()['created_at.gte'], $request->data()['created_at.lt']);
+        });
+
+        Http::assertSent(fn (Request $request) => str_contains($request->url(), '/v1/payments')
+            && ($request->data()['after'] ?? null) === 'pay_page1_49');
+    }
+
+    public function test_list_paid_payments_throws_on_failed_response(): void
+    {
+        Http::fake([
+            'api.paymongo.com/v1/payments*' => Http::response(['errors' => []], 500),
+        ]);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('PayMongo list payments failed');
+
+        app(PayMongoService::class)->listPaidPayments(now()->subDays(1)->timestamp, now()->timestamp);
+    }
+
+    public function test_list_paid_payments_throws_on_malformed_response(): void
+    {
+        Http::fake([
+            'api.paymongo.com/v1/payments*' => Http::response(['errors' => []]),
+        ]);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('list payments response malformed');
+
+        app(PayMongoService::class)->listPaidPayments(now()->subDays(1)->timestamp, now()->timestamp);
     }
 
     public function test_create_payment_intent_rejects_unsupported_payment_methods(): void

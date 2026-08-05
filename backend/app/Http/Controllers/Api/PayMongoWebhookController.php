@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ProcessPayMongoWebhook;
 use App\Services\PayMongoService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -71,12 +72,15 @@ class PayMongoWebhookController extends Controller
             return $this->acknowledge();
         }
 
-        // Known event type — acknowledged and queued for processing in the
-        // next Payments item (invoice marked paid by ProcessPayMongoWebhook).
+        // Known event type — queue it. The job dedupes by event id, marks the
+        // invoice paid on payment.paid, and logs-only on the other types. The
+        // ack is still returned immediately (well within the 30s window).
         Log::channel('paymongo')->info('PayMongo webhook acknowledged: known event type', [
             'event_id' => $payload['data']['id'] ?? null,
             'event_type' => $type,
         ]);
+
+        ProcessPayMongoWebhook::dispatch($payload);
 
         return $this->acknowledge();
     }

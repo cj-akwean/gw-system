@@ -187,6 +187,34 @@ class InvoicePaymentEndpointTest extends TestCase
         Http::assertNotSent(fn (Request $request) => $request->method() === 'POST');
     }
 
+    public function test_pay_blocks_when_stored_intent_already_succeeded(): void
+    {
+        [$user, $connection] = $this->makeLinkedUser();
+        $invoice = $this->makeInvoice($connection, ['paymongo_payment_intent_id' => 'pi_test_succeeded_endpoint']);
+
+        Http::fake([
+            'api.paymongo.com/v1/payment_intents/pi_test_succeeded_endpoint' => Http::response([
+                'data' => [
+                    'id' => 'pi_test_succeeded_endpoint',
+                    'attributes' => [
+                        'status' => 'succeeded',
+                        'client_key' => 'pi_test_succeeded_endpoint_client_key',
+                        'metadata' => ['invoice_id' => (string) $invoice->id],
+                    ],
+                ],
+            ]),
+        ]);
+
+        Sanctum::actingAs($user);
+
+        $this->postJson("/api/invoices/{$invoice->id}/pay")
+            ->assertStatus(409)
+            ->assertJson(['message' => 'A payment for this invoice already went through and is being confirmed. If it is not credited shortly, please contact support.']);
+
+        $this->assertSame('unpaid', $invoice->fresh()->status);
+        Http::assertNotSent(fn (Request $request) => $request->method() === 'POST');
+    }
+
     public function test_pay_returns_502_when_paymongo_is_unavailable(): void
     {
         [$user, $connection] = $this->makeLinkedUser();

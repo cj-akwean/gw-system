@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\ProcessPayMongoWebhook;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
 
@@ -124,6 +126,21 @@ class PayMongoWebhookTest extends TestCase
         $this->postRaw($rawBody, $this->signatureFor($rawBody))
             ->assertOk()
             ->assertJson(['received' => true]);
+    }
+
+    public function test_webhook_dispatches_process_paymongo_webhook_for_a_known_event(): void
+    {
+        Queue::fake();
+
+        $rawBody = json_encode($this->paymentPaidPayload());
+
+        $this->postRaw($rawBody, $this->signatureFor($rawBody))
+            ->assertOk();
+
+        Queue::assertPushed(ProcessPayMongoWebhook::class, function (ProcessPayMongoWebhook $job): bool {
+            return $job->payload['data']['id'] === 'evt_webhook_test_1'
+                && $job->payload['data']['attributes']['type'] === 'payment.paid';
+        });
     }
 
     public function test_webhook_acknowledges_malformed_json_with_a_valid_signature(): void

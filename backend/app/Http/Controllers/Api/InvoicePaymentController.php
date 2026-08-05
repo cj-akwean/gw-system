@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Exceptions\InvoiceNotPayableException;
+use App\Exceptions\PaymentAlreadyCompletedException;
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
 use App\Services\PayMongoService;
@@ -36,6 +37,10 @@ class InvoicePaymentController extends Controller
             $intent = $payMongo->getOrCreatePaymentIntent($invoice);
         } catch (InvoiceNotPayableException) {
             return response()->json(['message' => 'Invoice is not payable.'], 409);
+        } catch (PaymentAlreadyCompletedException) {
+            return response()->json([
+                'message' => 'A payment for this invoice already went through and is being confirmed. If it is not credited shortly, please contact support.',
+            ], 409);
         } catch (ConnectionException|RuntimeException $e) {
             report($e);
 

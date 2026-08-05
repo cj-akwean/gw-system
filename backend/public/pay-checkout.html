@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>GW-System card test checkout</title>
+</head>
+<body style="font-family:sans-serif; padding:40px; max-width:520px;">
+  <h2>GW-System test checkout</h2>
+  <p>client_key: <code id="ck"></code></p>
+
+  <label>Card number<br><input id="num" value="4343434343434345" style="width:100%;"></label><br><br>
+  <label>Exp MM<br><input id="expm" value="12" size="3"></label>
+  <label>&nbsp; YY<br><input id="expy" value="2030" size="4"></label>
+  <label>&nbsp; CVC<br><input id="cvc" value="123" size="4"></label><br><br>
+  <button id="pay" style="padding:12px 28px; font-size:16px;">Pay</button>
+  <pre id="out" style="background:#f4f4f4; padding:12px; margin-top:16px; white-space:pre-wrap;"></pre>
+
+  <script>
+    var PUBLIC_KEY = 'pk_test_PASTE_HERE';     // from backend\.env PAYMONGO_PUBLIC_KEY
+    var CLIENT_KEY = 'pi_xxx_client_PASTE_HERE'; // from step 3 response
+    var INTENT_ID  = 'pi_PASTE_HERE';            // from step 3 response
+    var RETURN_URL = 'http://127.0.0.1:8000/pay-checkout.html';
+
+    document.getElementById('ck').textContent = CLIENT_KEY;
+
+    function authHeader() {
+      return 'Basic ' + btoa(PUBLIC_KEY + ':');
+    }
+
+    document.getElementById('pay').onclick = async function () {
+      var out = document.getElementById('out');
+      out.textContent = 'Creating payment method...';
+
+      var methodRes = await fetch('https://api.paymongo.com/v1/payment_methods', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': authHeader() },
+        body: JSON.stringify({
+          data: { attributes: {
+            type: 'card',
+            details: {
+              card_number: document.getElementById('num').value,
+              exp_month: parseInt(document.getElementById('expm').value, 10),
+              exp_year:  parseInt(document.getElementById('expy').value, 10),
+              cvc: document.getElementById('cvc').value
+            },
+            billing: { name: 'Test Customer', email: 'test@example.com', phone: '09171234567' }
+          } }
+        })
+      });
+      var method = await methodRes.json();
+
+      if (method.errors) {
+        out.textContent = 'PAYMENT METHOD ERROR\n' + JSON.stringify(method.errors, null, 2);
+        return;
+      }
+      var pmId = method.data.id;
+
+      out.textContent = 'Attaching payment method...';
+      var attRes = await fetch('https://api.paymongo.com/v1/payment_intents/' + INTENT_ID + '/attach', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': authHeader() },
+        body: JSON.stringify({
+          data: { attributes: { payment_method: pmId, client_key: CLIENT_KEY, return_url: RETURN_URL } }
+        })
+      });
+      var intent = await attRes.json();
+
+      var attrs = (intent.data || {}).attributes || {};
+      out.textContent = 'INTENT STATUS: ' + (attrs.status || '?') + '\n\n' + JSON.stringify(intent, null, 2);
+
+      if (attrs.status === 'awaiting_next_action' && attrs.next_action && attrs.next_action.redirect) {
+        window.location.href = attrs.next_action.redirect.url;
+      }
+    };
+  </script>
+</body>
+</html>

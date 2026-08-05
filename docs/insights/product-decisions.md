@@ -438,3 +438,70 @@ documented + queued for the office, NOT scheduled into the current billing phase
 **Ack semantics discovered from the docs:** PayMongo retries up to 12 times (exponential backoff) on any non-2xx or timeout. So the route's contract is: verify — any failure to *verify* is a 401 (PayMongo never legitimately sends that); anything that *verifies* is acknowledged with 200 `{received:true}` even if we skip it (malformed JSON, livemode mismatch, unknown event type). Never return an error for an unrecognized event — it would pile up the retry queue.
 
 **Addendum 2 — the `t`/`te`/`li` scheme is real after all (the "plain HMAC" conclusion above was wrong, found 2026-08-04):** the paragraph above misreads PayMongo's docs. The *authoritative* format lives on docs.paymongo.com/docs/developer-tools-webhook-setup-management, which shows the header as `t=1496734173,te=<hex>,li=<hex>` and spells out the verification: sign the string `"<t>." . $rawBody` with HMAC-SHA256 (hex) using the endpoint secret, then compare against `te` for test-mode events or `li` for live-mode events. So PayMongo is Stripe-style after all — and the two prior implementations (base64 of the body, then hex of the body alone) failed every real delivery for the *same* root cause: both missed the `<t>.` prefix and the `te`/`li` selection, and the unit tests were self-consistent (the helper signed in the same wrong format). The `.env` secret (`whsk_...`, no `whsec_` prefix) matched the dashboard value byte-for-byte and was correct from the start. **Lessons:** (a) for signature schemes, find the doc page that literally *shows the header value* before writing the verifier — overview/key-concepts pages omit it; (b) add regression tests that sign with a *different* scheme (body-only, base64, wrong timestamp) to prove the verifier is strict, not just self-consistent; (c) verify the secret against the dashboard display directly instead of hypothesizing about prefixes. Timestamp freshness (replay window) remains unimplemented — optional per docs, deferred with the dedupe table.
+
+**§17 — Store timestamps in Philippine time, not UTC (found 2026-08-05 during manual E2E test):**
+every log line, `now()`, and stored `paid_at`/`processed_at` read 8 hours behind local time because
+Laravel defaults `config('app.timezone')` to UTC. **Question asked:** keep engineering-standard UTC
+storage and convert at the display layer, or make the app Philippine-time end to end? **Answer:**
+Philippine time everywhere — this is a single-country utility, PH has no DST so there are no
+daylight-savings surprises, the frontend renders stored datetimes directly (no per-field conversion
+to sneak timezone bugs past us), and "the timestamp in the log/dashboard IS the timestamp in Manila"
+removes a whole class of off-by-8 confusion for a non-engineering operator. Implementation:
+`APP_TIMEZONE=Asia/Manila` (config/app.php now env-driven) + `phpunit.xml` for test parity, and
+`PaymentService::markPaidFromWebhook` passes `config('app.timezone')` explicitly to
+`Carbon::createFromTimestamp()` so we don't depend on Carbon's default-tz behavior. **Explicitly NOT
+converting existing rows** — the dev DB gets wiped before production anyway. Unchanged invariant:
+PayMongo event timestamps are unix (absolute instants); switching tz only changes wall-clock
+rendering (02:10 UTC → 10:10 PH), never the instant — money reconciliation is unaffected.
+
+**§18 — PayMongo removed the JS one-line popup (`PayMongo.create`), found 2026-08-05 the hard way:**
+the item-2 manual test completed a card payment via a tiny page calling `PayMongo.create(clientKey).open()`
+loaded from `https://js.paymongo.com/v1/paymongo.js`. During item-3's manual E2E round the same page
+broke with `PayMongo.create is not a function` while its sibling `PayMongo` global existed. Grepping
+the live CDN bundle showed the top-level API is now `createPaymentIntent`, `createPaymentMethod`,
+`getPaymentIntent`, `elements`, and `redirectToCheckout` — the popup constructor is gone. The current
+docs (quick-start, updated 2026-05-07) describe a raw-`fetch` flow instead: create the Payment Method
+client-side with the **public key**, attach it with `client_key` + `return_url`, then handle
+`awaiting_next_action` (3DS) redirect or `succeeded`. **Decision:** the manual-test tool
+(`backend/public/pay-checkout.html`) and, by extension, the future customer-facing card form will use
+the fetch flow — never the removed popup API. **Lessons:** for a browser SDK, don't trust memory or a
+tutorial snippet — check the *live* bundle for the method name, and re-verify when items you built
+months ago start failing in the browser; CDNs change behind stable-looking URLs. CORS on
+`api.paymongo.com` is open (`Access-Control-Allow-Origin: *`, verified), so the browser flow works
+from our local dev origin.
+
+---
+
+## 16. Why /pay blocks an already-succeeded payment, and why paymongo:reconcile never auto-credits
+
+**Question asked (2026-08-05 hardening of Payments item 3):** when an invoice carries a stored
+PayMongo payment intent that has already succeeded but the invoice was never marked paid (the
+`payment.paid` webhook was missed, or is still in flight), what should `/pay` do � let the customer
+pay again, or refuse?
+
+**Answer:** refuse. **If PayMongo says a payment succeeded, the customer's money has left their
+account** � our invoice record being stale does not change that. Letting them pay again would either
+fail at PayMongo (you cannot attach a new payment method to a `succeeded` intent) or, worse, charge
+the customer twice for one bill. `getOrCreatePaymentIntent` re-hydrates the stored intent by status:
+`succeeded` ? 409 with a "being confirmed, contact support if not credited" message; unknown/expired
+(4xx) ? silently replaces the stored id with a fresh intent (the old "reset the intent id by hand in
+the database" workaround is now a code path); `awaiting_payment_method`/`awaiting_next_action`/
+`processing` ? the customer just continues checkout. 5xx stays 5xx (nothing is mutated during an
+API outage).
+
+**But refusing forever with no escape hatch would strand real customers and real money** � that's
+what `php artisan paymongo:reconcile` is for. It is deliberately **read-only and never auto-credits**
+an invoice: marking an invoice paid IS an accounting action, and a nightly cron misunderstanding a
+transient status is the exact failure mode a billing system cannot afford. Reconcile's job is to
+*find and name* the discrepancies � an unpaid invoice whose intent succeeded ("CHARGED BUT NOT
+CREDITED") and a paid PayMongo payment with no local `Payment` row ("PAYMENT WITHOUT LOCAL RECORD",
+which also surfaces orphans from the "no invoice for intent" webhook path) � print them to the
+console/`paymongo` log, exit non-zero, and let a human credit or refund against the PayMongo
+dashboard. Money-critical flows stay manual; automation stops at detection.
+
+**Design notes that fell out:** the "double-charge guard" (409) and the "never auto-credit" rule
+(reconcile) are two halves of the same decision � block the wrong action, surface the right one,
+keep the mutation human. PayMongo intents have no `failed`/`expired` terminal status worth branching
+on (a failed attempt returns the intent to `awaiting_payment_method`), so the only status that
+triggers the guard is `succeeded`. The reconcile window is filterable with `--days` (default 7) and
+paged via the payments API's `after` cursor.
