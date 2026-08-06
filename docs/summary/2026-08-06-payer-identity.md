@@ -116,3 +116,56 @@ via vendor `CanBeToggled.php:12` / `HasColumnManager.php:185` and psql inspectio
 - Next unchecked item unchanged: **Billing management views** (`InvoiceResource` + "Run
   billing" page).
 
+---
+
+# Addendum 2 — one-click "Resend receipt" button + the stale-worker incident (same day)
+
+## Incident: "Undefined variable $payer" on a live transaction (invoice 6)
+- Symptom: invoice GW-2026-00006 (payment #6) paid fine, but `SendPaymentConfirmationEmail`
+  failed all 3 tries (16:11:15 / 16:11:27 / 16:11:57, backoff 10/30/60) → admin DB
+  notification "Payment confirmation email failed"; no email ever sent.
+- Root cause: the long-running `queue:work` daemon predated the bugfix batch. PHP workers
+  hold class definitions in memory forever, so the worker ran the OLD `PdfService`/
+  `PaymentConfirmation` while Blade recompiled the NEW `invoice.blade.php` (payer row) →
+  "Undefined variable $payer". On-disk code and the test suite were both correct (tests run
+  in fresh PHP processes — that's why 265/265 stayed green).
+- Recovery path the user hit: bare `php artisan queue:retry` says "No retryable jobs found"
+  even when `failed_jobs` is non-empty (it needs `all` or a job id); the notification's
+  suggestion `php artisan paymongo:send-receipt 6` is the simple synchronous recovery after
+  restarting the worker.
+- Ops rule (captured in product-decisions §27): **restart `queue:work` after any code
+  change**; when a queued job fails in a way tests can't reproduce, suspect the worker first.
+
+## Feature: the failure notification now has a button, not a command string
+- `SendPaymentConfirmationEmail::failed()`: body drops the "php artisan …" instruction;
+  adds `Action::make('resendReceipt')` (button, primary, url →
+  `admin.payments.resend-receipt`). Filament v5 DB notifications persist + restore action
+  url/name/label and render them as clickable links in the bell modal (verified in vendor:
+  `Notification::toArray/fromDatabase` + `toEmbeddedHtml`).
+- New route `GET /admin/payments/{payment}/resend-receipt` (`routes/web.php`: `web` +
+  `auth:admin`, prefix `admin`, name `admin.payments.resend-receipt`) →
+  `App\Http\Controllers\Admin\ResendReceiptController` (invokable): synchronous `handle()`
+  (mirrors the CLI — no worker dependency), success/warning/danger Filament toast,
+  redirect to dashboard. `paymongo:send-receipt` kept as CLI fallback.
+- Trade-offs (user-approved): GET link over POST (Filament's postToUrl form has no CSRF
+  token; resend is idempotent); synchronous over queued (worker may be the thing that broke).
+- Tests: `tests/Feature/ResendReceiptControllerTest.php` — guest → redirect; non-admin →
+  redirect; admin → `Mail::fake` asserts receipt to renter@example.com + redirect to
+  dashboard; no linked recipients → nothing sent; `failed()` notification data carries
+  `actions[0]` = `resendReceipt` + exact route URL and body contains no "php artisan".
+- Docs: product-decisions §27 (actionable-notification rule + stale-worker lesson +
+  queue:retry gotcha); ARCHITECTURE.md line 212 failure clause + line 215 PDF note.
+
+## Results
+- Full suite: **270/270 pass, 804 assertions** (was 265/791); `php -l` + Pint clean on all
+  4 new/changed files. Committed as 0c5e889 (payer+bugfixes) + this commit (button+docs).
+
+## Known gaps / next step
+- The *already-stored* invoice-6 failure notification has no button (its data predates the
+  change) — dismiss it or resend via `paymongo:send-receipt 6`; new failures get the button.
+- Manual check: force a failed receipt (e.g. bad SMTP host) → bell notification shows
+  "Resend receipt" → click → toast + Mailtrap email.
+- Next unchecked item unchanged: **Billing management views** (`InvoiceResource` + "Run
+  billing" page).
+
+

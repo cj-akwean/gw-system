@@ -6,6 +6,7 @@ use App\Mail\PaymentConfirmation;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\User;
+use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -117,9 +118,15 @@ class SendPaymentConfirmationEmail implements ShouldQueue
             ->title('Payment confirmation email failed')
             ->body(
                 'Invoice '.$this->invoice->invoice_number
-                .' (payment #'.$this->payment->id.') never reached the customer. '
-                .'Fix the mailer, then resend with: php artisan paymongo:send-receipt '.$this->invoice->id
+                .' (payment #'.$this->payment->id.') never reached the customer.'
             )
+            ->actions([
+                Action::make('resendReceipt')
+                    ->label('Resend receipt')
+                    ->button()
+                    ->color('primary')
+                    ->url(route('admin.payments.resend-receipt', $this->payment)),
+            ])
             ->sendToDatabase($admins);
     }
 }

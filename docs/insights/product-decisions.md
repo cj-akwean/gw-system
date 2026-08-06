@@ -807,3 +807,19 @@ fakes with only account/meter/name/address/barangay/status/connection_date).
 **Deferred / noted:** logging which *portal user* (as opposed to channel payer) initiated a payment
 is intentionally not built here â€” the billing object covers the proofing need without a webhook â†’
 intent â†’ user join. If ever required, the intent-creation endpoint is the place to record it.
+
+## 27. Admin failure notifications must be actionable — buttons, not command strings (2026-08-06, built same day)
+
+**Question asked:** the admin bell notification for a failed payment-confirmation email told the operator to "Fix the mailer, then resend with: php artisan paymongo:send-receipt 6". The user: "how is a normal user still needing to run a command like that — it should be a button right?"
+
+**Answer + reasoning (decided with the user 2026-08-06; built same day):**
+
+- Filament database notifications support actions: Notification::make()->actions([...]) serializes each action (name/label/color/url/...) into the notification's data, Notification::fromDatabase() restores them, and the bell modal renders them as a real button/link. So an admin-facing failure can carry a one-click recovery with zero vendor changes.
+- The button targets an admin-guarded route (GET /admin/payments/{payment}/resend-receipt, `web` + `auth:admin` — provider `admins` = User where is_admin, the same session as the panel), which runs the resend synchronously (same code path as the CLI) and flashes a Filament toast (success names the recipients; danger shows the error), then redirects to the dashboard.
+- Why synchronous rather than queued: the very failure being recovered from is often a dead/stale queue worker — queueing the resend would reuse the same failure path. A request-scoped send needs no worker and gives the operator immediate feedback.
+- Why a plain GET link rather than POST: Filament notification url actions render as links end-to-end in this version; postToUrl forms carry no CSRF token (would 419 with the panel's PreventRequestForgery). Resend is idempotent (worst case: a duplicate email), so a GET link is acceptable for an explicitly-clicked, admin-only action.
+- Rule going forward: **any admin-facing failure notification must offer an in-app recovery action, never a CLI instruction.** CLIs stay as a fallback for automation, not the operator's primary path.
+
+**Ops lessons from the same incident (2026-08-06):**
+- A long-running `php artisan queue:work` daemon never reloads changed classes. After the payer-row PDF change, the still-running worker used the old PdfService/PaymentConfirmation in memory while Blade recompiled the new view fresh ? "Undefined variable " (failed_jobs, 3 tries) even though on-disk code and the whole test suite were correct (tests run in fresh PHP processes). Rule: restart the worker after any code change; when a queued job fails in a way tests can't reproduce, suspect the worker first.
+- `queue:retry` with no argument prints "No retryable jobs found" even when failed_jobs is non-empty — it needs `all` or a concrete job id. For a single failed receipt, `paymongo:send-receipt {invoice}` (synchronous) is the simplest recovery.
