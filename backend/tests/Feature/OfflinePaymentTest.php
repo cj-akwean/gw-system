@@ -8,7 +8,10 @@ use App\Models\Payment;
 use App\Models\User;
 use App\Services\PaymentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
+use Monolog\Handler\TestHandler;
+use Monolog\Logger;
 use Tests\TestCase;
 
 class OfflinePaymentTest extends TestCase
@@ -169,6 +172,111 @@ class OfflinePaymentTest extends TestCase
 
         $this->assertSame('unpaid', $invoice->fresh()->status);
         $this->assertDatabaseCount('payments', 0);
+    }
+
+    public function test_same_day_payment_with_a_time_component_is_accepted(): void
+    {
+        $invoice = $this->payableInvoice();
+        $paidAt = now()->format('Y-m-d H:i:s');
+
+        $payment = $this->service->recordOfflinePayment($invoice->id, 456, paidAt: $paidAt);
+
+        $this->assertSame('paid', $invoice->fresh()->status);
+        $this->assertSame(now()->toDateString(), $payment->paid_at->toDateString());
+    }
+
+    public function test_invalid_payment_date_string_is_rejected_cleanly(): void
+    {
+        $invoice = $this->payableInvoice();
+
+        try {
+            $this->service->recordOfflinePayment($invoice->id, 456, paidAt: 'not-a-date');
+            $this->fail('Expected InvalidArgumentException');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('not a valid date', $e->getMessage());
+        }
+
+        $this->assertSame('unpaid', $invoice->fresh()->status);
+        $this->assertDatabaseCount('payments', 0);
+    }
+
+    public function test_reference_longer_than_100_chars_is_rejected(): void
+    {
+        $invoice = $this->payableInvoice();
+        $longReference = str_repeat('A', 101);
+
+        try {
+            $this->service->recordOfflinePayment($invoice->id, 456, reference: $longReference);
+            $this->fail('Expected InvalidArgumentException');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('100 characters or fewer', $e->getMessage());
+        }
+
+        $this->assertSame('unpaid', $invoice->fresh()->status);
+        $this->assertDatabaseCount('payments', 0);
+    }
+
+    public function test_reference_of_exactly_100_chars_is_accepted(): void
+    {
+        $invoice = $this->payableInvoice();
+
+        $payment = $this->service->recordOfflinePayment($invoice->id, 456, reference: str_repeat('A', 100));
+
+        $this->assertSame(str_repeat('A', 100), $payment->reference);
+        $this->assertSame('paid', $invoice->fresh()->status);
+    }
+
+    public function test_exactly_one_peso_under_total_is_rejected(): void
+    {
+        $invoice = $this->payableInvoice(total: 500.00);
+
+        try {
+            $this->service->recordOfflinePayment($invoice->id, 499.00);
+            $this->fail('Expected InvalidArgumentException');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('within ₱1.00', $e->getMessage());
+        }
+
+        $this->assertSame('unpaid', $invoice->fresh()->status);
+    }
+
+    public function test_exactly_one_peso_over_total_is_rejected(): void
+    {
+        $invoice = $this->payableInvoice(total: 500.00);
+
+        try {
+            $this->service->recordOfflinePayment($invoice->id, 501.00);
+            $this->fail('Expected InvalidArgumentException');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('within ₱1.00', $e->getMessage());
+        }
+
+        $this->assertSame('unpaid', $invoice->fresh()->status);
+    }
+
+    public function test_offline_payment_with_stored_paymongo_intent_logs_double_collection_warning(): void
+    {
+        config()->set('logging.channels.paymongo', [
+            'driver' => 'monolog',
+            'handler' => TestHandler::class,
+        ]);
+
+        $invoice = $this->payableInvoice();
+        $invoice->update(['paymongo_payment_intent_id' => 'pi_existing_intent']);
+
+        $this->service->recordOfflinePayment($invoice->id, 456);
+
+        /** @var TestHandler $handler */
+        $handler = Log::channel('paymongo')->getLogger()->getHandlers()[0];
+        $records = $handler->getRecords();
+        $last = end($records);
+
+        $this->assertSame(Logger::WARNING, $last['level']);
+        $this->assertStringContainsString('double-collection', $last['message'] ?? (string) $last['message']);
+        $this->assertSame($invoice->id, $last['context']['invoice_id']);
+        $this->assertSame('pi_existing_intent', $last['context']['intent_id']);
+
+        $this->assertSame('paid', $invoice->fresh()->status);
     }
 
     public function test_webhook_flow_is_untouched_by_offline_changes(): void

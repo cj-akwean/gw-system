@@ -604,3 +604,32 @@ payers. What should the admin "mark paid" flow actually record?
 that flips the invoice to `paid` (`lockForUpdate`), so a webhook payment and an offline cash payment
 racing on the same invoice cannot double-credit — the loser throws `InvoiceNotPayableException`, the
 form shows a danger toast, and nothing is recorded.
+
+## 21. Offline-payment hardening (2026-08-06 review): date at day granularity, OR length, double-collection watch
+
+**Question asked:** during the item-5/`9031296` review, three edge cases surfaced: (a) the future-date
+guard compared against `strtotime('today')` (midnight), so a *same-day* `paid_at` containing a time
+component was wrongly rejected as "future"; (b) the admin form allowed references up to 200 chars while
+the column holds 100 — a 101+ char OR passed validation then crashed the DB insert; (c) recording cash
+offline on an invoice that still holds a PayMongo intent risks collecting money from the same bill twice.
+
+**Answer + reasoning:**
+
+- **(a) Date guard is day-granularity:** a payment *date* cannot be a future **day**; the exact time
+  within today is irrelevant (backdating a batch is allowed, a time-suffixed same-day value is valid).
+  The service now parses the value once (`Carbon::parse` in a try/catch) and compares
+  `toDateString() > now()->toDateString()`. Garbage strings become a clean
+  `InvalidArgumentException` ("not a valid date") instead of a Carbon exception halfway through the
+  transaction. The Filament form rule mirrors the same comparison.
+- **(b) The service is the single guard:** `reference` is validated `mb_strlen <= 100` in
+  `PaymentService::recordOfflinePayment` (where the CLI and form both reach), and the form's
+  `maxLength` was aligned back to 100 to match the column. A future-off-form direct caller gets the
+  same failure the form would now show.
+- **(c) Warn loudly, do not block.** Blocking offline cash because an intent string exists would be
+  wrong: a stale/abandoned intent (customer peered at checkout and left) is common and self-heals on
+  the next `/pay`; only a pending/succeeded intent is a real double-collection risk, and the office
+  can't know that without a live PayMongo call inside the payment transaction. So recording proceeds
+  but writes a `paymongo`-channel **warning** naming the invoice + intent, and the existing
+  `paymongo:reconcile` Leg B ("PAYMENT WITHOUT LOCAL RECORD") is the durable backstop that surfaces
+  an actual double collection for a human. If the office ever wants it stricter, the rule change is
+  one condition here, not a redesign.

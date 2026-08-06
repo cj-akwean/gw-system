@@ -6,6 +6,7 @@ use App\Filament\Resources\PaymentResource\Pages;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Services\PaymentService;
+use Carbon\Carbon;
 use Closure;
 use Filament\Actions;
 use Filament\Facades\Filament;
@@ -88,7 +89,7 @@ class PaymentResource extends Resource
 
                 TextInput::make('reference')
                     ->label('Reference / OR No.')
-                    ->maxLength(200)
+                    ->maxLength(100)
                     ->helperText('Official receipt or reference number, if the office issues one.'),
 
                 DatePicker::make('paid_at')
@@ -97,7 +98,7 @@ class PaymentResource extends Resource
                     ->required()
                     ->rules([
                         fn () => function (string $attribute, mixed $value, Closure $fail): void {
-                            if ($value && strtotime($value) > strtotime('today')) {
+                            if ($value && Carbon::parse($value)->toDateString() > now()->toDateString()) {
                                 $fail('Payment date cannot be in the future.');
                             }
                         },

@@ -104,6 +104,47 @@ class RecordOfflinePaymentCommandTest extends TestCase
         $this->assertDatabaseCount('payments', 0);
     }
 
+    public function test_command_accepts_a_same_day_paid_at_with_time_component(): void
+    {
+        $invoice = $this->unpaidInvoice();
+
+        $exit = Artisan::call('payments:record', [
+            'invoice' => $invoice->id,
+            '--paid-at' => now()->format('Y-m-d H:i:s'),
+        ]);
+
+        $this->assertSame(0, $exit);
+        $this->assertSame('paid', $invoice->fresh()->status);
+    }
+
+    public function test_command_rejects_an_invalid_paid_at_string(): void
+    {
+        $invoice = $this->unpaidInvoice();
+
+        $exit = Artisan::call('payments:record', [
+            'invoice' => $invoice->id,
+            '--paid-at' => 'not-a-date',
+        ]);
+
+        $this->assertSame(1, $exit);
+        $this->assertStringContainsString('not a valid date', Artisan::output());
+        $this->assertDatabaseCount('payments', 0);
+    }
+
+    public function test_command_rejects_a_reference_longer_than_100_chars(): void
+    {
+        $invoice = $this->unpaidInvoice();
+
+        $exit = Artisan::call('payments:record', [
+            'invoice' => $invoice->id,
+            '--reference' => str_repeat('A', 101),
+        ]);
+
+        $this->assertSame(1, $exit);
+        $this->assertStringContainsString('100 characters or fewer', Artisan::output());
+        $this->assertDatabaseCount('payments', 0);
+    }
+
     public function test_command_rejects_a_disallowed_method(): void
     {
         $invoice = $this->unpaidInvoice();

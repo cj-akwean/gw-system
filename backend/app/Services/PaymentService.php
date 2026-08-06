@@ -130,7 +130,25 @@ class PaymentService
             throw new InvalidArgumentException(sprintf('Payment method "%s" is not an offline payment method.', $method));
         }
 
-        return DB::transaction(function () use ($invoiceId, $amount, $reference, $paidAt, $recordedBy, $method): Payment {
+        if ($reference !== null && mb_strlen($reference) > 100) {
+            throw new InvalidArgumentException('Payment reference must be 100 characters or fewer.');
+        }
+
+        $paidAtParsed = null;
+
+        if ($paidAt !== null && $paidAt !== '') {
+            try {
+                $paidAtParsed = Carbon::parse($paidAt);
+            } catch (InvalidArgumentException $e) {
+                throw new InvalidArgumentException('Payment date is not a valid date.');
+            }
+
+            if ($paidAtParsed->toDateString() > now()->toDateString()) {
+                throw new InvalidArgumentException('Payment date cannot be in the future.');
+            }
+        }
+
+        return DB::transaction(function () use ($invoiceId, $amount, $reference, $paidAtParsed, $recordedBy, $method): Payment {
             /** @var Invoice|null $locked */
             $locked = Invoice::query()->lockForUpdate()->find($invoiceId);
 
@@ -146,10 +164,6 @@ class PaymentService
                 throw new InvalidArgumentException('Payment amount must be a positive number.');
             }
 
-            if ($paidAt && strtotime($paidAt) > strtotime('today')) {
-                throw new InvalidArgumentException('Payment date cannot be in the future.');
-            }
-
             if (abs($amount - (float) $locked->total_amount) >= 1.00) {
                 throw new InvalidArgumentException(sprintf(
                     'Offline payments must be within ₱1.00 of the invoice total (₱%s). Entered ₱%s.',
@@ -160,13 +174,23 @@ class PaymentService
 
             $locked->update(['status' => 'paid']);
 
+            if ($locked->paymongo_payment_intent_id !== null) {
+                Log::channel('paymongo')->warning(
+                    'Offline payment recorded on an invoice with a stored PayMongo intent — verify with the customer / dashboard that no online payment also went through (double-collection watch).',
+                    [
+                        'invoice_id' => $locked->id,
+                        'intent_id' => $locked->paymongo_payment_intent_id,
+                    ]
+                );
+            }
+
             return Payment::create([
                 'invoice_id' => $locked->id,
                 'amount' => round($amount, 2),
                 'method' => $method,
                 'paymongo_reference' => null,
                 'reference' => $reference ?: null,
-                'paid_at' => $paidAt ? Carbon::parse($paidAt) : now(),
+                'paid_at' => $paidAtParsed ?? now(),
                 'recorded_by' => $recordedBy,
             ]);
         });
