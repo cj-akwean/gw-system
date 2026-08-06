@@ -113,7 +113,7 @@ After finishing a task, tell the user:
 ### 5. Pre-commit checks
 Run before suggesting a commit:
 - **Secret scan**: check staged files for API keys, tokens, passwords. Confirm `.env` is in `.gitignore` and NOT staged
-- **Sanity check**: `php artisan test` (or `php -l` on changed files) + `php artisan route:list` if routes changed
+- **Sanity check**: `php -d memory_limit=512M vendor/phpunit/phpunit/phpunit` (or `php -l` on changed files) + `php artisan route:list` if routes changed. **Why not plain `php artisan test`:** the full suite OOMs at the default 128M `memory_limit` (dompdf font parsing in the email tests → PHPUnit reports "Premature end of PHP process"), and `artisan test` does NOT propagate `-d` to PHPUnit. The direct phpunit binary with the `-d` flag is the reliable invocation (282/282 green).
 - If no test suite exists for the touched area, say so explicitly
 
 ### 6. Commit cadence — NEVER commit without approval, suggestion only at the bottom

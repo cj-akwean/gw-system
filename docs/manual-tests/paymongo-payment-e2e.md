@@ -5,6 +5,38 @@
 > `payment.paid` webhook → `ProcessPayMongoWebhook` job → invoice `paid` + `Payment` row →
 > dedupe on redelivery. Run this after any change to the payment/queue/webhook code.
 
+## Quick alternative — local webhook simulation (no ngrok, no dashboard, no test card)
+
+> Added 2026-08-06. `paymongo:simulate-payment` fires the exact `payment.paid` payload
+> through the SAME `ProcessPayMongoWebhook` job a real delivery would dispatch — the
+> invoice is marked paid, the Payment row recorded, the confirmation email queued.
+
+```powershell
+cd C:\Users\akwean\Downloads\gw-system\backend
+php artisan paymongo:simulate-payment          # first unpaid/overdue invoice
+php artisan paymongo:simulate-payment 3        # by id
+php artisan paymongo:simulate-payment GW-2026-00004   # by invoice number
+php artisan paymongo:simulate-payment 4 --source=gcash --payer-name="Jane Doe" --payer-email=jane@example.com
+```
+
+- Needs the queue worker running (`php artisan queue:work --tries=3`) for the email job.
+- **The exact recipe for the failed-receipt test**: set a bad `MAIL_HOST` in `.env`,
+  restart `queue:work`, run `paymongo:simulate-payment`, watch the admin bell →
+  "Resend receipt" → click → toast → Mailtrap.
+- The payer defaults to the first linked portal user (so the receipt shows a real
+  recipient); no linked users → `Test Payer <test@example.com>`.
+- Re-running on the same invoice → "is not payable (status: paid)" — expected; make a
+  fresh invoice or pick another.
+- After a successful **Resend receipt** click, the bell entry flips to "Payment confirmation
+  email resent" (success color, button removed); clicking the button/URL again just shows a
+  warning toast — no duplicate email (idempotent, `throttle:10,1` backstop).
+- **What it does NOT cover** (deliberately): PayMongo signature verification, the real
+  checkout (client_key attach / 3DS), and dashboard delivery. Use the ngrok recipe below
+  for those.
+- An invoice with no stored intent gets a fabricated `pi_sim_…` id; a leftover
+  `pi_sim_…` id on an unpaid invoice shows as `UNCHECKED` in `paymongo:reconcile`
+  (harmless — clear it with the tinker one-liner below if it ever bothers you).
+
 ## Prereqs (all four, or the test silently fails)
 
 1. `php artisan migrate` — **the `processed_webhook_events` table must exist** (this was missed
