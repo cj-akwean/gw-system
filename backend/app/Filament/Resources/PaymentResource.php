@@ -194,7 +194,17 @@ class PaymentResource extends Resource
                     ->options([
                         'unpaid' => 'Unpaid',
                         'overdue' => 'Overdue',
-                    ]),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        if (blank($data['value'] ?? null)) {
+                            return $query;
+                        }
+
+                        return $query->whereHas(
+                            'invoice',
+                            fn (Builder $iq): Builder => $iq->where('status', $data['value']),
+                        );
+                    }),
 
                 Tables\Filters\Filter::make('paid_at')
                     ->form([
@@ -267,7 +277,7 @@ class PaymentResource extends Resource
         );
     }
 
-    private static function methodLabel(?string $method, ?string $channel = null): string
+    public static function methodLabel(?string $method, ?string $channel = null): string
     {
         $label = ucwords(str_replace('_', ' ', (string) $method));
 
@@ -278,7 +288,7 @@ class PaymentResource extends Resource
         return $channel ? 'PayMongo · '.self::channelLabel($channel) : 'PayMongo';
     }
 
-    private static function channelLabel(?string $channel): string
+    public static function channelLabel(?string $channel): string
     {
         $known = [
             'qrph' => 'QR Ph',
@@ -299,7 +309,7 @@ class PaymentResource extends Resource
         return $known[$channel] ?? ucwords(str_replace('_', ' ', $channel));
     }
 
-    private static function processedByLabel(Payment $record): string
+    public static function processedByLabel(Payment $record): string
     {
         if ($record->recordedBy !== null) {
             return (string) $record->recordedBy->name;
