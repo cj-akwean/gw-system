@@ -159,6 +159,25 @@ class SendPaymentConfirmationEmailTest extends TestCase
         $this->assertStringContainsString('40.00', $html);
     }
 
+    public function test_the_markdown_body_shows_the_paymongo_reference_when_reference_is_null(): void
+    {
+        $invoice = Invoice::factory()->create([
+            'status' => 'paid',
+            'invoice_number' => 'GW-2026-67891',
+        ]);
+        $payment = Payment::factory()->create([
+            'invoice_id' => $invoice->id,
+            'amount' => $invoice->total_amount,
+            'method' => 'paymongo',
+            'reference' => null,
+            'paymongo_reference' => 'pay_reference_email_1',
+        ]);
+
+        $html = (new PaymentConfirmation($invoice, $payment))->render();
+
+        $this->assertStringContainsString('pay_reference_email_1', $html);
+    }
+
     public function test_active_link_with_unlinked_at_set_is_excluded(): void
     {
         Mail::fake();

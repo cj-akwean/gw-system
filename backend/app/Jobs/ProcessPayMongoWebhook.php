@@ -89,6 +89,7 @@ class ProcessPayMongoWebhook implements ShouldQueue
                 $intentId = $attributes['payment_intent_id'] ?? null;
                 $amountCentavos = $attributes['amount'] ?? null;
                 $paidAt = $attributes['paid_at'] ?? null;
+                $paymongoSource = is_string($attributes['source']['type'] ?? null) ? $attributes['source']['type'] : null;
 
                 if (! is_string($paymentId) || ! is_string($intentId) || ! is_int($amountCentavos)) {
                     Log::channel('paymongo')->warning('PayMongo payment.paid skipped: malformed payment resource', [
@@ -118,6 +119,7 @@ class ProcessPayMongoWebhook implements ShouldQueue
                     $paymentId,
                     $amountCentavos,
                     is_int($paidAt) ? $paidAt : null,
+                    $paymongoSource,
                 );
             });
         } catch (UniqueConstraintViolationException) {

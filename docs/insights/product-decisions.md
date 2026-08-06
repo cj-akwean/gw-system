@@ -668,3 +668,42 @@ A `paid_at` typo'd into a future month (or a row saved ahead of its collection d
 inflate "revenue this month" and the chart's current-month bar; now future-month rows are
 invisible to revenue while same-month clock skew (webhook or locally entered timestamps a few
 minutes ahead) is still counted — the stat card and the chart share one month-boundary rule.
+
+## 23. Why online payments get a separate channel column, and why reference/recorded_by stay NULL (2026-08-06)
+
+**Question asked:** in `/admin/payments`, PayMongo rows showed a generic "PayMongo" badge (not the
+channel), an empty *Recorded By*, and an empty *Reference*. Options floated: mirror the payment id
+into `reference`, write `recorded_by = some system user` for webhook rows, store card brand/last4.
+
+**Answer + reasoning:**
+
+- **`method` keeps its meaning; the channel is a separate column.** `payments.method` today is a
+  *free-string* field whose offline entries come from `OFFLINE_METHODS` (cash) and whose online
+  entry is literally `paymongo`. Overwriting `method` with `gcash`/`card` would lie to the
+  "was this online or over-the-counter?" question that the whole offline-payment feature is built
+  around, and it would make `paymongo:reconcile` and the webhook amount/data flows ambiguous. The
+  new nullable `paymongo_source` column (channel key only, string 30) keeps "how the money
+  arrived" (`method`) separate from "which specific wallet/card rail within PayMongo" (`source`),
+  mirroring PayMongo's own intent→source object. Card brand/last4 are deliberately **not** stored —
+  display only needs the channel, and keeping card data out of the DB reduces PCI surface.
+- **`reference` means "OR / office receipt number" — a PayMongo payment has none.** `reference` was
+  introduced for the offline-cash feature (the counter writes a receipt). A webhook payment has an
+  internal `paymongo_reference` (the `pay_…` transaction id), but the office's *own* receipt number
+  is null. Mirroring `reference = pay_…` at webhook time would (a) conflate two different concepts
+  in the same column, (b) invite double-bookkeeping when an office later wants to attach a real OR
+  to a web payment, and (c) need a backfill. Instead the **display** falls back
+  `reference ?? paymongo_reference ?? '—'` in the table, the view form's Reference field, and the
+  confirmation email. Same human answers "what do I show the customer?" without corrupting the data.
+- **`recorded_by` is an audit column, not a UI convenience.** Its meaning is "which admin took the
+  cash" (mirrors `meter_readings.entered_by`). PayMongo money arrives with no admin present, so the
+  truthful value is NULL; a fake "system" user would break the audit trail and muddy real queries.
+  The UI shows a display-only placeholder ("Recorded By: PayMongo") so admins aren't scared by the
+  blank, without writing a lie to the DB.
+- **Why the view page fix needed a real fix, not a label:** Filament's *native* select (non-
+  searchable) renders `<option>` elements from `options()` only — `getOptionLabelUsing` is honored
+  by the fancy JS select, not the native one, so a value absent from `options` renders **blank**.
+  The fix widens the Method select's options with the record's actual method (labeled
+  `PayMongo · GCash`) when the record exists. Found via a Livewire view test failing on a blank
+  field, not by guessing.
+- **No backfill.** Past PayMongo rows predate the column and get `paymongo_source = NULL`. The
+  reconcile leg for historical online payments is unaffected; this is a go-forward improvement.

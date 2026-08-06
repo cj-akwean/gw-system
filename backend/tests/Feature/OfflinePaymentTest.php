@@ -289,5 +289,6 @@ class OfflinePaymentTest extends TestCase
         $this->assertSame('paymongo', $payment->method);
         $this->assertSame('pay_res_offline', $payment->paymongo_reference);
         $this->assertNull($payment->reference);
+        $this->assertNull($payment->paymongo_source);
     }
 }

@@ -12,6 +12,7 @@ use Filament\Actions;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
@@ -33,11 +34,6 @@ class PaymentResource extends Resource
 
     public static function form(Schema $schema): Schema
     {
-        $offlineMethods = collect(PaymentService::OFFLINE_METHODS)
-            ->mapWithKeys(fn (string $method) => [$method => ucwords(str_replace('_', ' ', $method))]
-            )
-            ->toArray();
-
         return $schema
             ->components([
                 Select::make('invoice_id')
@@ -83,14 +79,36 @@ class PaymentResource extends Resource
 
                 Select::make('method')
                     ->label('Payment Method')
-                    ->options($offlineMethods)
+                    ->options(function (string $operation, ?Model $record): array {
+                        $methods = collect(PaymentService::OFFLINE_METHODS)
+                            ->mapWithKeys(fn (string $method) => [$method => ucwords(str_replace('_', ' ', $method))]
+                            )
+                            ->toArray();
+
+                        if ($record?->method && ! array_key_exists($record->method, $methods)) {
+                            $methods[$record->method] = static::methodLabel($record->method, $record->paymongo_source);
+                        }
+
+                        return $methods;
+                    })
                     ->default(PaymentService::OFFLINE_METHODS[0] ?? 'cash')
                     ->required(),
 
                 TextInput::make('reference')
                     ->label('Reference / OR No.')
                     ->maxLength(100)
-                    ->helperText('Official receipt or reference number, if the office issues one.'),
+                    ->helperText('Official receipt or reference number, if the office issues one.')
+                    ->formatStateUsing(fn (?string $state, ?Model $record): ?string => $state ?? $record?->paymongo_reference),
+
+                Placeholder::make('paymongo_source')
+                    ->label('PayMongo Channel')
+                    ->content(fn (?Model $record): string => static::channelLabel($record?->paymongo_source))
+                    ->visible(fn (string $operation, ?Model $record): bool => $operation === 'view' && $record?->method === 'paymongo'),
+
+                Placeholder::make('recorded_by_display')
+                    ->label('Recorded By')
+                    ->content(fn (?Model $record): string => static::recordedByLabel($record))
+                    ->visible(fn (string $operation): bool => $operation === 'view'),
 
                 DatePicker::make('paid_at')
                     ->label('Payment Date')
@@ -136,11 +154,12 @@ class PaymentResource extends Resource
 
                 Tables\Columns\TextColumn::make('method')
                     ->badge()
-                    ->formatStateUsing(fn (string $state): string => ucwords(str_replace('_', ' ', $state)))
-                    ->color(fn (string $state): string => $state === 'cash' ? 'success' : 'gray'),
+                    ->formatStateUsing(fn (Payment $record): string => static::methodLabel($record->method, $record->paymongo_source))
+                    ->color(fn (Payment $record): string => $record->method === 'cash' ? 'success' : 'gray'),
 
                 Tables\Columns\TextColumn::make('reference')
                     ->label('Reference')
+                    ->formatStateUsing(fn (Payment $record): string => $record->reference ?? $record->paymongo_reference ?? '—')
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('paid_at')
@@ -150,6 +169,7 @@ class PaymentResource extends Resource
 
                 Tables\Columns\TextColumn::make('recordedBy.name')
                     ->label('Recorded By')
+                    ->formatStateUsing(fn (Payment $record): string => static::recordedByLabel($record))
                     ->wrap()
                     ->toggleable(),
             ])
@@ -157,6 +177,7 @@ class PaymentResource extends Resource
                 Tables\Filters\SelectFilter::make('method')
                     ->options(collect(PaymentService::OFFLINE_METHODS)
                         ->mapWithKeys(fn (string $method) => [$method => ucwords(str_replace('_', ' ', $method))])
+                        ->put('paymongo', 'PayMongo')
                         ->toArray()),
 
                 Tables\Filters\SelectFilter::make('invoice.status')
@@ -235,5 +256,46 @@ class PaymentResource extends Resource
             $connection?->account_number ?? '—',
             number_format((float) $invoice->total_amount, 2),
         );
+    }
+
+    private static function methodLabel(?string $method, ?string $channel = null): string
+    {
+        $label = ucwords(str_replace('_', ' ', (string) $method));
+
+        if ($method !== 'paymongo') {
+            return $label;
+        }
+
+        return $channel ? 'PayMongo · '.self::channelLabel($channel) : 'PayMongo';
+    }
+
+    private static function channelLabel(?string $channel): string
+    {
+        $known = [
+            'qrph' => 'QR Ph',
+            'brankas' => 'Brankas',
+            'card' => 'Card',
+            'dob' => 'Direct Online Bank',
+            'billease' => 'BillEase',
+            'gcash' => 'GCash',
+            'grab_pay' => 'Grab Pay',
+            'shopee_pay' => 'Shopee Pay',
+            'paymaya' => 'PayMaya',
+        ];
+
+        if ($channel === null || $channel === '') {
+            return '—';
+        }
+
+        return $known[$channel] ?? ucwords(str_replace('_', ' ', $channel));
+    }
+
+    private static function recordedByLabel(Payment $record): string
+    {
+        if ($record->recordedBy !== null) {
+            return (string) $record->recordedBy->name;
+        }
+
+        return $record->method === 'paymongo' ? 'PayMongo' : '—';
     }
 }

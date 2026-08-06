@@ -45,6 +45,12 @@ class ProcessPayMongoWebhookTest extends TestCase
                             'status' => 'paid',
                             'payment_intent_id' => 'pi_test_1',
                             'paid_at' => 1619426488,
+                            'source' => [
+                                'id' => 'card_test_1',
+                                'type' => 'card',
+                                'brand' => 'visa',
+                                'last4' => '4345',
+                            ],
                         ],
                     ],
                 ],
@@ -71,9 +77,43 @@ class ProcessPayMongoWebhookTest extends TestCase
         $payment = Payment::where('invoice_id', $invoice->id)->sole();
 
         $this->assertSame('paymongo', $payment->method);
+        $this->assertSame('card', $payment->paymongo_source);
         $this->assertSame('pay_res_1', $payment->paymongo_reference);
         $this->assertSame(40.0, (float) $payment->amount);
         $this->assertSame(1619426488, $payment->paid_at->timestamp);
+    }
+
+    public function test_payment_paid_without_a_source_channel_is_recorded_with_null_source(): void
+    {
+        $invoice = $this->invoiceFor('pi_test_1');
+
+        $payload = $this->paymentPaidPayload();
+        $payload['data']['attributes']['data']['attributes']['source'] = null;
+
+        $this->runJob($payload);
+
+        $this->assertSame('paid', $invoice->fresh()->status);
+        $this->assertNull(Payment::where('invoice_id', $invoice->id)->sole()->paymongo_source);
+    }
+
+    public function test_payment_paid_with_gcash_source_is_recorded(): void
+    {
+        $invoice = $this->invoiceFor('pi_gcash_1');
+
+        $payload = $this->paymentPaidPayload();
+        $payload['data']['id'] = 'evt_paid_gcash_1';
+        $payload['data']['attributes']['data']['id'] = 'pay_res_gcash_1';
+        $payload['data']['attributes']['data']['attributes']['payment_intent_id'] = 'pi_gcash_1';
+        $payload['data']['attributes']['data']['attributes']['source'] = [
+            'id' => 'src_gcash_1',
+            'type' => 'gcash',
+        ];
+
+        $this->runJob($payload);
+
+        $payment = Payment::where('invoice_id', $invoice->id)->sole();
+        $this->assertSame('paymongo', $payment->method);
+        $this->assertSame('gcash', $payment->paymongo_source);
     }
 
     public function test_an_already_paid_invoice_is_left_alone(): void
@@ -331,6 +371,7 @@ class ProcessPayMongoWebhookTest extends TestCase
                 'pay_res_1',
                 4000,
                 1619426488,
+                'card',
             )
             ->willThrowException(new RuntimeException('simulated failure'));
 

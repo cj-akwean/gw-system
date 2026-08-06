@@ -11,6 +11,7 @@ Your payment for invoice **{{ $invoice->invoice_number }}** has been received an
 | Amount paid | ₱{{ number_format($payment->amount, 2) }} |
 | Invoice total | ₱{{ number_format($invoice->total_amount, 2) }} |
 | Date paid | {{ $payment->paid_at?->format('M d, Y') }} |
+| Reference | {{ $payment->reference ?? $payment->paymongo_reference ?? '—' }} |
 </x-mail::table>
 
 The itemized invoice is attached as a PDF for your records.

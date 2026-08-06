@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['invoice_id', 'amount', 'method', 'paymongo_reference', 'reference', 'recorded_by', 'paid_at'])]
+#[Fillable(['invoice_id', 'amount', 'method', 'paymongo_reference', 'paymongo_source', 'reference', 'recorded_by', 'paid_at'])]
 class Payment extends Model
 {
     /** @use HasFactory<PaymentFactory> */

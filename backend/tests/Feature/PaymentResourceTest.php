@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Filament\Resources\PaymentResource\Pages\CreatePayment;
+use App\Filament\Resources\PaymentResource\Pages\ViewPayment;
 use App\Models\Invoice;
+use App\Models\Payment;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -96,5 +98,83 @@ class PaymentResourceTest extends TestCase
 
         $this->assertDatabaseCount('payments', 0);
         $this->assertSame('paid', $invoice->fresh()->status);
+    }
+
+    public function test_view_page_renders_paymongo_method_with_channel_and_reference_fallback(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true]);
+        $invoice = $this->payableInvoice();
+        $invoice->update(['status' => 'paid']);
+
+        $payment = Payment::factory()->create([
+            'invoice_id' => $invoice->id,
+            'amount' => 40.00,
+            'method' => 'paymongo',
+            'paymongo_reference' => 'pay_view_test_1',
+            'paymongo_source' => 'gcash',
+            'reference' => null,
+            'recorded_by' => null,
+        ]);
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(ViewPayment::class, ['record' => $payment->id])
+            ->assertFormSet([
+                'method' => 'paymongo',
+                'reference' => 'pay_view_test_1',
+            ])
+            ->assertSee('PayMongo · GCash')
+            ->assertSee('PayMongo');
+    }
+
+    public function test_view_page_renders_paymongo_without_channel_when_source_is_null(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true]);
+        $invoice = $this->payableInvoice();
+        $invoice->update(['status' => 'paid']);
+
+        $payment = Payment::factory()->create([
+            'invoice_id' => $invoice->id,
+            'amount' => 40.00,
+            'method' => 'paymongo',
+            'paymongo_reference' => 'pay_view_test_2',
+            'paymongo_source' => null,
+            'reference' => null,
+            'recorded_by' => null,
+        ]);
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(ViewPayment::class, ['record' => $payment->id])
+            ->assertFormSet([
+                'method' => 'paymongo',
+                'reference' => 'pay_view_test_2',
+            ])
+            ->assertSee('PayMongo')
+            ->assertDontSee('PayMongo ·');
+    }
+
+    public function test_view_page_renders_cash_method_and_or_reference(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true]);
+        $invoice = $this->payableInvoice();
+        $invoice->update(['status' => 'paid']);
+
+        $payment = Payment::factory()->create([
+            'invoice_id' => $invoice->id,
+            'amount' => 457.00,
+            'method' => 'cash',
+            'paymongo_reference' => null,
+            'paymongo_source' => null,
+            'reference' => 'OR-2026-200',
+            'recorded_by' => $admin->id,
+        ]);
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(ViewPayment::class, ['record' => $payment->id])
+            ->assertFormSet([
+                'method' => 'cash',
+                'reference' => 'OR-2026-200',
+            ])
+            ->assertSee('Cash')
+            ->assertSee($admin->name);
     }
 }
