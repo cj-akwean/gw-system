@@ -8,6 +8,7 @@ use App\Models\ConnectionLink;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\User;
+use Filament\Notifications\DatabaseNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use RuntimeException;
@@ -116,5 +117,176 @@ class ResendReceiptControllerTest extends TestCase
         $this->assertStringNotContainsString('php artisan', $data['body']);
         $this->assertSame('resendReceipt', $data['actions'][0]['name']);
         $this->assertSame(route('admin.payments.resend-receipt', $payment), $data['actions'][0]['url']);
+    }
+
+    public function test_failed_job_notification_is_tagged_with_payment_and_invoice_ids(): void
+    {
+        $admin = $this->admin();
+        [$invoice, $payment] = $this->payableScenario();
+
+        (new SendPaymentConfirmationEmail($invoice, $payment))->failed(new RuntimeException('SMTP unreachable'));
+
+        $data = $admin->notifications()->first()->data;
+
+        $this->assertSame($payment->id, $data['payment_id']);
+        $this->assertSame($invoice->id, $data['invoice_id']);
+    }
+
+    public function test_resend_marks_the_notification_resolved(): void
+    {
+        Mail::fake();
+
+        $admin = $this->admin();
+        [$invoice, $payment] = $this->payableScenario();
+        (new SendPaymentConfirmationEmail($invoice, $payment))->failed(new RuntimeException('SMTP unreachable'));
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.payments.resend-receipt', $payment))
+            ->assertRedirect(route('filament.admin.pages.dashboard'));
+
+        Mail::assertSent(PaymentConfirmation::class);
+
+        $notification = $admin->notifications()->first();
+        $data = $notification->fresh()->data;
+
+        $this->assertArrayHasKey('resolved_at', $data);
+        $this->assertSame(1, $data['resend_count']);
+        $this->assertSame('Payment confirmation email resent', $data['title']);
+        $this->assertStringContainsString('Receipt resent to renter@example.com', $data['body']);
+        $this->assertSame('success', $data['color']);
+        $this->assertSame([], $data['actions']);
+        $this->assertNull($notification->fresh()->read_at);
+    }
+
+    public function test_second_resend_is_blocked_without_a_duplicate_email(): void
+    {
+        Mail::fake();
+
+        $admin = $this->admin();
+        [$invoice, $payment] = $this->payableScenario();
+        (new SendPaymentConfirmationEmail($invoice, $payment))->failed(new RuntimeException('SMTP unreachable'));
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.payments.resend-receipt', $payment))
+            ->assertRedirect(route('filament.admin.pages.dashboard'));
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.payments.resend-receipt', $payment))
+            ->assertRedirect(route('filament.admin.pages.dashboard'));
+
+        Mail::assertSent(PaymentConfirmation::class, 1);
+    }
+
+    public function test_resend_is_blocked_when_any_admin_has_already_resent(): void
+    {
+        Mail::fake();
+
+        $otherAdmin = User::factory()->create(['email' => 'other-admin@example.com', 'is_admin' => true]);
+        $admin = $this->admin();
+        [$invoice, $payment] = $this->payableScenario();
+        (new SendPaymentConfirmationEmail($invoice, $payment))->failed(new RuntimeException('SMTP unreachable'));
+
+        $this->actingAs($otherAdmin, 'admin')
+            ->get(route('admin.payments.resend-receipt', $payment));
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.payments.resend-receipt', $payment));
+
+        Mail::assertSent(PaymentConfirmation::class, 1);
+
+        $this->assertArrayHasKey('resolved_at', $admin->notifications()->first()->fresh()->data);
+    }
+
+    public function test_failed_resend_leaves_the_notification_untouched(): void
+    {
+        config()->set('mail.default', 'smtp');
+        config()->set('mail.mailers.smtp.host', '127.0.0.1');
+        config()->set('mail.mailers.smtp.port', 1);
+        config()->set('mail.mailers.smtp.timeout', 2);
+
+        $admin = $this->admin();
+        [$invoice, $payment] = $this->payableScenario();
+        (new SendPaymentConfirmationEmail($invoice, $payment))->failed(new RuntimeException('SMTP unreachable'));
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.payments.resend-receipt', $payment))
+            ->assertRedirect(route('filament.admin.pages.dashboard'));
+
+        $data = $admin->notifications()->first()->fresh()->data;
+
+        $this->assertArrayNotHasKey('resolved_at', $data);
+        $this->assertSame('resendReceipt', $data['actions'][0]['name']);
+        $this->assertStringContainsString('never reached the customer', $data['body']);
+    }
+
+    public function test_no_recipients_does_not_mark_the_notification_resolved(): void
+    {
+        Mail::fake();
+
+        $admin = $this->admin();
+        [, $payment] = $this->payableScenario();
+        ConnectionLink::query()->delete();
+        (new SendPaymentConfirmationEmail($payment->invoice, $payment))->failed(new RuntimeException('SMTP unreachable'));
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.payments.resend-receipt', $payment))
+            ->assertRedirect(route('filament.admin.pages.dashboard'));
+
+        Mail::assertNothingSent();
+
+        $data = $admin->notifications()->first()->fresh()->data;
+        $this->assertArrayNotHasKey('resolved_at', $data);
+    }
+
+    public function test_legacy_untagged_notification_is_found_and_resolved(): void
+    {
+        Mail::fake();
+
+        $admin = $this->admin();
+        [, $payment] = $this->payableScenario();
+
+        $notification = $admin->notifications()->create([
+            'id' => '00000000-0000-0000-0000-000000000001',
+            'type' => DatabaseNotification::class,
+            'data' => [
+                'format' => 'filament',
+                'duration' => 'persistent',
+                'title' => 'Payment confirmation email failed',
+                'body' => 'Invoice X (payment #'.$payment->id.') never reached the customer.',
+                'color' => 'danger',
+                'status' => 'danger',
+                'actions' => [
+                    [
+                        'name' => 'resendReceipt',
+                        'label' => 'Resend receipt',
+                        'url' => route('admin.payments.resend-receipt', $payment),
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.payments.resend-receipt', $payment))
+            ->assertRedirect(route('filament.admin.pages.dashboard'));
+
+        Mail::assertSent(PaymentConfirmation::class);
+
+        $data = $notification->fresh()->data;
+        $this->assertArrayHasKey('resolved_at', $data);
+        $this->assertSame([], $data['actions']);
+    }
+
+    public function test_resend_route_is_rate_limited(): void
+    {
+        $admin = $this->admin();
+        [, $payment] = $this->payableScenario();
+
+        $this->actingAs($admin, 'admin');
+
+        for ($i = 0; $i < 10; $i++) {
+            $this->get(route('admin.payments.resend-receipt', $payment))->assertRedirect();
+        }
+
+        $this->get(route('admin.payments.resend-receipt', $payment))->assertStatus(429);
     }
 }

@@ -10,6 +10,8 @@ use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Notifications\DatabaseNotification;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Throwable;
@@ -128,5 +130,38 @@ class SendPaymentConfirmationEmail implements ShouldQueue
                     ->url(route('admin.payments.resend-receipt', $this->payment)),
             ])
             ->sendToDatabase($admins);
+
+        $this->tagNotifications($admins);
+    }
+
+    /**
+     * Stamps the just-created failure notifications with the payment and
+     * invoice ids so the resend controller can find them later (to mark the
+     * notification resolved and to block duplicate resends). Rows are matched
+     * by the notification's own action URL — unique per payment, so no
+     * creation-order heuristics are needed and repeated failures never
+     * double-tag.
+     *
+     * @param  Collection<int, User>  $admins
+     */
+    private function tagNotifications($admins): void
+    {
+        $url = route('admin.payments.resend-receipt', $this->payment);
+
+        DatabaseNotification::query()
+            ->whereIn('notifiable_id', $admins->modelKeys())
+            ->whereNull('read_at')
+            ->where('data->format', 'filament')
+            ->where('data->actions->0->url', $url)
+            ->whereNull('data->payment_id')
+            ->get()
+            ->each(function (DatabaseNotification $notification): void {
+                $notification->update([
+                    'data' => array_merge($notification->data, [
+                        'payment_id' => $this->payment->id,
+                        'invoice_id' => $this->invoice->id,
+                    ]),
+                ]);
+            });
     }
 }

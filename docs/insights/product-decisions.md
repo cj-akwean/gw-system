@@ -823,3 +823,38 @@ intent â†’ user join. If ever required, the intent-creation endpoint is the plac
 **Ops lessons from the same incident (2026-08-06):**
 - A long-running `php artisan queue:work` daemon never reloads changed classes. After the payer-row PDF change, the still-running worker used the old PdfService/PaymentConfirmation in memory while Blade recompiled the new view fresh ? "Undefined variable " (failed_jobs, 3 tries) even though on-disk code and the whole test suite were correct (tests run in fresh PHP processes). Rule: restart the worker after any code change; when a queued job fails in a way tests can't reproduce, suspect the worker first.
 - `queue:retry` with no argument prints "No retryable jobs found" even when failed_jobs is non-empty — it needs `all` or a concrete job id. For a single failed receipt, `paymongo:send-receipt {invoice}` (synchronous) is the simplest recovery.
+
+## 28. Resend must be idempotent and leave the notification in a truthful state (2026-08-06, built same day)
+
+**Question asked:** the admin resend-receipt button/link could be clicked repeatedly, sending a duplicate
+email per click; and after a successful resend the bell entry still read "Payment confirmation email
+failed" with an active button — the notification lied about the world. Also: marking notifications read
+makes them vanish (no history), which surfaced during the same test round.
+
+**Answer + reasoning (decided with the user):**
+
+- **Idempotency, not just throttling.** The route now carries `throttle:10,1` as a blunt backstop, but
+  the real fix is state: `SendPaymentConfirmationEmail::failed()` tags each notification row with
+  `data.payment_id`/`invoice_id` (matched deterministically by the action-URL fingerprint, not by
+  creation order — notification PKs are UUIDs, so "latest id" is meaningless). `ResendReceiptController`
+  finds the linked rows, and a `lockForUpdate` transaction spanning check ? send ? resolve serializes
+  concurrent clicks: the first one wins, the second sees `resolved_at` and only warns ("already
+  resent"), never sending again. The lock is held across the SMTP send — acceptable for a low-traffic
+  admin action, and it makes the dedupe airtight instead of best-effort.
+- **The notification is the source of truth about its own outcome.** A successful resend rewrites the
+  rows: `resolved_at` + `resend_count` (audit trail), success color, body "Receipt resent to … at …",
+  and the action removed — the button disappears because the failure is over. A failed resend or the
+  no-recipients skip leaves the row untouched, button intact. Keep the row after resolution (audit);
+  only the action goes away.
+- **Resolving crosses admins.** Every admin's copy of the notification is updated, and any admin's
+  resend resolves all copies — one payment = one receipt, regardless of who clicked.
+- **Legacy rows still work.** Notifications created before tagging (like the dev row that started this)
+  carry no `payment_id`; the controller falls back to matching the stored action URL, so those rows
+  resolve too on first click. New rows use the tag.
+- **History view is still missing (known, deferred).** Read notifications vanish from Filament's bell
+  (it lists unread only) and there is no hub — that is the existing unchecked "Notification hub UI"
+  item, deliberately not pulled into this change. The resolved-state rewrite also makes the bell more
+  useful without a hub: a resolution is visible before you dismiss it.
+- Rule extension to §27: **an actionable notification must also be truthful after the action** — either
+  resolve it or leave it exactly as it was; never keep a "click me to fix this" button after the fix is
+  done.

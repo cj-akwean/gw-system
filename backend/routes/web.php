@@ -12,5 +12,6 @@ Route::middleware(['web', 'auth:admin'])
     ->name('admin.')
     ->group(function (): void {
         Route::get('/payments/{payment}/resend-receipt', ResendReceiptController::class)
+            ->middleware('throttle:10,1')
             ->name('payments.resend-receipt');
     });
