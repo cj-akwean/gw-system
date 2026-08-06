@@ -266,9 +266,14 @@ npm run dev
 - [ ] Digital Wallet (Google Pay) — showcase only; needs the account capability + Google Pay Console verification; mark "Coming soon" in the UI until verified
 
 ### Admin Panel (Filament)
-- [ ] Dashboard with key metrics (customers, unpaid invoices, revenue)
-- [ ] CRM views (customer/connection list, detail, edit)
-- [ ] Billing management views
+- [x] Dashboard with key metrics (customers, unpaid invoices, revenue) — 2026-08-06
+  - `App\Services\DashboardMetricsService` holds all aggregate queries (business logic stays in Services, not widgets): `activeConnectionsCount()`, `unpaidInvoicesCount()`, `overdueInvoicesCount()`, `receivablesOutstanding()` (`sum(total_amount)` on unpaid+overdue), `revenueThisMonth()`, `revenueLastMonths(6)` (zero-filled per-month series keyed `Y-m`). Returns raw `(float)`/`int` values — Postgres `numeric` aggregates return strings, so the `(float)` cast happens in the service (query builder doesn't apply model casts)
+  - `App\Filament\Widgets\MetricsOverview` (`StatsOverviewWidget`, v5) — 5 stat cards: active customers, unpaid bills, overdue bills (danger, "2% penalty per month"), outstanding amount (danger), revenue this month (success); money formatted `number_format()` + `₱` in the widget only
+  - `App\Filament\Widgets\RevenueChart` (`LineChartWidget`, v5) — last-6-months revenue by `Payment.paid_at`, labels `M Y yyyy`; monthly boundary uses `now()` with `Asia/Manila` (config timezone)
+  - Demo `FilamentInfoWidget` removed from the panel; discovered widgets render on the stock Dashboard page
+  - **Metric definitions** (log in product-decisions §22): "customers" = **active service connections** (portal users are login identities only); revenue = **all `Payment.amount`** (PayMongo + offline cash) by `paid_at`, never `created_at`; outstanding = unpaid + overdue invoice totals
+  - Tests (10 new, suite 220 → 230): `DashboardMetricsServiceTest` (counts/sums, empty DB → zeros, status split, month boundary) + `DashboardWidgetsTest` (Livewire widget render incl. ₱ values + zero-state; dashboard HTTP 200 with both widget components)
+  - **Test-learning (2026-08-06):** `Payment::factory()` / `MeterReading::factory()` create their own related models, so a dashboard fixture must pin explicit `invoice_id`s — otherwise orphan random invoices silently pollute `sum()`/count metrics and the widget test asserts the wrong number with no failure in the factory itself
 
 ### Notifications
 - [x] Email sending working (Mailtrap in dev, Resend in prod)

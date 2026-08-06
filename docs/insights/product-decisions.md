@@ -633,3 +633,32 @@ offline on an invoice that still holds a PayMongo intent risks collecting money 
   `paymongo:reconcile` Leg B ("PAYMENT WITHOUT LOCAL RECORD") is the durable backstop that surfaces
   an actual double collection for a human. If the office ever wants it stricter, the rule change is
   one condition here, not a redesign.
+
+## 22. Dashboard metrics: what "customers" and "revenue" mean (2026-08-06)
+
+**Question asked:** the first Admin Panel item is a dashboard with key metrics, but two terms are
+ambiguous in a water-utility domain: who counts as a "customer", and what is "revenue"?
+Should the count be portal user accounts? Should revenue include over-the-counter cash?
+
+**Answer + reasoning:**
+
+- **"Customers" = active service connections.** The utility's customer record is the *connection*
+  (account + meter + registered name + barangay). Portal `User` accounts are login identities only
+  — several renters can share one bill, one person can manage several bills, and most real customers
+  never register at all (they pay at the office). Counting portal users would measure product
+  adoption, not the customer base.
+- **Revenue = every `Payment` row, by `paid_at` — PayMongo and offline cash alike.** Revenue is
+  *money actually collected*, and the office records cash daily. Distinguishing by method is a
+  breakdown detail, not a different metric. Month boundaries use `paid_at` (the day money arrived,
+  matching the office's collection ledger) rather than `created_at` (the day the row was written —
+  equivalent for webhooks, but wrong for backdated cash entries).
+- **Outstanding = `sum(total_amount)` over unpaid + overdue invoices.** The amount the utility is
+  owed right now, penalties included, unearned revenue excluded. Overdue bills are counted
+  separately because they carry the 2%/month penalty — a collections signal, not the same as a
+  merely unpaid bill.
+- **Why metrics live in a Service, not the widget:** the same rule as payment logic — Filament is a
+  UI consumer. The aggregates are plain query methods, unit-testable without a Livewire mount, and
+  reusable by the future CRM/billing views and the customer portal later.
+- **Display only in the widget:** the service returns raw floats (Postgres `numeric` aggregates
+  arrive as strings), and peso formatting (`number_format()` + `?`) happens at render time — money
+  math and money display never mix.

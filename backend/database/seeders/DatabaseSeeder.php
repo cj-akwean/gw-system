@@ -17,16 +17,18 @@ class DatabaseSeeder extends Seeder
         $this->call(RateScheduleSeeder::class);
         $this->call(ServiceConnectionSeeder::class);
 
-        User::factory()->create([
-            'name' => 'Admin',
+        User::firstOrCreate([
             'email' => 'admin@gwsystem.com',
+        ], [
+            'name' => 'Admin',
             'password' => bcrypt('admin123'),
             'is_admin' => true,
         ]);
 
-        User::factory()->create([
-            'name' => 'Test User',
+        User::firstOrCreate([
             'email' => 'test@example.com',
+        ], [
+            'name' => 'Test User',
             'is_admin' => false,
         ]);
     }

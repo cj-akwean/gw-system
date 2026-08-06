@@ -13,6 +13,10 @@ class ServiceConnectionSeeder extends Seeder
 
     public function run(): void
     {
+        if (ServiceConnection::query()->exists()) {
+            return;
+        }
+
         $rateSchedule = RateSchedule::query()->orderBy('effective_from')->first();
 
         ServiceConnection::factory()->count(15)->create([

@@ -12,6 +12,10 @@ class RateScheduleSeeder extends Seeder
 
     public function run(): void
     {
+        if (RateSchedule::query()->exists()) {
+            return;
+        }
+
         RateSchedule::create([
             'name' => 'Standard Flat Rate',
             'type' => 'flat',

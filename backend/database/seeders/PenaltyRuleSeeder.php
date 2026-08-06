@@ -12,6 +12,10 @@ class PenaltyRuleSeeder extends Seeder
 
     public function run(): void
     {
+        if (PenaltyRule::query()->exists()) {
+            return;
+        }
+
         PenaltyRule::create([
             'percent_per_month' => 2.00,
             'grace_period_days' => 15,
