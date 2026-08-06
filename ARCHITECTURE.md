@@ -246,7 +246,7 @@ npm run dev
 ### Admin Reports / Exports *(planned 2026-08-06)*
 - [x] Payments CSV export — `App\Exports\PaymentsExport` (maatwebsite/excel CSVs, already installed for the meter-reading import; CSV only). Header "Export CSV" action on `PaymentResource`, respects the active filters (method, invoice status, paid_at range); columns: paid_at, invoice no, account no, meter no, customer name, amount, method/channel, reference, payer name/email, recorded by. Rationale: product-decisions §26. *(2026-08-06)*
 - [x] Service connections CSV export — `App\Exports\ServiceConnectionsExport` (customer master list, all registration fields), respects status/barangay filters; same button pattern *(2026-08-07)*
-- [ ] Invoices CSV export — `App\Exports\InvoicesExport`, ships with the `InvoiceResource` item above (same pattern)
+- [x] Invoices CSV export — `App\Exports\InvoicesExport` (same pattern), respects status/due_date filters; columns: invoice no, account no, meter no, customer name, status, billing period start/end, due date, previous balance, base, penalty, total, rate schedule, cu.m. used, reading entered at, formula-injection sanitized *(2026-08-07)*
 
 ### Customer Registration (Admin) *(planned 2026-08-06)*
 - [ ] Applicant fields on `service_connections` — `phone`, `email`, `gender`, `birthdate`, `civil_status`, `occupation` (all nullable so existing rows keep working); `status` gains `pending` (application → active); CRM edit form + factory/seeder updated
