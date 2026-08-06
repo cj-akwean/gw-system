@@ -707,3 +707,38 @@ into `reference`, write `recorded_by = some system user` for webhook rows, store
   field, not by guessing.
 - **No backfill.** Past PayMongo rows predate the column and get `paymongo_source = NULL`. The
   reconcile leg for historical online payments is unaffected; this is a go-forward improvement.
+
+## 24. CRM identifiers ARE editable, and linked portal users must be told (2026-08-06)
+
+**Question asked:** for the CRM `ServiceConnectionResource`, can an admin change `account_number` /
+`meter_number` on the connection edit form? ARCHITECTURE calls the account number the key customers
+use to link their portal account and the meter number the file-reader's resolution key — changing
+them looked like it could orphan links or silently break CSV resolution.
+
+**Answer + reasoning (confirmed with the user):**
+
+- **Identifiers are editable.** Accounts get renumbered and meters get replaced in every PH
+  utility's real life; a read-only identifier would force a delete/re-create, which is worse (and
+  we have no create/delete in this resource). The risk isn't the edit itself — it's the *silence*
+  around it.
+- **The safety is a notification, not a lock:** `ConnectionLink` rows reference the connection by
+  FK, so relinking is untouched by a renumber; CSV resolution just reads whatever the new value is.
+  What breaks is **people**: a portal user who linked "GW-12345" to their account still expects HR,
+  and a CSV with the old meter number would stop resolving. So every linked, active portal user with
+  an email gets a queued `ConnectionIdentifiersChanged` mail listing *only the identifiers that
+  actually changed* (old → new). The page shows a success toast with the recipient count so the admin
+  knows the change wasn't silent. Snapshotting the OLD values early matters — Eloquent's
+  `syncOriginal()` runs on save, so `getOriginal()` inside `afterSave` already returns the *new*
+  values; the previous identifiers are captured in `beforeSave`, and the change-detection lives in
+  `App\Services\ServiceConnectionService::handleIdentifierChange` (service, not the Filament page).
+- **Filament v5 route gotcha:** page routes register with **no route constraint** — a default
+  `/{record}` view route happily matches `create` and binds it as a non-numeric int → Postgres 500.
+  Even with `canCreate()` false there is no automatic guard. Fix: the view route lives at
+  `/view/{record}` (the table link points there, and any stray `/create` hits the existing
+  404 behavior). A dedicated test pins `GET /admin/service-connections/create` → 404.
+- **What the deep links do (and don't) do:** dashboard stat cards now link to filtered views —
+  "Active customers" → service connections list pre-filtered to `status=active`, "Revenue this
+  month" → payments list filtered to the current month via `paid_at` bounds. The three invoice-based
+  deep links (unpaid / overdue / outstanding) are deferred until the `InvoiceResource` item exists —
+  linking to a resource that doesn't exist yet would 404. URL query-state is passed as a
+  rawurlencoded JSON `filters` param, matching Filament's own URL-backed filter encoding.

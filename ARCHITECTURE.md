@@ -233,7 +233,7 @@ npm run dev
 
 ### Admin Panel (Filament)
 - [x] Dashboard with key metrics (customers, unpaid invoices, revenue) — `App\Services\DashboardMetricsService` (aggregate queries; revenue upper-bounded at `now()->endOfMonth()`) + widgets `MetricsOverview` (5 stat cards) / `RevenueChart` (6 months by `Payment.paid_at`). Metrics: customers = **active service connections**; revenue = **all `Payment.amount`** (PayMongo + offline) by `paid_at`, never `created_at`; outstanding = unpaid + overdue totals (definitions: product-decisions §22)
-- [ ] CRM views (customer/connection list, detail, edit) — `ServiceConnectionResource` (list + view + edit, no create/delete); also the dashboard stat-card deep-link targets. *[Restored 2026-08-06 — accidentally dropped in commit b45ee74 when item 1 was marked done.]*
+- [x] CRM views (customer/connection list, detail, edit) — `ServiceConnectionResource` (list + view + edit, no create/delete; identifier edits email linked portal users via `ServiceConnectionService`); dashboard stat cards deep-link to filtered views (customers, revenue). *[Restored 2026-08-06 — accidentally dropped in commit b45ee74 when item 1 was marked done; completed same day.]*
 - [ ] Billing management views — `InvoiceResource` (list by status, view detail/breakdown, mark paid) + "Run billing" page from `billing_runs` run reports (Phase 3 of `docs/prompts/billing-queue-pdf-admin.md`)
 
 ### Notifications

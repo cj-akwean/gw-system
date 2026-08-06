@@ -97,8 +97,10 @@ Setup (one-time):
    MAIL_FROM_ADDRESS=noreply@example.com
    MAIL_FROM_NAME="GW-System"        # optional; defaults to APP_NAME
    ```
-3. **Restart `php artisan serve` and `php artisan queue:work --tries=3`** — a worker started
-   before a `.env` mail change keeps the old config.
+3. **Start `php artisan queue:work` in a second terminal** — queued emails (payment
+   confirmations, identifier-change notifications), SMS, PDFs, and billing runs all need
+   a running worker. Without it, jobs accumulate silently in the `jobs` table.
+   Restart the worker after any `.env` mail change (it caches config at startup).
 4. Verify: `php artisan tinker` → `Mail::raw('hi', fn ($m) => $m->to('test@example.com')->subject('test'));`
    → message appears in the Mailtrap inbox.
 

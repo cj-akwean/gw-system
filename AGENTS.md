@@ -82,6 +82,10 @@ cd frontend && npm run dev
   machine; see README.md → "PHP HTTPS / SSL" for the recipe, diagnosis, and fix. If a
   PayMongo/Resend call ever 502s, check `storage/logs/laravel.log` for `cURL error 60`
   BEFORE touching service code.
+- **Queue worker:** `php artisan queue:work` in a second terminal — required for
+  payment-confirmation emails, identifier-change notifications, SMS, PDFs, and billing runs.
+  Without a worker, queued jobs sit silently in the `jobs` table forever. Kill with Ctrl+C
+  when done.
 
 ---
 

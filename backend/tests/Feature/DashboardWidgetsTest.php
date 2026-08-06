@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\PaymentResource;
+use App\Filament\Resources\ServiceConnectionResource;
 use App\Filament\Widgets\MetricsOverview;
 use App\Filament\Widgets\RevenueChart;
 use App\Models\Invoice;
@@ -77,5 +79,29 @@ class DashboardWidgetsTest extends TestCase
             ->assertOk()
             ->assertSee('MetricsOverview')
             ->assertSee('RevenueChart');
+    }
+
+    public function test_stat_cards_deep_link_to_filtered_views(): void
+    {
+        $html = Livewire::actingAs($this->admin(), 'admin')
+            ->test(MetricsOverview::class)
+            ->html();
+
+        $this->assertStringContainsString(ServiceConnectionResource::getUrl('index'), $html);
+        $this->assertStringContainsString(
+            rawurlencode((string) json_encode(['status' => ['value' => 'active']])),
+            $html,
+        );
+
+        $this->assertStringContainsString(PaymentResource::getUrl('index'), $html);
+        $this->assertStringContainsString(
+            rawurlencode((string) json_encode([
+                'paid_at' => [
+                    'paid_from' => now()->startOfMonth()->toDateString(),
+                    'paid_until' => now()->endOfMonth()->toDateString(),
+                ],
+            ])),
+            $html,
+        );
     }
 }
