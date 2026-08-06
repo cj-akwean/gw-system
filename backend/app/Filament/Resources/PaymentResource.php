@@ -192,6 +192,7 @@ class PaymentResource extends Resource
                 Tables\Filters\SelectFilter::make('invoice.status')
                     ->label('Invoice Status')
                     ->options([
+                        'paid' => 'Paid',
                         'unpaid' => 'Unpaid',
                         'overdue' => 'Overdue',
                     ])

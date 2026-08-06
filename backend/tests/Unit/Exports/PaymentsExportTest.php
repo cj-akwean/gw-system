@@ -139,4 +139,43 @@ class PaymentsExportTest extends TestCase
         $this->assertSame("'=cmd()", $row[8]);
         $this->assertSame("'@spam.com", $row[9]);
     }
+
+    public function test_map_escapes_tab_and_carriage_return_prefixed_formula_injection(): void
+    {
+        $invoice = (new Invoice())->setRelation('serviceConnection', null);
+
+        $payment = (new Payment())->forceFill([
+            'amount' => 100.00,
+            'method' => 'cash',
+            'reference' => 'OR-100',
+            'payer_name' => "\t=cmd()",
+            'payer_email' => "\r=cmd()",
+        ])
+            ->setRelation('invoice', $invoice)
+            ->setRelation('recordedBy', null);
+
+        $payment->paid_at = \Illuminate\Support\Carbon::parse('2026-08-01 10:00:00');
+
+        $row = $this->exportFor($payment)->map($payment);
+
+        $this->assertSame("'\t=cmd()", $row[8]);
+        $this->assertSame("'\r=cmd()", $row[9]);
+    }
+
+    public function test_map_outputs_an_empty_paid_at_for_a_null_date(): void
+    {
+        $invoice = (new Invoice())->setRelation('serviceConnection', null);
+
+        $payment = (new Payment())->forceFill([
+            'amount' => 100.00,
+            'method' => 'cash',
+            'reference' => 'OR-100',
+        ])
+            ->setRelation('invoice', $invoice)
+            ->setRelation('recordedBy', null);
+
+        $row = $this->exportFor($payment)->map($payment);
+
+        $this->assertNull($row[0]);
+    }
 }

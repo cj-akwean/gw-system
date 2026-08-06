@@ -66,7 +66,7 @@ class PaymentsExport implements FromQuery, WithHeadings, WithMapping
     {
         if (
             $value !== ''
-            && in_array($value[0], ['=', '+', '-', '@'], true)
+            && in_array($value[0], ["=", "+", "-", "@", "\t", "\r"], true)
         ) {
             return "'".$value;
         }

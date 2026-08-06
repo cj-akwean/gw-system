@@ -193,6 +193,32 @@ class PaymentsExportTest extends TestCase
         $this->assertSame('OR-100', $rows[1][7]);
     }
 
+    public function test_export_respects_invoice_paid_status_filter(): void
+    {
+        $overdue = $this->connection('GW-00001', 'MTR-00001', 'Ana Dela Cruz');
+        $paid = $this->connection('GW-00002', 'MTR-00002', 'Ben Santos');
+
+        $this->payment($this->invoice($overdue, 'overdue'), [
+            'amount' => 500.00,
+            'method' => 'cash',
+            'reference' => 'OR-100',
+            'paid_at' => '2026-07-01 09:00:00',
+        ]);
+        $this->payment($this->invoice($paid, 'paid'), [
+            'amount' => 750.50,
+            'method' => 'cash',
+            'reference' => 'OR-200',
+            'paid_at' => '2026-08-01 10:30:00',
+        ]);
+
+        $rows = $this->exportCsv(['invoice.status' => 'paid']);
+
+        $this->assertHeader($rows);
+
+        $this->assertCount(2, $rows);
+        $this->assertSame('OR-200', $rows[1][7]);
+    }
+
     public function test_export_respects_paid_at_range_filter(): void
     {
         $this->payment($this->invoice($this->connection('GW-00001', 'MTR-00001', 'Ana Dela Cruz'), 'paid'), [
