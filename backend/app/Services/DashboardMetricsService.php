@@ -35,21 +35,27 @@ class DashboardMetricsService
 
     public function revenueThisMonth(): float
     {
-        return $this->revenueBetween(now()->startOfMonth(), now());
+        return $this->revenueBetween(now()->startOfMonth(), now()->endOfMonth());
     }
 
     /**
      * Revenue per calendar month for the current month plus the $months-1
      * preceding ones, newest last. Zero-filled so the chart never has gaps.
+     * Bounded to the end of the current month so future-dated payments can
+     * never inflate revenue; same-month rows slightly ahead of the clock are
+     * still counted, keeping this consistent with revenueThisMonth().
      *
      * @return array<string, float> keyed "Y-m"
      */
     public function revenueLastMonths(int $months = 6): array
     {
+        $months = max(1, $months);
+
         $start = CarbonImmutable::instance(now()->startOfMonth())->subMonths($months - 1);
 
         $byMonth = Payment::query()
             ->where('paid_at', '>=', $start)
+            ->where('paid_at', '<=', now()->endOfMonth())
             ->get(['amount', 'paid_at'])
             ->groupBy(fn (Payment $payment): string => CarbonImmutable::instance($payment->paid_at)->format('Y-m'))
             ->map(fn (Collection $payments): float => (float) $payments->sum('amount'));

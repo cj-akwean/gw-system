@@ -68,3 +68,23 @@ its pages become the dashboard stat-card link targets.
 ## Git
 Not committed — pending explicit user approval. Status: 1 modified (AdminPanelProvider) + 4 new
 files (`Services + 2 widgets + 2 tests`).
+
+## Addendum — post-commit audit + hardening (2026-08-06, separate session)
+- Commit hash: `b45ee74` (user committed the session above after approval).
+- Fresh-session audit (rule 9b — clean-context re-read) of `b45ee74` found 5 edge cases; the 2
+  that affect reliability were implemented:
+  1. **Future-dated revenue inflation** — `revenueThisMonth()` was bounded only at `now()` and
+     `revenueLastMonths(6)` had **no upper bound**, so a `paid_at` typo'd into a future month (or a
+     row saved ahead of its collection date) silently inflated the current card/bar. Both now bound
+     at `now()->endOfMonth()`: stat and chart share one month rule, same-month clock skew is still
+     counted, future months excluded. 3 new regression tests (future-month exclusion for
+     thisMonth/lastMonths + intra-month skew via `Carbon::setTestNow`).
+  2. **`revenueLastMonths($months)` clamp** — ≤0 previously returned an empty series; now clamped to
+     ≥ 1. 1 new test.
+- Deferred (correct-by-design / scale, not shipping-blockers): double-collection counts revenue
+  twice (correct per §10 — money actually collected — and surfaced by the PaymentService offline
+  watch, not a dashboard defect); DB-side month aggregation (`to_char`) once monthly volume grows;
+  stat-card deep-links still await CRM resources (next checklist item).
+- Test results: full suite **234/234 pass, 670 assertions** (was 230 → +4 tests, +8 assertions);
+  `php -l` clean on both changed files.
+- Docs: ARCHITECTURE.md ✓ sub-bullet + product-decisions §22 addendum updated in this session.

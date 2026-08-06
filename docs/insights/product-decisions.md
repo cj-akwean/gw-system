@@ -644,21 +644,27 @@ Should the count be portal user accounts? Should revenue include over-the-counte
 
 - **"Customers" = active service connections.** The utility's customer record is the *connection*
   (account + meter + registered name + barangay). Portal `User` accounts are login identities only
-  — several renters can share one bill, one person can manage several bills, and most real customers
+  ï¿½ several renters can share one bill, one person can manage several bills, and most real customers
   never register at all (they pay at the office). Counting portal users would measure product
   adoption, not the customer base.
-- **Revenue = every `Payment` row, by `paid_at` — PayMongo and offline cash alike.** Revenue is
+- **Revenue = every `Payment` row, by `paid_at` ï¿½ PayMongo and offline cash alike.** Revenue is
   *money actually collected*, and the office records cash daily. Distinguishing by method is a
   breakdown detail, not a different metric. Month boundaries use `paid_at` (the day money arrived,
-  matching the office's collection ledger) rather than `created_at` (the day the row was written —
+  matching the office's collection ledger) rather than `created_at` (the day the row was written ï¿½
   equivalent for webhooks, but wrong for backdated cash entries).
 - **Outstanding = `sum(total_amount)` over unpaid + overdue invoices.** The amount the utility is
   owed right now, penalties included, unearned revenue excluded. Overdue bills are counted
-  separately because they carry the 2%/month penalty — a collections signal, not the same as a
+  separately because they carry the 2%/month penalty ï¿½ a collections signal, not the same as a
   merely unpaid bill.
-- **Why metrics live in a Service, not the widget:** the same rule as payment logic — Filament is a
+- **Why metrics live in a Service, not the widget:** the same rule as payment logic ï¿½ Filament is a
   UI consumer. The aggregates are plain query methods, unit-testable without a Livewire mount, and
   reusable by the future CRM/billing views and the customer portal later.
 - **Display only in the widget:** the service returns raw floats (Postgres `numeric` aggregates
-  arrive as strings), and peso formatting (`number_format()` + `?`) happens at render time — money
+  arrive as strings), and peso formatting (`number_format()` + `?`) happens at render time ï¿½ money
   math and money display never mix.
+
+**Addendum (audit 2026-08-06):** both revenue queries are upper-bounded at `now()->endOfMonth()`.
+A `paid_at` typo'd into a future month (or a row saved ahead of its collection date) used to
+inflate "revenue this month" and the chart's current-month bar; now future-month rows are
+invisible to revenue while same-month clock skew (webhook or locally entered timestamps a few
+minutes ahead) is still counted â€” the stat card and the chart share one month-boundary rule.

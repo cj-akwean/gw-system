@@ -7,6 +7,7 @@ use App\Models\Payment;
 use App\Models\ServiceConnection;
 use App\Services\DashboardMetricsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Tests\TestCase;
 
 class DashboardMetricsServiceTest extends TestCase
@@ -77,5 +78,55 @@ class DashboardMetricsServiceTest extends TestCase
         $this->assertSame(50.0, $series[$now->format('Y-m')]);
         $this->assertSame(20.0, $series[$now->copy()->subMonths(3)->format('Y-m')]);
         $this->assertSame(0.0, $series[$now->copy()->subMonths(1)->format('Y-m')]);
+    }
+
+    public function test_revenue_this_month_excludes_future_dated_payments(): void
+    {
+        Payment::factory()->create(['amount' => 300.00, 'paid_at' => now()]);
+        Payment::factory()->create(['amount' => 777.00, 'paid_at' => now()->addMonth()->addDay()]);
+
+        $this->assertSame(300.0, app(DashboardMetricsService::class)->revenueThisMonth());
+    }
+
+    public function test_revenue_last_months_excludes_future_dated_payments(): void
+    {
+        $now = now()->startOfMonth();
+
+        Payment::factory()->create(['amount' => 50.00, 'paid_at' => $now]);
+        Payment::factory()->create(['amount' => 777.00, 'paid_at' => $now->copy()->addMonth()->addDay()]);
+
+        $series = app(DashboardMetricsService::class)->revenueLastMonths();
+
+        $this->assertSame(50.0, $series[$now->format('Y-m')]);
+        $this->assertSame(50.0, array_sum($series));
+    }
+
+    public function test_revenue_last_months_counts_slightly_future_payments_in_current_month(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 8, 15, 12, 0, 0));
+
+        try {
+            Payment::factory()->create(['amount' => 25.00, 'paid_at' => now()->addMinutes(30)]);
+
+            $series = app(DashboardMetricsService::class)->revenueLastMonths();
+
+            $this->assertSame('2026-08', array_key_last($series));
+            $this->assertSame(25.0, $series['2026-08']);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_revenue_last_months_clamps_zero_or_negative_window(): void
+    {
+        $now = now()->startOfMonth();
+
+        Payment::factory()->create(['amount' => 30.00, 'paid_at' => $now]);
+
+        $series = app(DashboardMetricsService::class)->revenueLastMonths(0);
+
+        $this->assertCount(1, $series);
+        $this->assertSame($now->format('Y-m'), array_key_first($series));
+        $this->assertSame(30.0, $series[$now->format('Y-m')]);
     }
 }
