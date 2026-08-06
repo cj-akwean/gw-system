@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\Resources\PaymentResource\Pages\CreatePayment;
+use App\Filament\Resources\PaymentResource\Pages\ListPayments;
 use App\Filament\Resources\PaymentResource\Pages\ViewPayment;
 use App\Models\Invoice;
 use App\Models\Payment;
@@ -176,5 +177,94 @@ class PaymentResourceTest extends TestCase
             ])
             ->assertSee('Cash')
             ->assertSee($admin->name);
+    }
+
+    public function test_view_page_renders_the_payer_when_captured(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true]);
+        $invoice = $this->payableInvoice();
+        $invoice->update(['status' => 'paid']);
+
+        $payment = Payment::factory()->create([
+            'invoice_id' => $invoice->id,
+            'amount' => 40.00,
+            'method' => 'paymongo',
+            'paymongo_reference' => 'pay_view_test_3',
+            'payer_name' => 'Zooey Doge',
+            'payer_email' => 'zooey@example.com',
+            'payer_phone' => '09171234567',
+        ]);
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(ViewPayment::class, ['record' => $payment->id])
+            ->assertSee('Zooey Doge · zooey@example.com · 09171234567');
+    }
+
+    public function test_view_page_shows_a_dash_for_missing_payer(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true]);
+        $invoice = $this->payableInvoice();
+        $invoice->update(['status' => 'paid']);
+
+        $payment = Payment::factory()->create([
+            'invoice_id' => $invoice->id,
+            'amount' => 40.00,
+            'method' => 'cash',
+            'payer_name' => null,
+        ]);
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(ViewPayment::class, ['record' => $payment->id])
+            ->assertSee('Payer')
+            ->assertSee('—');
+    }
+
+    public function test_list_renders_reference_processed_by_and_payer_columns_for_paymongo_rows(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true]);
+        $invoice = $this->payableInvoice();
+        $invoice->update(['status' => 'paid']);
+
+        $payment = Payment::factory()->create([
+            'invoice_id' => $invoice->id,
+            'amount' => 40.00,
+            'method' => 'paymongo',
+            'paymongo_reference' => 'pay_list_test_1',
+            'paymongo_source' => 'gcash',
+            'reference' => null,
+            'payer_name' => 'Zooey Doge',
+            'payer_email' => 'zooey@example.com',
+            'recorded_by' => null,
+        ]);
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(ListPayments::class)
+            ->assertCanSeeTableRecords([$payment])
+            ->assertSee('pay_list_test_1')
+            ->assertSee('PayMongo · GCash')
+            ->assertSee('Processed By')
+            ->assertSee('Zooey Doge');
+    }
+
+    public function test_list_renders_reference_and_processed_by_for_cash_rows(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true, 'name' => 'Office Clerk']);
+        $invoice = $this->payableInvoice();
+        $invoice->update(['status' => 'paid']);
+
+        $payment = Payment::factory()->create([
+            'invoice_id' => $invoice->id,
+            'amount' => 456.00,
+            'method' => 'cash',
+            'paymongo_reference' => null,
+            'reference' => 'OR-2026-300',
+            'recorded_by' => $admin->id,
+        ]);
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(ListPayments::class)
+            ->assertCanSeeTableRecords([$payment])
+            ->assertSee('OR-2026-300')
+            ->assertSee('Office Clerk');
     }
 }

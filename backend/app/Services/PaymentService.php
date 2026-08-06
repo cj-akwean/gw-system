@@ -27,6 +27,9 @@ class PaymentService
      * @param  int  $amountCentavos  amount from the webhook, in centavos
      * @param  int|null  $paidAt  unix timestamp from the event, when present
      * @param  string|null  $paymongoSource  payment channel used, e.g. gcash / card (source.type from the event)
+     * @param  string|null  $payerName  name the payer typed at checkout (attributes.billing), empty when none
+     * @param  string|null  $payerEmail  email the payer typed at checkout (attributes.billing), empty when none
+     * @param  string|null  $payerPhone  phone the payer typed at checkout (attributes.billing), empty when none
      */
     public function markPaidFromWebhook(
         Invoice $invoice,
@@ -34,8 +37,11 @@ class PaymentService
         int $amountCentavos,
         ?int $paidAt = null,
         ?string $paymongoSource = null,
+        ?string $payerName = null,
+        ?string $payerEmail = null,
+        ?string $payerPhone = null,
     ): ?Payment {
-        return DB::transaction(function () use ($invoice, $paymentId, $amountCentavos, $paidAt, $paymongoSource): ?Payment {
+        return DB::transaction(function () use ($invoice, $paymentId, $amountCentavos, $paidAt, $paymongoSource, $payerName, $payerEmail, $payerPhone): ?Payment {
             /** @var Invoice|null $locked */
             $locked = Invoice::query()->lockForUpdate()->find($invoice->id);
 
@@ -88,6 +94,9 @@ class PaymentService
                 'method' => 'paymongo',
                 'paymongo_reference' => $paymentId,
                 'paymongo_source' => $paymongoSource,
+                'payer_name' => $payerName,
+                'payer_email' => $payerEmail,
+                'payer_phone' => $payerPhone,
                 'paid_at' => $paidAt !== null ? Carbon::createFromTimestamp($paidAt, config('app.timezone')) : now(),
             ]);
 

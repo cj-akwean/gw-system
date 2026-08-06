@@ -51,6 +51,11 @@ class ProcessPayMongoWebhookTest extends TestCase
                                 'brand' => 'visa',
                                 'last4' => '4345',
                             ],
+                            'billing' => [
+                                'name' => 'Zooey Doge',
+                                'email' => 'zooey@example.com',
+                                'phone' => '09171234567',
+                            ],
                         ],
                     ],
                 ],
@@ -81,6 +86,9 @@ class ProcessPayMongoWebhookTest extends TestCase
         $this->assertSame('pay_res_1', $payment->paymongo_reference);
         $this->assertSame(40.0, (float) $payment->amount);
         $this->assertSame(1619426488, $payment->paid_at->timestamp);
+        $this->assertSame('Zooey Doge', $payment->payer_name);
+        $this->assertSame('zooey@example.com', $payment->payer_email);
+        $this->assertSame('09171234567', $payment->payer_phone);
     }
 
     public function test_payment_paid_without_a_source_channel_is_recorded_with_null_source(): void
@@ -485,5 +493,72 @@ class ProcessPayMongoWebhookTest extends TestCase
         $this->runJob($this->paymentPaidPayload());
 
         Queue::assertNotPushed(SendPaymentConfirmationEmail::class);
+    }
+
+    public function test_payment_paid_with_null_billing_records_null_payer_fields(): void
+    {
+        $invoice = $this->invoiceFor('pi_test_1');
+
+        $payload = $this->paymentPaidPayload();
+        $payload['data']['attributes']['data']['attributes']['billing'] = null;
+
+        $this->runJob($payload);
+
+        $payment = Payment::where('invoice_id', $invoice->id)->sole();
+        $this->assertSame('paid', $invoice->fresh()->status);
+        $this->assertNull($payment->payer_name);
+        $this->assertNull($payment->payer_email);
+        $this->assertNull($payment->payer_phone);
+    }
+
+    public function test_payment_paid_without_billing_records_null_payer_fields(): void
+    {
+        $invoice = $this->invoiceFor('pi_test_1');
+
+        $payload = $this->paymentPaidPayload();
+        unset($payload['data']['attributes']['data']['attributes']['billing']);
+
+        $this->runJob($payload);
+
+        $payment = Payment::where('invoice_id', $invoice->id)->sole();
+        $this->assertSame('paid', $invoice->fresh()->status);
+        $this->assertNull($payment->payer_name);
+        $this->assertNull($payment->payer_email);
+        $this->assertNull($payment->payer_phone);
+    }
+
+    public function test_payment_paid_with_empty_billing_strings_records_null_payer_fields(): void
+    {
+        $invoice = $this->invoiceFor('pi_test_1');
+
+        $payload = $this->paymentPaidPayload();
+        $payload['data']['attributes']['data']['attributes']['billing'] = [
+            'name' => '   ',
+            'email' => '',
+            'phone' => null,
+        ];
+
+        $this->runJob($payload);
+
+        $payment = Payment::where('invoice_id', $invoice->id)->sole();
+        $this->assertSame('paid', $invoice->fresh()->status);
+        $this->assertNull($payment->payer_name);
+        $this->assertNull($payment->payer_email);
+        $this->assertNull($payment->payer_phone);
+    }
+
+    public function test_payment_paid_with_overlong_name_is_truncated_not_rejected(): void
+    {
+        $invoice = $this->invoiceFor('pi_test_1');
+
+        $payload = $this->paymentPaidPayload();
+        $payload['data']['attributes']['data']['attributes']['billing']['name'] = str_repeat('x', 300);
+
+        $this->runJob($payload);
+
+        $payment = Payment::where('invoice_id', $invoice->id)->sole();
+        $this->assertSame('paid', $invoice->fresh()->status);
+        $this->assertSame(255, mb_strlen($payment->payer_name));
+        $this->assertSame(substr(str_repeat('x', 300), 0, 255), $payment->payer_name);
     }
 }

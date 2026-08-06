@@ -7,6 +7,7 @@ use App\Mail\PaymentConfirmation;
 use App\Models\ConnectionLink;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\ServiceConnection;
 use App\Models\User;
 use Filament\Notifications\DatabaseNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -176,6 +177,57 @@ class SendPaymentConfirmationEmailTest extends TestCase
         $html = (new PaymentConfirmation($invoice, $payment))->render();
 
         $this->assertStringContainsString('pay_reference_email_1', $html);
+    }
+
+    public function test_the_markdown_body_shows_customer_account_meter_and_payer_rows(): void
+    {
+        $connection = ServiceConnection::factory()->create([
+            'registered_name' => 'Maria Santos',
+            'account_number' => 'GW-00234',
+            'meter_number' => 'MTR-00234',
+        ]);
+        $invoice = Invoice::factory()->create([
+            'service_connection_id' => $connection->id,
+            'status' => 'paid',
+            'invoice_number' => 'GW-2026-67892',
+        ]);
+        $payment = Payment::factory()->create([
+            'invoice_id' => $invoice->id,
+            'amount' => $invoice->total_amount,
+            'method' => 'paymongo',
+            'payer_name' => 'Juan Dela Cruz',
+            'payer_email' => 'juan@example.com',
+            'payer_phone' => '0917 123 4567',
+        ]);
+
+        $html = (new PaymentConfirmation($invoice, $payment))->render();
+
+        $this->assertStringContainsString('Maria Santos', $html);
+        $this->assertStringContainsString('GW-00234', $html);
+        $this->assertStringContainsString('MTR-00234', $html);
+        $this->assertStringContainsString('Juan Dela Cruz', $html);
+        $this->assertStringContainsString('juan@example.com', $html);
+    }
+
+    public function test_the_markdown_body_shows_a_dash_payer_row_when_no_payer_is_captured(): void
+    {
+        $invoice = Invoice::factory()->create([
+            'status' => 'paid',
+            'invoice_number' => 'GW-2026-67893',
+        ]);
+        $payment = Payment::factory()->create([
+            'invoice_id' => $invoice->id,
+            'amount' => $invoice->total_amount,
+            'method' => 'cash',
+            'payer_name' => null,
+            'payer_email' => null,
+            'payer_phone' => null,
+        ]);
+
+        $html = (new PaymentConfirmation($invoice, $payment))->render();
+
+        $this->assertStringContainsString('Payer', $html);
+        $this->assertStringContainsString('—', $html);
     }
 
     public function test_active_link_with_unlinked_at_set_is_excluded(): void

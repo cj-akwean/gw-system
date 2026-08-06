@@ -52,6 +52,9 @@ class OfflinePaymentTest extends TestCase
         $this->assertSame('cash', $payment->method);
         $this->assertSame('OR-2026-001', $payment->reference);
         $this->assertNull($payment->paymongo_reference);
+        $this->assertNull($payment->payer_name);
+        $this->assertNull($payment->payer_email);
+        $this->assertNull($payment->payer_phone);
         $this->assertSame($admin->id, $payment->recorded_by);
         $this->assertSame('2026-08-05', $payment->paid_at->toDateString());
     }

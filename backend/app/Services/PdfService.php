@@ -3,14 +3,15 @@
 namespace App\Services;
 
 use App\Models\Invoice;
+use App\Models\Payment;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Carbon;
 
 class PdfService
 {
-    public function generate(Invoice $invoice): string
+    public function generate(Invoice $invoice, ?Payment $payment = null): string
     {
-        $data = $this->buildViewData($invoice);
+        $data = $this->buildViewData($invoice, $payment);
 
         $html = view('pdfs.invoice', $data)->render();
 
@@ -20,7 +21,7 @@ class PdfService
             ->output();
     }
 
-    public function buildViewData(Invoice $invoice): array
+    public function buildViewData(Invoice $invoice, ?Payment $payment = null): array
     {
         $invoice->load(['serviceConnection.barangay', 'meterReading', 'rateSchedule']);
 
@@ -45,12 +46,20 @@ class PdfService
             $addressLine = '—';
         }
 
+        $payer = null;
+        if ($payment !== null && $payment->payer_name !== null) {
+            $payer = collect([$payment->payer_name, $payment->payer_email, $payment->payer_phone])
+                ->filter(fn (?string $value): bool => $value !== null && $value !== '')
+                ->implode(' · ');
+        }
+
         return [
             'invoiceNumber' => $invoice->invoice_number,
             'accountNumber' => $connection->account_number ?? '—',
             'meterNumber' => $connection->meter_number ?? '—',
             'customerName' => $connection->registered_name ?? '—',
             'addressLine' => $addressLine,
+            'payer' => $payer ?? '—',
             'presentReading' => $reading?->present_reading ?? '—',
             'previousReading' => $reading?->previous_reading ?? '—',
             'cuMUsed' => $reading?->cu_m_used ?? '—',

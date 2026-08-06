@@ -6,6 +6,7 @@ use App\Filament\Resources\ServiceConnectionResource;
 use App\Filament\Resources\ServiceConnectionResource\Pages\EditServiceConnection;
 use App\Filament\Resources\ServiceConnectionResource\Pages\ListServiceConnections;
 use App\Filament\Resources\ServiceConnectionResource\Pages\ViewServiceConnection;
+use App\Filament\Resources\ServiceConnectionResource\RelationManagers\ConnectionLinksRelationManager;
 use App\Jobs\SendConnectionIdentifierChangedEmail;
 use App\Models\Barangay;
 use App\Models\ConnectionLink;
@@ -261,7 +262,33 @@ class ServiceConnectionResourceTest extends TestCase
         Livewire::actingAs($this->admin(), 'admin')
             ->test(ViewServiceConnection::class, ['record' => $connection->id])
             ->assertSee('View GW-VIEW-1')
+            ->assertSee('Connection Links')
             ->assertSee('Meter Readings')
             ->assertSee('Invoices');
+    }
+
+    public function test_connection_links_relation_manager_lists_linked_users(): void
+    {
+        $connection = ServiceConnection::factory()->create([
+            'account_number' => 'GW-LINK-1',
+        ]);
+        $user = User::factory()->create(['name' => 'Linked Portal User', 'email' => 'linked@example.com']);
+
+        ConnectionLink::factory()->create([
+            'user_id' => $user->id,
+            'service_connection_id' => $connection->id,
+            'status' => 'active',
+            'linked_at' => now()->subDays(2),
+            'unlinked_at' => null,
+        ]);
+
+        Livewire::actingAs($this->admin(), 'admin')
+            ->test(ConnectionLinksRelationManager::class, [
+                'ownerRecord' => $connection,
+                'pageClass' => ViewServiceConnection::class,
+            ])
+            ->assertSee('Linked Portal User')
+            ->assertSee('linked@example.com')
+            ->assertSee('Active');
     }
 }

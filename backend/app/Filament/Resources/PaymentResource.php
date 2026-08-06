@@ -105,9 +105,14 @@ class PaymentResource extends Resource
                     ->content(fn (?Model $record): string => static::channelLabel($record?->paymongo_source))
                     ->visible(fn (string $operation, ?Model $record): bool => $operation === 'view' && $record?->method === 'paymongo'),
 
-                Placeholder::make('recorded_by_display')
-                    ->label('Recorded By')
-                    ->content(fn (?Model $record): string => static::recordedByLabel($record))
+                Placeholder::make('payer')
+                    ->label('Payer')
+                    ->content(fn (?Model $record): string => static::payerLabel($record))
+                    ->visible(fn (string $operation): bool => $operation === 'view'),
+
+                Placeholder::make('processed_by_display')
+                    ->label('Processed By')
+                    ->content(fn (?Model $record): string => static::processedByLabel($record))
                     ->visible(fn (string $operation): bool => $operation === 'view'),
 
                 DatePicker::make('paid_at')
@@ -159,7 +164,12 @@ class PaymentResource extends Resource
 
                 Tables\Columns\TextColumn::make('reference')
                     ->label('Reference')
-                    ->formatStateUsing(fn (Payment $record): string => $record->reference ?? $record->paymongo_reference ?? '—')
+                    ->getStateUsing(fn (Payment $record): string => $record->reference ?? $record->paymongo_reference ?? '—'),
+
+                Tables\Columns\TextColumn::make('payer_name')
+                    ->label('Payer')
+                    ->default('—')
+                    ->wrap()
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('paid_at')
@@ -168,10 +178,9 @@ class PaymentResource extends Resource
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('recordedBy.name')
-                    ->label('Recorded By')
-                    ->formatStateUsing(fn (Payment $record): string => static::recordedByLabel($record))
-                    ->wrap()
-                    ->toggleable(),
+                    ->label('Processed By')
+                    ->getStateUsing(fn (Payment $record): string => static::processedByLabel($record))
+                    ->wrap(),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('method')
@@ -290,12 +299,23 @@ class PaymentResource extends Resource
         return $known[$channel] ?? ucwords(str_replace('_', ' ', $channel));
     }
 
-    private static function recordedByLabel(Payment $record): string
+    private static function processedByLabel(Payment $record): string
     {
         if ($record->recordedBy !== null) {
             return (string) $record->recordedBy->name;
         }
 
         return $record->method === 'paymongo' ? 'PayMongo' : '—';
+    }
+
+    private static function payerLabel(?Payment $record): string
+    {
+        if ($record === null || $record->payer_name === null) {
+            return '—';
+        }
+
+        return collect([$record->payer_name, $record->payer_email, $record->payer_phone])
+            ->filter(fn (?string $value): bool => $value !== null && $value !== '')
+            ->implode(' · ');
     }
 }

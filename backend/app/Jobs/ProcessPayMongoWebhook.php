@@ -90,6 +90,10 @@ class ProcessPayMongoWebhook implements ShouldQueue
                 $amountCentavos = $attributes['amount'] ?? null;
                 $paidAt = $attributes['paid_at'] ?? null;
                 $paymongoSource = is_string($attributes['source']['type'] ?? null) ? $attributes['source']['type'] : null;
+                $billing = is_array($attributes['billing'] ?? null) ? $attributes['billing'] : [];
+                $payerName = $this->normalizePayerField($billing['name'] ?? null, 255);
+                $payerEmail = $this->normalizePayerField($billing['email'] ?? null, 255);
+                $payerPhone = $this->normalizePayerField($billing['phone'] ?? null, 40);
 
                 if (! is_string($paymentId) || ! is_string($intentId) || ! is_int($amountCentavos)) {
                     Log::channel('paymongo')->warning('PayMongo payment.paid skipped: malformed payment resource', [
@@ -120,6 +124,9 @@ class ProcessPayMongoWebhook implements ShouldQueue
                     $amountCentavos,
                     is_int($paidAt) ? $paidAt : null,
                     $paymongoSource,
+                    $payerName,
+                    $payerEmail,
+                    $payerPhone,
                 );
             });
         } catch (UniqueConstraintViolationException) {
@@ -127,6 +134,27 @@ class ProcessPayMongoWebhook implements ShouldQueue
                 'event_id' => $eventId,
             ]);
         }
+    }
+
+    /**
+     * Normalizes a payer field from the webhook's billing object: non-string
+     * and empty/whitespace values become null, and overlong values are
+     * truncated to the database column length so a malformed payload can
+     * never trip a Postgres value-too-long error inside the transaction.
+     */
+    private function normalizePayerField(mixed $value, int $maxLength): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        if ($value === '') {
+            return null;
+        }
+
+        return mb_strlen($value) > $maxLength ? mb_substr($value, 0, $maxLength) : $value;
     }
 
     /**

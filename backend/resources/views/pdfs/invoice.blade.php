@@ -36,6 +36,7 @@
             <tr><th>Account No.</th><td>{{ $accountNumber }}</td></tr>
             <tr><th>Meter No.</th><td>{{ $meterNumber }}</td></tr>
             <tr><th>Customer</th><td>{{ $customerName }}</td></tr>
+            <tr><th>Payer</th><td>{{ $payer }}</td></tr>
             <tr><th>Address</th><td>{{ $addressLine }}</td></tr>
         </table>
 

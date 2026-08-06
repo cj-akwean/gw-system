@@ -6,11 +6,19 @@ Your payment for invoice **{{ $invoice->invoice_number }}** has been received an
 <x-mail::table>
 | | |
 |---|---|
+| Customer | {{ $invoice->serviceConnection?->registered_name ?? '—' }} |
+| Account No. | {{ $invoice->serviceConnection?->account_number ?? '—' }} |
+| Meter No. | {{ $invoice->serviceConnection?->meter_number ?? '—' }} |
 | Invoice number | {{ $invoice->invoice_number }} |
 | Billing period | {{ $invoice->billing_period_start?->format('M d, Y') }} – {{ $invoice->billing_period_end?->format('M d, Y') }} |
 | Amount paid | ₱{{ number_format($payment->amount, 2) }} |
 | Invoice total | ₱{{ number_format($invoice->total_amount, 2) }} |
 | Date paid | {{ $payment->paid_at?->format('M d, Y') }} |
+@if ($payment->payer_name !== null)
+| Payer | {{ $payment->payer_name }}@if ($payment->payer_email !== null) · {{ $payment->payer_email }}@endif@if ($payment->payer_phone !== null) · {{ $payment->payer_phone }}@endif |
+@else
+| Payer | — |
+@endif
 | Reference | {{ $payment->reference ?? $payment->paymongo_reference ?? '—' }} |
 </x-mail::table>
 

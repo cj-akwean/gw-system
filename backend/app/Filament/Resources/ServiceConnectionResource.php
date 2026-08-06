@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\ServiceConnectionResource\Pages;
+use App\Filament\Resources\ServiceConnectionResource\RelationManagers\ConnectionLinksRelationManager;
 use App\Filament\Resources\ServiceConnectionResource\RelationManagers\InvoicesRelationManager;
 use App\Filament\Resources\ServiceConnectionResource\RelationManagers\MeterReadingsRelationManager;
 use App\Models\ServiceConnection;
@@ -174,6 +175,7 @@ class ServiceConnectionResource extends Resource
     public static function getRelations(): array
     {
         return [
+            ConnectionLinksRelationManager::class,
             MeterReadingsRelationManager::class,
             InvoicesRelationManager::class,
         ];

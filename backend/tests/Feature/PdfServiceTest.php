@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Barangay;
 use App\Models\Invoice;
 use App\Models\MeterReading;
+use App\Models\Payment;
 use App\Models\PenaltyRule;
 use App\Models\RateSchedule;
 use App\Models\ServiceConnection;
@@ -129,6 +130,43 @@ class PdfServiceTest extends TestCase
         $this->assertSame(150.00, $data['arrears']);
         $this->assertSame(3.00, $data['penalty']);
         $this->assertSame(1153.00, $data['total']);
+    }
+
+    public function test_view_renders_a_dash_payer_row_when_no_payment_is_attached(): void
+    {
+        $invoice = $this->makeInvoice();
+
+        $data = app(PdfService::class)->buildViewData($invoice);
+
+        $this->assertSame('—', $data['payer']);
+
+        $html = view('pdfs.invoice', $data)->render();
+
+        $this->assertStringContainsString('Payer', $html);
+        $this->assertStringContainsString('—', $html);
+    }
+
+    public function test_view_renders_the_payer_when_a_payment_is_attached(): void
+    {
+        $invoice = $this->makeInvoice();
+
+        $payment = Payment::factory()->create([
+            'invoice_id' => $invoice->id,
+            'amount' => $invoice->total_amount,
+            'method' => 'paymongo',
+            'payer_name' => 'Juan Dela Cruz',
+            'payer_email' => 'juan@example.com',
+            'payer_phone' => '0917 123 4567',
+        ]);
+
+        $data = app(PdfService::class)->buildViewData($invoice, $payment);
+
+        $this->assertSame('Juan Dela Cruz · juan@example.com · 0917 123 4567', $data['payer']);
+
+        $html = view('pdfs.invoice', $data)->render();
+
+        $this->assertStringContainsString('Juan Dela Cruz', $html);
+        $this->assertStringContainsString('juan@example.com', $html);
     }
 
     public function test_command_writes_a_pdf_file_to_storage(): void

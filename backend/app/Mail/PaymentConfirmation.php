@@ -44,7 +44,7 @@ class PaymentConfirmation extends Mailable
     {
         return [
             Attachment::fromData(
-                fn (): string => app(PdfService::class)->generate($this->invoice),
+                fn (): string => app(PdfService::class)->generate($this->invoice, $this->payment),
                 'invoice-'.$this->invoice->invoice_number.'.pdf',
             )->withMime('application/pdf'),
         ];
