@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\InvoiceResource;
 use App\Filament\Resources\PaymentResource;
 use App\Filament\Resources\ServiceConnectionResource;
 use App\Filament\Widgets\MetricsOverview;
@@ -101,6 +102,20 @@ class DashboardWidgetsTest extends TestCase
                     'paid_until' => now()->endOfMonth()->toDateString(),
                 ],
             ])),
+            $html,
+        );
+
+        $this->assertStringContainsString(InvoiceResource::getUrl('index'), $html);
+        $this->assertStringContainsString(
+            rawurlencode((string) json_encode(['status' => ['values' => ['unpaid']]])),
+            $html,
+        );
+        $this->assertStringContainsString(
+            rawurlencode((string) json_encode(['status' => ['values' => ['overdue']]])),
+            $html,
+        );
+        $this->assertStringContainsString(
+            rawurlencode((string) json_encode(['status' => ['values' => ['unpaid', 'overdue']]])),
             $html,
         );
     }

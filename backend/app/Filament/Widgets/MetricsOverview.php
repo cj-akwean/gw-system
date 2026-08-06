@@ -32,7 +32,7 @@ class MetricsOverview extends StatsOverviewWidget
                 ->color('warning')
                 ->url($this->filteredListUrl(
                     InvoiceResource::getUrl('index'),
-                    ['status' => ['value' => ['unpaid']]],
+                    ['status' => ['values' => ['unpaid']]],
                 )),
             Stat::make('Overdue bills', $metrics->overdueInvoicesCount())
                 ->description('2% penalty per month')
@@ -40,7 +40,7 @@ class MetricsOverview extends StatsOverviewWidget
                 ->color('danger')
                 ->url($this->filteredListUrl(
                     InvoiceResource::getUrl('index'),
-                    ['status' => ['value' => ['overdue']]],
+                    ['status' => ['values' => ['overdue']]],
                 )),
             Stat::make('Outstanding amount', $this->peso($metrics->receivablesOutstanding()))
                 ->description('unpaid + overdue')
@@ -48,7 +48,7 @@ class MetricsOverview extends StatsOverviewWidget
                 ->color('danger')
                 ->url($this->filteredListUrl(
                     InvoiceResource::getUrl('index'),
-                    ['status' => ['value' => ['unpaid', 'overdue']]],
+                    ['status' => ['values' => ['unpaid', 'overdue']]],
                 )),
             Stat::make('Revenue this month', $this->peso($metrics->revenueThisMonth()))
                 ->description('collections so far')
