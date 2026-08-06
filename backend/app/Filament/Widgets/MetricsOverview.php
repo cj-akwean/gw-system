@@ -2,6 +2,7 @@
 
 namespace App\Filament\Widgets;
 
+use App\Filament\Resources\InvoiceResource;
 use App\Filament\Resources\PaymentResource;
 use App\Filament\Resources\ServiceConnectionResource;
 use App\Services\DashboardMetricsService;
@@ -28,15 +29,27 @@ class MetricsOverview extends StatsOverviewWidget
             Stat::make('Unpaid bills', $metrics->unpaidInvoicesCount())
                 ->description('within grace period')
                 ->icon('heroicon-o-document-text')
-                ->color('warning'),
+                ->color('warning')
+                ->url($this->filteredListUrl(
+                    InvoiceResource::getUrl('index'),
+                    ['status' => ['value' => ['unpaid']]],
+                )),
             Stat::make('Overdue bills', $metrics->overdueInvoicesCount())
                 ->description('2% penalty per month')
                 ->icon('heroicon-o-exclamation-triangle')
-                ->color('danger'),
+                ->color('danger')
+                ->url($this->filteredListUrl(
+                    InvoiceResource::getUrl('index'),
+                    ['status' => ['value' => ['overdue']]],
+                )),
             Stat::make('Outstanding amount', $this->peso($metrics->receivablesOutstanding()))
                 ->description('unpaid + overdue')
                 ->icon('heroicon-o-banknotes')
-                ->color('danger'),
+                ->color('danger')
+                ->url($this->filteredListUrl(
+                    InvoiceResource::getUrl('index'),
+                    ['status' => ['value' => ['unpaid', 'overdue']]],
+                )),
             Stat::make('Revenue this month', $this->peso($metrics->revenueThisMonth()))
                 ->description('collections so far')
                 ->icon('heroicon-o-arrow-trending-up')
