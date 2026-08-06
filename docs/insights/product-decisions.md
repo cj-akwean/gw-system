@@ -766,3 +766,44 @@ connection model, which is unsafe if the record is gone by the time a job dies.
 - **`failed()` is model-free.** The job carries `serviceConnectionId` as a plain int, so the admin
   alert + log fire even if the connection row is deleted before the job resolves (can't happen via
   the CRM � no delete � but imports/other code could).
+
+## 26. Admin reports + payer identity + registration: three user asks, one plan (2026-08-06, planned — not yet built)
+
+**Question asked:** three asks from the user — (1) the admin should be able to download reports/CSVs
+("csv of all the payments that happened or any kinds of reports"), (2) the emailed receipt should
+name who paid / whose bill it is for proofing ("you don't log who is the customer user who paid the
+bill"), and (3) the office never collected applicant registration details or an application flow —
+real-world, a customer applying for water in their own name (contact no., gender, etc.) and being
+issued a meter no. and an account no. exists nowhere in the system today (connections are seeded
+fakes with only account/meter/name/address/barangay/status/connection_date).
+
+**Answer + reasoning (decided with the user 2026-08-06; recorded as ARCHITECTURE.md items, not built):**
+
+- **Exports: maatwebsite/excel (already installed for the meter-reading import), CSV only, streamed
+  synchronously from Filament header buttons that respect the table's active filters.** Filament v5
+  core ships no built-in exporter (v3's exporter moved to a plugin backed by spatie/laravel-exporter)
+  whose workflow parks files on disk and needs the queue worker to finish the job before download.
+  That breaks two project rules — no queue worker guaranteed, no permanent file storage. Our row
+  volumes are small, so a synchronous filtered-CSV download is simpler, adds zero dependencies, and
+  leaves no files behind. Export columns deliberately include payer/customer identity so a downloaded
+  payment report doubles as an audit trail. CSV only unless XLSX is explicitly needed later (same
+  package).
+- **Payer identity: capture it from the PayMongo webhook — no `paid_by` column.** The `payment.paid`
+  event's `attributes.billing` object already carries what the payer typed at PayMongo checkout
+  (name, email, phone). Caveat understood and intended: that billing data is "who paid at the
+  payment channel", not necessarily the linked portal-user row (someone can pay for another person).
+  For receipt proofing that's the correct record — `registered_name` (service_connections) proves
+  whose bill it is; the payer fields prove who actually paid. Offline/manual payments have no payer
+  (admin-recorded) and stay NULL.
+- **Registration: extend `service_connections` + enable create + CSV import, not a redesign.** All
+  new applicant columns are nullable so the seed rows and any imported data keep validating (the
+  seed rows are fake anyway — no backfill needed). Status gains `pending` so an application can sit
+  pending before activation. The import page mirrors the proven ImportMeterReadings UX (upload →
+  preview → validate → import) so a real office can onboard existing registrants in bulk; blank
+  account/meter numbers are auto-generated with unique backstops; otherwise identifier issuance stays
+  admin-controlled to mirror how the office actually issues them. When the office has real applicant
+  data to migrate, revisit whether these fields should become non-nullable/enforced.
+
+**Deferred / noted:** logging which *portal user* (as opposed to channel payer) initiated a payment
+is intentionally not built here — the billing object covers the proofing need without a webhook →
+intent → user join. If ever required, the intent-creation endpoint is the place to record it.
