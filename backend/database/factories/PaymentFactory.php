@@ -17,8 +17,12 @@ class PaymentFactory extends Factory
             'amount' => fake()->randomFloat(2, 100, 5000),
             'method' => fake()->randomElement(['paymongo', 'cash', 'bank_transfer']),
             'paymongo_reference' => fn (array $attributes) => $attributes['method'] === 'paymongo'
-                ? 'pay_' . fake()->uuid()
+                ? 'pay_'.fake()->uuid()
                 : null,
+            'reference' => fn (array $attributes) => $attributes['method'] === 'paymongo'
+                ? null
+                : (string) fake()->unique()->numberBetween(10000, 99999),
+            'recorded_by' => null,
             'paid_at' => now(),
         ];
     }
@@ -27,7 +31,8 @@ class PaymentFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'method' => 'paymongo',
-            'paymongo_reference' => 'pay_' . fake()->uuid(),
+            'paymongo_reference' => 'pay_'.fake()->uuid(),
+            'reference' => null,
         ]);
     }
 
@@ -36,6 +41,7 @@ class PaymentFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'method' => 'cash',
             'paymongo_reference' => null,
+            'reference' => (string) fake()->unique()->numberBetween(10000, 99999),
         ]);
     }
 }

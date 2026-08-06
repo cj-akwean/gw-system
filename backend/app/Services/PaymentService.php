@@ -2,15 +2,19 @@
 
 namespace App\Services;
 
+use App\Exceptions\InvoiceNotPayableException;
 use App\Jobs\SendPaymentConfirmationEmail;
 use App\Models\Invoice;
 use App\Models\Payment;
-use Illuminate\Support\Carbon;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use InvalidArgumentException;
 
 class PaymentService
 {
+    public const OFFLINE_METHODS = ['cash'];
+
     /**
      * Marks an invoice paid from a PayMongo webhook event and records the
      * payment. Runs atomically: locks the invoice row, refuses any change
@@ -96,6 +100,75 @@ class PaymentService
             ]);
 
             return $payment;
+        });
+    }
+
+    /**
+     * Records a manual/offline payment (e.g. cash collected over the counter)
+     * and marks the invoice paid. Atomic: locks the invoice row and only ever
+     * transitions {unpaid, overdue} -> paid. Never touches the PayMongo
+     * reference namespace — offline rows keep paymongo_reference NULL. No
+     * receipt email is sent (the customer paid the paper bill at the office).
+     *
+     * Real cash does not split centavos, so the amount only needs to be within
+     * one peso of the invoice total; the recorded amount is what was received.
+     *
+     * @param  float  $amount  amount actually received (within ₱1.00 of the total)
+     *
+     * @throws InvoiceNotPayableException invoice missing, already paid, or not {unpaid, overdue}
+     * @throws InvalidArgumentException amount non-positive/zero, out of tolerance, or method not allowed
+     */
+    public function recordOfflinePayment(
+        int $invoiceId,
+        float $amount,
+        ?string $reference = null,
+        ?string $paidAt = null,
+        ?int $recordedBy = null,
+        string $method = 'cash',
+    ): Payment {
+        if (! in_array($method, self::OFFLINE_METHODS, true)) {
+            throw new InvalidArgumentException(sprintf('Payment method "%s" is not an offline payment method.', $method));
+        }
+
+        return DB::transaction(function () use ($invoiceId, $amount, $reference, $paidAt, $recordedBy, $method): Payment {
+            /** @var Invoice|null $locked */
+            $locked = Invoice::query()->lockForUpdate()->find($invoiceId);
+
+            if ($locked === null) {
+                throw new InvalidArgumentException('Invoice not found or no longer exists.');
+            }
+
+            if (! in_array($locked->status, ['unpaid', 'overdue'], true)) {
+                throw new InvoiceNotPayableException($locked);
+            }
+
+            if ($amount <= 0) {
+                throw new InvalidArgumentException('Payment amount must be a positive number.');
+            }
+
+            if ($paidAt && strtotime($paidAt) > strtotime('today')) {
+                throw new InvalidArgumentException('Payment date cannot be in the future.');
+            }
+
+            if (abs($amount - (float) $locked->total_amount) >= 1.00) {
+                throw new InvalidArgumentException(sprintf(
+                    'Offline payments must be within ₱1.00 of the invoice total (₱%s). Entered ₱%s.',
+                    number_format((float) $locked->total_amount, 2),
+                    number_format($amount, 2),
+                ));
+            }
+
+            $locked->update(['status' => 'paid']);
+
+            return Payment::create([
+                'invoice_id' => $locked->id,
+                'amount' => round($amount, 2),
+                'method' => $method,
+                'paymongo_reference' => null,
+                'reference' => $reference ?: null,
+                'paid_at' => $paidAt ? Carbon::parse($paidAt) : now(),
+                'recorded_by' => $recordedBy,
+            ]);
         });
     }
 }

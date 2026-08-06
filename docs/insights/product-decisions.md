@@ -571,3 +571,36 @@ resend command adds nothing new here because it only reads state; it cannot crea
 (`text ->>` does not exist). Filament's own docs say Postgres must use `->json('data')`.
 Also found: `ImportMeterReadingsPageTest` had no `RefreshDatabase`, so its committed admin user
 was leaking into later tests (my new notification-count assertions caught it). Both fixed.
+
+## 20. Offline (over-the-counter) payments: cash-only, full-amount, nearest-peso tolerance, no email
+
+**Question asked (2026-08-06, Payments item "Record offline/manual payments in admin"):** the real
+utility settles many bills offline — first-month connections, flagged-reading manual invoices, walk-in
+payers. What should the admin "mark paid" flow actually record?
+
+**Answer + reasoning (confirmed with the user):**
+
+- **Cash only for now.** `payments.method` stays a free string; `PaymentService::OFFLINE_METHODS =
+  ['cash']` is the single place to add `check` / `bank_deposit` / `remittance` later — no schema
+  change, the form, badge and filter all derive from that constant. The office's instruments beyond
+  cash weren't something the user could confirm ("how do we even handle a check or bank remittance?
+  are they confirmable easily?"), so inventing a wider list would be guessing about money.
+- **Full payment only — but the amount is what the cashier actually received.** No partial-payment
+  model (deferred: it changes invoice status semantics). The guard is NOT the webhook's exact-centavos
+  match: PH payers rarely split centavos, so a ₱456.56 bill is settled at "the nearest full peso" in
+  the real world. The rule: amount must be **within ₱1.00 of the invoice total** — captures both
+  up-rounding (457) and down-rounding (456), and still rejects a genuine partial/overpayment (≥ ₱1.00
+  off) instead of silently accepting noise.
+- **No receipt email on offline payments.** Portal users may not even have an email (registration
+  doesn't require one); the customer is standing at the counter with a paper bill — the office's
+  physical OR is the receipt. `PaymentConfirmation` stays online-only; adding an offline receipt later
+  is a one-line dispatch of `SendPaymentConfirmationEmail`.
+- **Audit trail mirrors meter readings:** `payments.recorded_by` (nullable FK to users) records which
+  admin took the cash; payments are **create-only** in the admin UI (no edit/delete on money rows).
+  Offline rows never touch `paymongo_reference` (a new nullable `reference` column holds the OR no.) —
+  the unique index and `paymongo:reconcile` cross-check stay meaningful.
+
+**Concurrency guardrail (verified in tests):** the tolerance check runs inside the same transaction
+that flips the invoice to `paid` (`lockForUpdate`), so a webhook payment and an offline cash payment
+racing on the same invoice cannot double-credit — the loser throws `InvoiceNotPayableException`, the
+form shows a danger toast, and nothing is recorded.
