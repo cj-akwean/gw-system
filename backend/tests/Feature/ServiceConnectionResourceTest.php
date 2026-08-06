@@ -157,10 +157,66 @@ class ServiceConnectionResourceTest extends TestCase
             ->call('save')
             ->assertHasNoFormErrors();
 
-        Queue::assertPushed(SendConnectionIdentifierChangedEmail::class, function ($job) use ($connection) {
+        Queue::assertPushed(SendConnectionIdentifierChangedEmail::class, function ($job) use ($connection, $user) {
             return $job->serviceConnection->is($connection)
-                && $job->oldIdentifiers === ['account_number' => 'GW-OLD-001'];
+                && $job->serviceConnectionId === $connection->id
+                && $job->oldIdentifiers === ['account_number' => 'GW-OLD-001']
+                && $job->recipients === [strtolower($user->email)];
         });
+    }
+
+    public function test_identifier_change_job_unique_id_is_scoped_to_content(): void
+    {
+        $connection = ServiceConnection::factory()->create(['account_number' => 'GW-OLD-001']);
+
+        $sameA = new SendConnectionIdentifierChangedEmail(
+            $connection,
+            $connection->id,
+            ['account_number' => 'GW-OLD-001'],
+            ['a@example.com'],
+        );
+        $sameB = new SendConnectionIdentifierChangedEmail(
+            $connection,
+            $connection->id,
+            ['account_number' => 'GW-OLD-001'],
+            ['a@example.com'],
+        );
+
+        $differentIdentifiers = new SendConnectionIdentifierChangedEmail(
+            $connection,
+            $connection->id,
+            ['account_number' => 'GW-OTHER'],
+            ['a@example.com'],
+        );
+        $differentRecipients = new SendConnectionIdentifierChangedEmail(
+            $connection,
+            $connection->id,
+            ['account_number' => 'GW-OLD-001'],
+            ['b@example.com'],
+        );
+        $differentConnection = new SendConnectionIdentifierChangedEmail(
+            ServiceConnection::factory()->create(),
+            $connection->id + 1,
+            ['account_number' => 'GW-OLD-001'],
+            ['a@example.com'],
+        );
+
+        $this->assertSame($sameA->uniqueId(), $sameB->uniqueId());
+        $this->assertNotSame($sameA->uniqueId(), $differentIdentifiers->uniqueId());
+        $this->assertNotSame($sameA->uniqueId(), $differentRecipients->uniqueId());
+        $this->assertNotSame($sameA->uniqueId(), $differentConnection->uniqueId());
+    }
+
+    public function test_duplicate_dispatch_of_unchanged_identifiers_is_skipped(): void
+    {
+        Queue::fake();
+
+        $connection = ServiceConnection::factory()->create(['account_number' => 'GW-OLD-001']);
+
+        SendConnectionIdentifierChangedEmail::dispatch($connection, $connection->id, ['account_number' => 'GW-OLD-001'], ['a@example.com']);
+        SendConnectionIdentifierChangedEmail::dispatch($connection, $connection->id, ['account_number' => 'GW-OLD-001'], ['a@example.com']);
+
+        Queue::assertPushed(SendConnectionIdentifierChangedEmail::class, 1);
     }
 
     public function test_unchanged_edit_does_not_notify(): void

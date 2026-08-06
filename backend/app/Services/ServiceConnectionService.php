@@ -39,7 +39,12 @@ class ServiceConnectionService
             return 0;
         }
 
-        SendConnectionIdentifierChangedEmail::dispatch($connection, array_filter($oldIdentifiers));
+        SendConnectionIdentifierChangedEmail::dispatch(
+            $connection,
+            $connection->id,
+            array_filter($oldIdentifiers),
+            $recipients,
+        );
 
         return count($recipients);
     }

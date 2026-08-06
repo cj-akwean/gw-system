@@ -742,3 +742,27 @@ them looked like it could orphan links or silently break CSV resolution.
   deep links (unpaid / overdue / outstanding) are deferred until the `InvoiceResource` item exists â€”
   linking to a resource that doesn't exist yet would 404. URL query-state is passed as a
   rawurlencoded JSON `filters` param, matching Filament's own URL-backed filter encoding.
+
+## 25. Identifier-change emails: snapshot recipients + dedupe (2026-08-06, hardening after review)
+
+**Question asked:** after 8887f19 shipped, a review found three reliability gaps in the
+identifier-change notification: (1) the admin toast counts recipients at save time but the queued
+job re-queried links at run time, so the count could disagree with who actually got emailed;
+(2) a double-save of the same identifiers emails customers twice; (3) `failed()` accessed the
+connection model, which is unsafe if the record is gone by the time a job dies.
+
+**Answer + reasoning:**
+- **Recipients are now a snapshot, not a re-query.** The service resolves the recipient list once,
+  passes it in the job payload, and the job emails exactly that list. Toast count, log line, and
+  actual send can no longer drift. Trade-off: a user who unlinks *after* the save still receives the
+  one email about the change that happened while they were linked — acceptable and deterministic.
+- **Duplicates are dropped at dispatch, not at send.** The job implements `ShouldBeUnique` with a
+  `uniqueId()` keyed on (connection id + changed identifiers + recipients) and a 1h lock
+  (`#[UniqueFor(3600)]`). Laravel's `UniqueLock` acquires the lock in `PendingDispatch` before the
+  queue write, so a second identical dispatch never even reaches the `jobs` table. Cache store is
+  `database` in prod — `DatabaseStore` implements `LockProvider`, verified against the installed
+  Laravel 13 source. A different edit (different old identifiers, or a new recipient) gets its own
+  key and emails normally.
+- **`failed()` is model-free.** The job carries `serviceConnectionId` as a plain int, so the admin
+  alert + log fire even if the connection row is deleted before the job resolves (can't happen via
+  the CRM — no delete — but imports/other code could).
