@@ -11,9 +11,7 @@ use Maatwebsite\Excel\Concerns\WithMapping;
 
 class PaymentsExport implements FromQuery, WithHeadings, WithMapping
 {
-    public function __construct(protected Builder $query)
-    {
-    }
+    public function __construct(protected Builder $query) {}
 
     public function query(): Builder
     {
@@ -43,7 +41,6 @@ class PaymentsExport implements FromQuery, WithHeadings, WithMapping
     public function map($payment): array
     {
         /** @var Payment $payment */
-
         $invoice = $payment->invoice;
         $connection = $invoice?->serviceConnection;
 
@@ -66,7 +63,7 @@ class PaymentsExport implements FromQuery, WithHeadings, WithMapping
     {
         if (
             $value !== ''
-            && in_array($value[0], ["=", "+", "-", "@", "\t", "\r"], true)
+            && in_array($value[0], ['=', '+', '-', '@', "\t", "\r", "\n"], true)
         ) {
             return "'".$value;
         }

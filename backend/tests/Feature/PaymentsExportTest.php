@@ -62,9 +62,16 @@ class PaymentsExportTest extends TestCase
 
         $this->assertNotFalse($content, 'download content is not valid base64');
 
-        $lines = preg_split('/\r\n|\r|\n/', $content, -1, PREG_SPLIT_NO_EMPTY);
+        $stream = fopen('php://temp', 'r+');
+        fwrite($stream, $content);
+        rewind($stream);
 
-        return array_map(fn (string $line): array => str_getcsv($line), $lines);
+        $rows = [];
+        while (($line = fgetcsv($stream)) !== false) {
+            $rows[] = $line;
+        }
+
+        return $rows;
     }
 
     private function assertHeader(array $rows): void
@@ -310,6 +317,26 @@ class PaymentsExportTest extends TestCase
 
         $this->assertSame("'=HYPERLINK(\"http://evil.example\")", $rows[1][8]);
         $this->assertSame("'@evil.example", $rows[1][9]);
+    }
+
+    public function test_export_escapes_newline_prefixed_formula_injection(): void
+    {
+        $this->payment($this->invoice($this->connection('GW-00001', 'MTR-00001', 'Ana Dela Cruz'), 'paid'), [
+            'amount' => 500.00,
+            'method' => 'cash',
+            'reference' => 'OR-100',
+            'payer_name' => "\n=cmd()",
+            'payer_email' => "\n=cmd()",
+            'paid_at' => '2026-08-01 09:00:00',
+        ]);
+
+        $rows = $this->exportCsv();
+
+        $this->assertHeader($rows);
+
+        $this->assertSame("'\n=cmd()", $rows[1][8]);
+        $this->assertSame("'\n=cmd()", $rows[1][9]);
+        $this->assertCount(2, $rows);
     }
 
     public function test_export_records_who_recorded_offline_payments(): void

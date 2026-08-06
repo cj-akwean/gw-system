@@ -19,7 +19,7 @@ class PaymentsExportTest extends TestCase
 
     public function test_headings_match_the_specification(): void
     {
-        $export = $this->exportFor(new Payment());
+        $export = $this->exportFor(new Payment);
 
         $this->assertSame([
             'paid_at',
@@ -38,12 +38,12 @@ class PaymentsExportTest extends TestCase
 
     public function test_map_outputs_a_fully_populated_row(): void
     {
-        $connection = (new ServiceConnection())
+        $connection = (new ServiceConnection)
             ->forceFill(['account_number' => 'GW-00001', 'meter_number' => 'MTR-00001', 'registered_name' => 'Ana Dela Cruz']);
-        $invoice = (new Invoice())->forceFill(['invoice_number' => 'GW-2026-00001'])->setRelation('serviceConnection', $connection);
-        $clerk = (new User())->setAttribute('name', 'Office Clerk');
+        $invoice = (new Invoice)->forceFill(['invoice_number' => 'GW-2026-00001'])->setRelation('serviceConnection', $connection);
+        $clerk = (new User)->setAttribute('name', 'Office Clerk');
 
-        $payment = (new Payment())->forceFill([
+        $payment = (new Payment)->forceFill([
             'amount' => 500.00,
             'method' => 'paymongo',
             'paymongo_reference' => 'pay_test_1',
@@ -54,7 +54,7 @@ class PaymentsExportTest extends TestCase
             ->setRelation('invoice', $invoice)
             ->setRelation('recordedBy', $clerk);
 
-        $payment->paid_at = \Illuminate\Support\Carbon::parse('2026-08-01 10:30:00');
+        $payment->paid_at = Carbon::parse('2026-08-01 10:30:00');
 
         $row = $this->exportFor($payment)->map($payment);
 
@@ -75,11 +75,11 @@ class PaymentsExportTest extends TestCase
 
     public function test_map_handles_an_invoice_without_a_service_connection(): void
     {
-        $invoice = (new Invoice())
+        $invoice = (new Invoice)
             ->forceFill(['invoice_number' => 'GW-123-000002'])
             ->setRelation('serviceConnection', null);
 
-        $payment = (new Payment())->forceFill([
+        $payment = (new Payment)->forceFill([
             'amount' => 100.00,
             'method' => 'cash',
             'reference' => 'OR-100',
@@ -87,7 +87,7 @@ class PaymentsExportTest extends TestCase
             ->setRelation('invoice', $invoice)
             ->setRelation('recordedBy', null);
 
-        $payment->paid_at = \Illuminate\Support\Carbon::parse('2026-08-01 09:00:00');
+        $payment->paid_at = Carbon::parse('2026-08-01 09:00:00');
 
         $row = $this->exportFor($payment)->map($payment);
 
@@ -99,11 +99,11 @@ class PaymentsExportTest extends TestCase
 
     public function test_map_reports_paymongo_for_webhook_payments_with_no_recorder(): void
     {
-        $invoice = (new Invoice())
+        $invoice = (new Invoice)
             ->forceFill(['invoice_number' => 'GW-2026-00002'])
             ->setRelation('serviceConnection', null);
 
-        $payment = (new Payment())->forceFill([
+        $payment = (new Payment)->forceFill([
             'amount' => 100.00,
             'method' => 'paymongo',
             'paymongo_reference' => 'pay_test_2',
@@ -111,7 +111,7 @@ class PaymentsExportTest extends TestCase
             ->setRelation('invoice', $invoice)
             ->setRelation('recordedBy', null);
 
-        $payment->paid_at = \Illuminate\Support\Carbon::parse('2026-08-01 10:00:00');
+        $payment->paid_at = Carbon::parse('2026-08-01 10:00:00');
 
         $row = $this->exportFor($payment)->map($payment);
 
@@ -120,9 +120,9 @@ class PaymentsExportTest extends TestCase
 
     public function test_map_escapes_formula_injection_in_payer_fields(): void
     {
-        $invoice = (new Invoice())->setRelation('serviceConnection', null);
+        $invoice = (new Invoice)->setRelation('serviceConnection', null);
 
-        $payment = (new Payment())->forceFill([
+        $payment = (new Payment)->forceFill([
             'amount' => 100.00,
             'method' => 'paymongo',
             'paymongo_reference' => 'pay_test_2',
@@ -132,7 +132,7 @@ class PaymentsExportTest extends TestCase
             ->setRelation('invoice', $invoice)
             ->setRelation('recordedBy', null);
 
-        $payment->paid_at = \Illuminate\Support\Carbon::parse('2026-08-01 10:00:00');
+        $payment->paid_at = Carbon::parse('2026-08-01 10:00:00');
 
         $row = $this->exportFor($payment)->map($payment);
 
@@ -142,9 +142,9 @@ class PaymentsExportTest extends TestCase
 
     public function test_map_escapes_tab_and_carriage_return_prefixed_formula_injection(): void
     {
-        $invoice = (new Invoice())->setRelation('serviceConnection', null);
+        $invoice = (new Invoice)->setRelation('serviceConnection', null);
 
-        $payment = (new Payment())->forceFill([
+        $payment = (new Payment)->forceFill([
             'amount' => 100.00,
             'method' => 'cash',
             'reference' => 'OR-100',
@@ -154,7 +154,7 @@ class PaymentsExportTest extends TestCase
             ->setRelation('invoice', $invoice)
             ->setRelation('recordedBy', null);
 
-        $payment->paid_at = \Illuminate\Support\Carbon::parse('2026-08-01 10:00:00');
+        $payment->paid_at = Carbon::parse('2026-08-01 10:00:00');
 
         $row = $this->exportFor($payment)->map($payment);
 
@@ -162,11 +162,31 @@ class PaymentsExportTest extends TestCase
         $this->assertSame("'\r=cmd()", $row[9]);
     }
 
+    public function test_map_escapes_newline_prefixed_formula_injection(): void
+    {
+        $invoice = (new Invoice)->setRelation('serviceConnection', null);
+
+        $payment = (new Payment)->forceFill([
+            'amount' => 100.00,
+            'method' => 'cash',
+            'reference' => 'OR-100',
+            'payer_name' => "\n=cmd()",
+        ])
+            ->setRelation('invoice', $invoice)
+            ->setRelation('recordedBy', null);
+
+        $payment->paid_at = Carbon::parse('2026-08-01 10:00:00');
+
+        $row = $this->exportFor($payment)->map($payment);
+
+        $this->assertSame("'\n=cmd()", $row[8]);
+    }
+
     public function test_map_outputs_an_empty_paid_at_for_a_null_date(): void
     {
-        $invoice = (new Invoice())->setRelation('serviceConnection', null);
+        $invoice = (new Invoice)->setRelation('serviceConnection', null);
 
-        $payment = (new Payment())->forceFill([
+        $payment = (new Payment)->forceFill([
             'amount' => 100.00,
             'method' => 'cash',
             'reference' => 'OR-100',

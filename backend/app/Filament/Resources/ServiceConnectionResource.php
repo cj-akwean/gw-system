@@ -137,10 +137,7 @@ class ServiceConnectionResource extends Resource
                     ->label('Rate')
                     ->toggleable(),
             ])
-            ->modifyQueryUsing(fn (Builder $query): Builder => $query->withSum(
-                ['invoices as pending_balance' => fn (Builder $q): Builder => $q->whereIn('status', ['unpaid', 'overdue'])],
-                'total_amount',
-            ))
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->withPendingBalance())
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
                     ->options([

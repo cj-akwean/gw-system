@@ -7,6 +7,7 @@ use App\Filament\Resources\ServiceConnectionResource;
 use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
 use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class ListServiceConnections extends ListRecords
 {
@@ -18,7 +19,7 @@ class ListServiceConnections extends ListRecords
             Actions\Action::make('exportCsv')
                 ->label('Export CSV')
                 ->icon('heroicon-o-arrow-down-tray')
-                ->action(function (): \Symfony\Component\HttpFoundation\BinaryFileResponse {
+                ->action(function (): BinaryFileResponse {
                     return Excel::download(
                         new ServiceConnectionsExport($this->getTableQueryForExport()),
                         'service-connections-'.now()->format('Y-m-d-His').'.csv',

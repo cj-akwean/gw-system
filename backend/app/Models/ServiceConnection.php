@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Database\Factories\ServiceConnectionFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -45,5 +46,13 @@ class ServiceConnection extends Model
     public function invoices(): HasMany
     {
         return $this->hasMany(Invoice::class);
+    }
+
+    public function scopeWithPendingBalance(Builder $query): Builder
+    {
+        return $query->withSum(
+            ['invoices as pending_balance' => fn (Builder $q): Builder => $q->whereIn('status', ['unpaid', 'overdue'])],
+            'total_amount',
+        );
     }
 }

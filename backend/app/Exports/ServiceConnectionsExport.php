@@ -4,22 +4,27 @@ namespace App\Exports;
 
 use App\Models\ServiceConnection;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Expression;
 use Maatwebsite\Excel\Concerns\FromQuery;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
 
 class ServiceConnectionsExport implements FromQuery, WithHeadings, WithMapping
 {
-    public function __construct(protected Builder $query)
-    {
-    }
+    public function __construct(protected Builder $query) {}
 
     public function query(): Builder
     {
-        return $this->query
+        $query = $this->query
             ->clone()
             ->with(['barangay', 'rateSchedule'])
             ->orderBy('account_number');
+
+        if (! $this->querySelectsPendingBalance()) {
+            $query->withPendingBalance();
+        }
+
+        return $query;
     }
 
     public function headings(): array
@@ -55,11 +60,24 @@ class ServiceConnectionsExport implements FromQuery, WithHeadings, WithMapping
         ];
     }
 
+    private function querySelectsPendingBalance(): bool
+    {
+        $columns = $this->query->getQuery()->columns ?? [];
+
+        foreach ($columns as $column) {
+            if (str_contains($column instanceof Expression ? $column->getValue($this->query->getQuery()->getGrammar()) : (string) $column, 'pending_balance')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function sanitize(string $value): string
     {
         if (
             $value !== ''
-            && in_array($value[0], ["=", "+", "-", "@", "\t", "\r"], true)
+            && in_array($value[0], ['=', '+', '-', '@', "\t", "\r", "\n"], true)
         ) {
             return "'".$value;
         }

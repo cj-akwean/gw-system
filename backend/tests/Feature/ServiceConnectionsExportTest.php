@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Exports\ServiceConnectionsExport;
 use App\Filament\Resources\ServiceConnectionResource\Pages\ListServiceConnections;
 use App\Models\Barangay;
 use App\Models\Invoice;
@@ -52,9 +53,16 @@ class ServiceConnectionsExportTest extends TestCase
 
         $this->assertNotFalse($content, 'download content is not valid base64');
 
-        $lines = preg_split('/\r\n|\r|\n/', $content, -1, PREG_SPLIT_NO_EMPTY);
+        $stream = fopen('php://temp', 'r+');
+        fwrite($stream, $content);
+        rewind($stream);
 
-        return array_map(fn (string $line): array => str_getcsv($line), $lines);
+        $rows = [];
+        while (($line = fgetcsv($stream)) !== false) {
+            $rows[] = $line;
+        }
+
+        return $rows;
     }
 
     private function assertHeader(array $rows): void
@@ -274,5 +282,33 @@ class ServiceConnectionsExportTest extends TestCase
 
         $this->assertSame("'=HYPERLINK(\"http://evil.example\")", $rows[1][2]);
         $this->assertSame("'@evil.example", $rows[1][4]);
+    }
+
+    public function test_export_computes_pending_balance_even_when_constructed_standalone(): void
+    {
+        $connection = $this->connection([
+            'account_number' => 'GW-00001',
+            'meter_number' => 'MTR-00001',
+            'registered_name' => 'Ana Dela Cruz',
+            'barangay_id' => $this->barangay('Mauraro')->id,
+            'status' => 'active',
+        ]);
+
+        Invoice::factory()->create([
+            'service_connection_id' => $connection->id,
+            'meter_reading_id' => MeterReading::factory(['service_connection_id' => $connection->id]),
+            'status' => 'unpaid',
+            'previous_balance' => 0,
+            'base_amount' => 500.00,
+            'penalty_amount' => 0,
+            'total_amount' => 500.00,
+        ]);
+
+        $export = new ServiceConnectionsExport(ServiceConnection::query());
+
+        $row = $export->query()->get()->sole();
+
+        $this->assertSame(500.0, (float) $row->pending_balance);
+        $this->assertSame('500.00', $export->map($row)[8]);
     }
 }
