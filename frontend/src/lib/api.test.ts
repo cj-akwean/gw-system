@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { buildReturnUrl, formatPeso, startPayment } from "@/lib/api";
+import {
+  buildReturnUrl,
+  formatPeso,
+  getInvoice,
+  startPayment,
+} from "@/lib/api";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return {
@@ -71,6 +76,57 @@ describe("startPayment", () => {
     await expect(startPayment(3)).rejects.toMatchObject({
       message: "Invoice is already paid.",
       status: 409,
+    });
+  });
+});
+
+describe("getInvoice", () => {
+  beforeEach(() => {
+    seedAuthToken();
+  });
+
+  afterEach(() => {
+    localStorage.removeItem("auth");
+    vi.unstubAllGlobals();
+  });
+
+  it("fetches a single invoice with its status", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      jsonResponse({
+        id: 11,
+        invoice_number: "GW-2026-00011",
+        status: "paid",
+        total_amount: 438.6,
+        service_connection: {
+          account_number: "GW-00001",
+          meter_number: "MTR-00001",
+          registered_name: "Melissa Will",
+          barangay: null,
+        },
+      })
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const invoice = await getInvoice(11);
+
+    expect(invoice.status).toBe("paid");
+    expect(invoice.total_amount).toBe(438.6);
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:8000/api/invoices/11");
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      "Bearer token-1"
+    );
+  });
+
+  it("throws ApiError on a 403", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse({ message: "Forbidden" }, false, 403))
+    );
+
+    await expect(getInvoice(99)).rejects.toMatchObject({
+      message: "Forbidden",
+      status: 403,
     });
   });
 });

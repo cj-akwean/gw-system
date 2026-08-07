@@ -31,6 +31,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/links', [ConnectionLinkController::class, 'store'])->middleware('throttle:30,1,links-store');
     Route::delete('/links/{link}', [ConnectionLinkController::class, 'destroy'])->middleware('throttle:30,1,links-destroy');
     Route::get('/invoices', [InvoiceController::class, 'index'])->middleware('throttle:30,1,invoices-index');
+    Route::get('/invoices/{invoice}', [InvoiceController::class, 'show'])->middleware('throttle:30,1,invoices-index');
     Route::post('/invoices/{invoice}/pay', [InvoicePaymentController::class, 'store'])
         ->middleware('throttle:20,1,invoices-pay');
 });

@@ -14,7 +14,36 @@ class InvoiceController extends Controller
     {
         $invoices = $bills->unpaidInvoices($request->user());
 
-        return response()->json($invoices->map(fn (Invoice $invoice) => [
+        return response()->json($invoices->map(
+            fn (Invoice $invoice) => $this->mapInvoice($invoice)
+        ));
+    }
+
+    /**
+     * A single invoice the user is linked to, any status (paid included).
+     * Used by the payment screen to distinguish "just paid, webhook beat the
+     * UI" (status paid) from "genuinely not payable" (403 / other status)
+     * when the invoice is no longer in the unpaid list.
+     */
+    public function show(Request $request, Invoice $invoice): JsonResponse
+    {
+        $linked = $request->user()->connectionLinks()
+            ->where('service_connection_id', $invoice->service_connection_id)
+            ->where('status', 'active')
+            ->exists();
+
+        if (! $linked) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        return response()->json($this->mapInvoice(
+            $invoice->load('serviceConnection.barangay')
+        ));
+    }
+
+    private function mapInvoice(Invoice $invoice): array
+    {
+        return [
             'id' => $invoice->id,
             'invoice_number' => $invoice->invoice_number,
             'billing_period_start' => $invoice->billing_period_start->toDateString(),
@@ -31,6 +60,6 @@ class InvoiceController extends Controller
                 'registered_name' => $invoice->serviceConnection->registered_name,
                 'barangay' => $invoice->serviceConnection->barangay?->name,
             ],
-        ]));
+        ];
     }
 }

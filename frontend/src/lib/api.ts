@@ -15,7 +15,7 @@ export interface PortalInvoice {
   base_amount: number;
   penalty_amount: number;
   total_amount: number;
-  status: "unpaid" | "overdue";
+  status: "unpaid" | "overdue" | "paid";
   service_connection: {
     account_number: string;
     meter_number: string;
@@ -72,6 +72,13 @@ export async function logoutApi(): Promise<void> {
 
 export async function getInvoices(): Promise<PortalInvoice[]> {
   const res = await authFetch("/api/invoices");
+  return res.json();
+}
+
+export async function getInvoice(
+  invoiceId: number | string
+): Promise<PortalInvoice> {
+  const res = await authFetch(`/api/invoices/${invoiceId}`);
   return res.json();
 }
 

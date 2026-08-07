@@ -242,4 +242,69 @@ class InvoiceListingApiTest extends TestCase
 
         $this->getJson('/api/invoices')->assertStatus(429);
     }
+
+    public function test_show_requires_authentication(): void
+    {
+        [$user, $connection] = $this->makeLinkedUser();
+        $invoice = $this->makeInvoice($connection);
+
+        $this->getJson("/api/invoices/{$invoice->id}")->assertStatus(401);
+    }
+
+    public function test_show_rejects_an_invoice_not_linked_to_the_user(): void
+    {
+        [$user, $connection] = $this->makeLinkedUser();
+        $strangerConnection = ServiceConnection::factory()->create();
+        $invoice = $this->makeInvoice($strangerConnection);
+
+        Sanctum::actingAs($user);
+
+        $this->getJson("/api/invoices/{$invoice->id}")
+            ->assertStatus(403)
+            ->assertJson(['message' => 'Forbidden']);
+    }
+
+    public function test_show_returns_a_paid_invoice_to_a_linked_user(): void
+    {
+        [$user, $connection] = $this->makeLinkedUser();
+        $invoice = $this->makeInvoice($connection, [
+            'invoice_number' => 'GW-PAID',
+            'status' => 'paid',
+            'total_amount' => 205.00,
+        ]);
+
+        Sanctum::actingAs($user);
+
+        $this->getJson("/api/invoices/{$invoice->id}")
+            ->assertOk()
+            ->assertJson([
+                'id' => $invoice->id,
+                'invoice_number' => 'GW-PAID',
+                'status' => 'paid',
+                'total_amount' => 205.0,
+                'service_connection' => [
+                    'account_number' => 'GW-LIST-001',
+                    'meter_number' => 'MTR-LIST-001',
+                ],
+            ]);
+    }
+
+    public function test_show_returns_an_unpaid_invoice_to_a_linked_user(): void
+    {
+        [$user, $connection] = $this->makeLinkedUser();
+        $invoice = $this->makeInvoice($connection, [
+            'invoice_number' => 'GW-UNPAID',
+            'status' => 'overdue',
+        ]);
+
+        Sanctum::actingAs($user);
+
+        $this->getJson("/api/invoices/{$invoice->id}")
+            ->assertOk()
+            ->assertJson([
+                'id' => $invoice->id,
+                'invoice_number' => 'GW-UNPAID',
+                'status' => 'overdue',
+            ]);
+    }
 }

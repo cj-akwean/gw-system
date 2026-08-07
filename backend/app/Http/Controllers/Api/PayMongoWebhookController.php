@@ -20,6 +20,7 @@ class PayMongoWebhookController extends Controller
         'payment.failed',
         'payment_intent.succeeded',
         'payment_intent.awaiting_payment_method',
+        'qrph.expired',
     ];
 
     public function store(Request $request, PayMongoService $payMongo): JsonResponse

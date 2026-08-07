@@ -114,6 +114,15 @@ Payment row. Re-POST `/pay` on the same invoice → 409 "Invoice is already paid
 
 ## Gotchas learned
 
+- **Stale ngrok URL = deliveries stuck at "processing" (hit 2026-08-07).** ngrok free issues a
+  NEW random URL every restart; if the PayMongo dashboard webhook URL still points at an
+  older tunnel, deliveries sit at "processing" (PayMongo retrying up to 12×) and the
+  controller never sees them — `paymongo.log` shows nothing. Diagnose: read the current
+  URL from `http://127.0.0.1:4040/api/tunnels` (ngrok local API), compare to the
+  dashboard → update the dashboard URL, then **Resend** the stuck deliveries. A charged
+  invoice stays `unpaid` locally meanwhile, and `/pay` blocks it with the
+  "already went through" 409 (the double-charge guard working as designed) until the
+  webhook lands. Check `paymongo:reconcile` for the "CHARGED BUT NOT CREDITED" finding.
 - Stale intent ids self-heal on `/pay` (4xx → fresh intent). A *succeeded* stored intent blocks
   `/pay` with 409 (double-charge guard) — check `paymongo:reconcile` for the "CHARGED BUT NOT
   CREDITED" finding before touching anything.

@@ -143,6 +143,24 @@ class PayMongoWebhookTest extends TestCase
         });
     }
 
+    public function test_webhook_dispatches_a_qrph_expired_event_as_known(): void
+    {
+        Queue::fake();
+
+        $payload = $this->paymentPaidPayload();
+        $payload['data']['attributes']['type'] = 'qrph.expired';
+
+        $rawBody = json_encode($payload);
+
+        $this->postRaw($rawBody, $this->signatureFor($rawBody))
+            ->assertOk()
+            ->assertJson(['received' => true]);
+
+        Queue::assertPushed(ProcessPayMongoWebhook::class, function (ProcessPayMongoWebhook $job): bool {
+            return $job->payload['data']['attributes']['type'] === 'qrph.expired';
+        });
+    }
+
     public function test_webhook_acknowledges_malformed_json_with_a_valid_signature(): void
     {
         $rawBody = '{"data":{"attributes":{"type":"payment.paid"';
