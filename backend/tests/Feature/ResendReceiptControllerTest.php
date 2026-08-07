@@ -11,6 +11,7 @@ use App\Models\User;
 use Filament\Notifications\DatabaseNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -101,7 +102,7 @@ class ResendReceiptControllerTest extends TestCase
         Mail::assertNothingSent();
     }
 
-    public function test_failed_job_notification_carries_a_resend_action_with_the_route(): void
+    public function test_failed_job_notification_carries_a_resend_action_with_the_route_path(): void
     {
         $admin = $this->admin();
         [$invoice, $payment] = $this->payableScenario();
@@ -113,10 +114,12 @@ class ResendReceiptControllerTest extends TestCase
 
         $data = $notification->data;
 
+        $path = parse_url(route('admin.payments.resend-receipt', $payment), PHP_URL_PATH);
+
         $this->assertStringContainsString('never reached the customer', $data['body']);
         $this->assertStringNotContainsString('php artisan', $data['body']);
         $this->assertSame('resendReceipt', $data['actions'][0]['name']);
-        $this->assertSame(route('admin.payments.resend-receipt', $payment), $data['actions'][0]['url']);
+        $this->assertSame($path, $data['actions'][0]['url']);
     }
 
     public function test_failed_job_notification_is_tagged_with_payment_and_invoice_ids(): void
@@ -288,5 +291,149 @@ class ResendReceiptControllerTest extends TestCase
         }
 
         $this->get(route('admin.payments.resend-receipt', $payment))->assertStatus(429);
+    }
+
+    public function test_legacy_notification_with_foreign_host_url_is_found_and_resolved(): void
+    {
+        Mail::fake();
+
+        $admin = $this->admin();
+        [, $payment] = $this->payableScenario();
+
+        $notification = $admin->notifications()->create([
+            'id' => (string) Str::orderedUuid(),
+            'type' => DatabaseNotification::class,
+            'data' => [
+                'format' => 'filament',
+                'duration' => 'persistent',
+                'title' => 'Payment confirmation email failed',
+                'body' => 'Invoice X (payment #'.$payment->id.') never reached the customer.',
+                'color' => 'danger',
+                'status' => 'danger',
+                'actions' => [
+                    [
+                        'name' => 'resendReceipt',
+                        'label' => 'Resend receipt',
+                        'url' => 'http://legacy-other-host:8080/admin/payments/'.$payment->id.'/resend-receipt',
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.payments.resend-receipt', $payment))
+            ->assertRedirect(route('filament.admin.pages.dashboard'));
+
+        Mail::assertSent(PaymentConfirmation::class, 1);
+
+        $data = $notification->fresh()->data;
+        $this->assertArrayHasKey('resolved_at', $data);
+        $this->assertSame([], $data['actions']);
+    }
+
+    public function test_mixed_resolved_and_unresolved_copies_resolves_only_the_pending_one(): void
+    {
+        Mail::fake();
+
+        $admin = $this->admin();
+        [, $payment] = $this->payableScenario();
+
+        $resolvedCopy = $admin->notifications()->create([
+            'id' => (string) Str::orderedUuid(),
+            'type' => DatabaseNotification::class,
+            'data' => [
+                'format' => 'filament',
+                'duration' => 'persistent',
+                'title' => 'Payment confirmation email resent',
+                'body' => 'Receipt resent at 2026-08-06 10:00:00.',
+                'color' => 'success',
+                'status' => 'success',
+                'actions' => [],
+                'payment_id' => (string) $payment->id,
+                'resolved_at' => '2026-08-06T02:00:00.000000Z',
+                'resend_count' => 1,
+            ],
+        ]);
+
+        $pendingCopy = $admin->notifications()->create([
+            'id' => (string) Str::orderedUuid(),
+            'type' => DatabaseNotification::class,
+            'data' => [
+                'format' => 'filament',
+                'duration' => 'persistent',
+                'title' => 'Payment confirmation email failed',
+                'body' => 'Invoice X (payment #'.$payment->id.') never reached the customer.',
+                'color' => 'danger',
+                'status' => 'danger',
+                'actions' => [
+                    [
+                        'name' => 'resendReceipt',
+                        'label' => 'Resend receipt',
+                        'url' => route('admin.payments.resend-receipt', $payment),
+                    ],
+                ],
+                'payment_id' => (string) $payment->id,
+            ],
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.payments.resend-receipt', $payment))
+            ->assertRedirect(route('filament.admin.pages.dashboard'));
+
+        Mail::assertSent(PaymentConfirmation::class, 1);
+
+        $this->assertSame($resolvedCopy->fresh()->data['resolved_at'], '2026-08-06T02:00:00.000000Z');
+        $this->assertSame($resolvedCopy->fresh()->data['resend_count'], 1);
+        $this->assertSame($resolvedCopy->fresh()->data['title'], 'Payment confirmation email resent');
+        $this->assertSame($resolvedCopy->fresh()->data['actions'], []);
+
+        $pendingData = $pendingCopy->fresh()->data;
+        $this->assertArrayHasKey('resolved_at', $pendingData);
+        $this->assertSame(1, $pendingData['resend_count']);
+        $this->assertSame([], $pendingData['actions']);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.payments.resend-receipt', $payment));
+
+        Mail::assertSent(PaymentConfirmation::class, 1);
+    }
+
+    public function test_non_filament_notification_with_matching_payment_id_is_never_touched(): void
+    {
+        Mail::fake();
+
+        $admin = $this->admin();
+        [, $payment] = $this->payableScenario();
+
+        $foreign = $admin->notifications()->create([
+            'id' => (string) Str::orderedUuid(),
+            'type' => DatabaseNotification::class,
+            'data' => [
+                'format' => 'customer',
+                'duration' => 'persistent',
+                'title' => 'Payment received',
+                'body' => 'Your payment was recorded.',
+                'color' => 'success',
+                'status' => 'success',
+                'actions' => [
+                    [
+                        'name' => 'resendReceipt',
+                        'label' => 'Resend receipt',
+                        'url' => 'http://nope.example/payments/'.$payment->id.'/resend-receipt',
+                    ],
+                ],
+                'payment_id' => (string) $payment->id,
+            ],
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->get(route('admin.payments.resend-receipt', $payment))
+            ->assertRedirect(route('filament.admin.pages.dashboard'));
+
+        Mail::assertSent(PaymentConfirmation::class, 1);
+
+        $data = $foreign->fresh()->data;
+        $this->assertArrayNotHasKey('resolved_at', $data);
+        $this->assertArrayHasKey('payment_id', $data);
     }
 }

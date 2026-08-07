@@ -3,7 +3,7 @@
 namespace App\Livewire;
 
 use Filament\Actions\Action;
-use Filament\Notifications\Livewire\DatabaseNotifications;
+use Filament\Livewire\DatabaseNotifications;
 use Illuminate\Support\Str;
 use Livewire\Attributes\On;
 
@@ -19,6 +19,12 @@ use Livewire\Attributes\On;
  * action is removed. Only `read_at` changes; the `data` payload (resolved_at,
  * resend_count, action URLs) is untouched, so the ResendReceiptController
  * resolution flow behaves exactly as before.
+ *
+ * Must extend `Filament\Livewire\DatabaseNotifications` (the panel-aware
+ * class), not the base `Filament\Notifications\Livewire\DatabaseNotifications`:
+ * the panel-aware `getTrigger()` returns the topbar/sidebar bell-icon view, while
+ * the base returns null — a null trigger renders a modal with no button, which
+ * makes the bell completely invisible in the header (regression 2026-08-07).
  */
 class AdminDatabaseNotifications extends DatabaseNotifications
 {

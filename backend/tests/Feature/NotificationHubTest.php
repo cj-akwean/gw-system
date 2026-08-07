@@ -292,4 +292,116 @@ class NotificationHubTest extends TestCase
             ->test(NotificationHub::class)
             ->assertSee('Identifier change email failed');
     }
+
+    public function test_action_link_is_rebuilt_from_payment_id_when_the_stored_url_is_foreign(): void
+    {
+        $admin = $this->admin();
+
+        $this->notify($admin, [
+            'data' => [
+                'format' => 'filament',
+                'duration' => 'persistent',
+                'title' => 'Payment confirmation email failed',
+                'body' => 'Invoice GW-2026-00008 (payment #8) never reached the customer.',
+                'color' => 'danger',
+                'status' => 'danger',
+                'actions' => [
+                    [
+                        'name' => 'resendReceipt',
+                        'label' => 'Resend receipt',
+                        'url' => 'http://legacy-other-host:8080/admin/payments/8/resend-receipt',
+                    ],
+                ],
+                'payment_id' => 8,
+            ],
+        ]);
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(NotificationHub::class)
+            ->assertSee(route('admin.payments.resend-receipt', 8))
+            ->assertDontSee('http://legacy-other-host:8080');
+    }
+
+    public function test_action_link_falls_back_to_the_path_when_payment_id_is_missing(): void
+    {
+        $admin = $this->admin();
+
+        $this->notify($admin, [
+            'data' => [
+                'format' => 'filament',
+                'duration' => 'persistent',
+                'title' => 'Payment confirmation email failed',
+                'body' => 'Invoice GW-2026-00008 (payment #8) never reached the customer.',
+                'color' => 'danger',
+                'status' => 'danger',
+                'actions' => [
+                    [
+                        'name' => 'resendReceipt',
+                        'label' => 'Resend receipt',
+                        'url' => 'http://some-old-host.example/admin/payments/8/resend-receipt',
+                    ],
+                ],
+            ],
+        ]);
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(NotificationHub::class)
+            ->assertSee(route('admin.payments.resend-receipt', 8))
+            ->assertDontSee('http://some-old-host.example');
+    }
+
+    public function test_action_label_without_a_resolvable_link_renders_plain_text(): void
+    {
+        $admin = $this->admin();
+
+        $this->notify($admin, [
+            'data' => [
+                'format' => 'filament',
+                'duration' => 'persistent',
+                'title' => 'Payment confirmation email failed',
+                'body' => 'Invoice GW-2026-00008 (payment #8) never reached the customer.',
+                'color' => 'danger',
+                'status' => 'danger',
+                'actions' => [
+                    [
+                        'name' => 'resendReceipt',
+                        'label' => 'Resend receipt',
+                        'url' => 'http://totally-unrelated.example/some/other/path',
+                    ],
+                ],
+            ],
+        ]);
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(NotificationHub::class)
+            ->assertSee('Resend receipt')
+            ->assertDontSee(route('admin.payments.resend-receipt', 8))
+            ->assertDontSee('http://totally-unrelated.example');
+    }
+
+    public function test_nav_badge_counts_only_own_unread_filament_notifications(): void
+    {
+        $admin = $this->admin();
+        $otherAdmin = $this->admin('other@example.com');
+
+        $this->notify($admin);
+        $this->notify($admin, ['read_at' => now()]);
+        $this->notify($otherAdmin);
+
+        Livewire::actingAs($admin, 'admin')->test(NotificationHub::class);
+
+        $this->assertSame('1', NotificationHub::getNavigationBadge());
+        $this->assertSame('danger', NotificationHub::getNavigationBadgeColor());
+    }
+
+    public function test_nav_badge_is_null_when_nothing_is_unread(): void
+    {
+        $admin = $this->admin();
+        $this->notify($admin, ['read_at' => now()]);
+
+        Livewire::actingAs($admin, 'admin')->test(NotificationHub::class);
+
+        $this->assertNull(NotificationHub::getNavigationBadge());
+        $this->assertNull(NotificationHub::getNavigationBadgeColor());
+    }
 }

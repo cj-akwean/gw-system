@@ -127,7 +127,7 @@ class SendPaymentConfirmationEmail implements ShouldQueue
                     ->label('Resend receipt')
                     ->button()
                     ->color('primary')
-                    ->url(route('admin.payments.resend-receipt', $this->payment)),
+                    ->url($this->resendPath()),
             ])
             ->sendToDatabase($admins);
 
@@ -135,24 +135,37 @@ class SendPaymentConfirmationEmail implements ShouldQueue
     }
 
     /**
+     * The resend route as a host-independent path (e.g. `/admin/payments/8/
+     * resend-receipt`). The stored action URL must never embed an absolute
+     * host: the same notification row is read back in different environments
+     * (dev on 127.0.0.1:8000, XAMPP on localhost, prod domain), and resolution
+     * matches rows by this path suffix. A relative href also renders correctly
+     * from any origin in the admin UI.
+     */
+    private function resendPath(): string
+    {
+        return (string) parse_url(route('admin.payments.resend-receipt', $this->payment), PHP_URL_PATH);
+    }
+
+    /**
      * Stamps the just-created failure notifications with the payment and
      * invoice ids so the resend controller can find them later (to mark the
      * notification resolved and to block duplicate resends). Rows are matched
-     * by the notification's own action URL — unique per payment, so no
-     * creation-order heuristics are needed and repeated failures never
+     * by the action URL's path suffix — unique per payment, host-independent,
+     * so no creation-order heuristics are needed and repeated failures never
      * double-tag.
      *
      * @param  Collection<int, User>  $admins
      */
     private function tagNotifications($admins): void
     {
-        $url = route('admin.payments.resend-receipt', $this->payment);
+        $path = $this->resendPath();
 
         DatabaseNotification::query()
             ->whereIn('notifiable_id', $admins->modelKeys())
             ->whereNull('read_at')
             ->where('data->format', 'filament')
-            ->where('data->actions->0->url', $url)
+            ->where('data->actions->0->url', 'like', '%'.$path)
             ->whereNull('data->payment_id')
             ->get()
             ->each(function (DatabaseNotification $notification): void {

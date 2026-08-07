@@ -21,8 +21,10 @@ use Throwable;
  * notification(s) are rewritten to a resolved state (success color, body,
  * no button) and further clicks only warn — no duplicate emails. A row lock
  * held across check + send + resolve serializes concurrent clicks. Rows are
- * found by the tagged `data.payment_id`; a URL fallback covers notifications
- * created before tagging existed.
+ * found by the tagged `data.payment_id`; a path-suffix fallback covers
+ * notifications created before tagging existed, regardless of which host
+ * their stored action URL points at (APP_URL changes orphaned rows that were
+ * matched by absolute-URL equality).
  */
 class ResendReceiptController extends Controller
 {
@@ -52,31 +54,33 @@ class ResendReceiptController extends Controller
             $state = DB::transaction(function () use ($payment, $invoice, $recipients): string {
                 $notifications = $this->notificationsFor($payment)->lockForUpdate()->get();
 
-                foreach ($notifications as $notification) {
-                    if (! empty($notification->data['resolved_at'])) {
-                        return 'already';
-                    }
+                $pending = $notifications->filter(
+                    fn (DatabaseNotification $notification): bool => empty($notification->data['resolved_at'])
+                );
+
+                if ($notifications->isNotEmpty() && $pending->isEmpty()) {
+                    return 'already';
                 }
 
                 (new SendPaymentConfirmationEmail($invoice, $payment))->handle();
 
-                if ($notifications->isNotEmpty()) {
-                    $now = now();
-                    $recipientsText = implode(', ', $recipients);
+                $now = now();
+                $recipientsText = implode(', ', $recipients);
 
-                    foreach ($notifications as $notification) {
-                        $notification->update([
-                            'data' => array_merge($notification->data, [
-                                'resolved_at' => $now->toISOString(),
-                                'resend_count' => (int) ($notification->data['resend_count'] ?? 0) + 1,
-                                'title' => 'Payment confirmation email resent',
-                                'body' => 'Receipt resent to '.$recipientsText.' at '.$now->format('Y-m-d H:i:s').'.',
-                                'color' => 'success',
-                                'status' => 'success',
-                                'actions' => [],
-                            ]),
-                        ]);
-                    }
+                foreach ($pending as $notification) {
+                    $notification->update([
+                        'data' => array_merge($notification->data, [
+                            'resolved_at' => $now->toISOString(),
+                            'resend_count' => (int) ($notification->data['resend_count'] ?? 0) + 1,
+                            'payment_id' => (string) $payment->id,
+                            'invoice_id' => (string) $invoice->id,
+                            'title' => 'Payment confirmation email resent',
+                            'body' => 'Receipt resent to '.$recipientsText.' at '.$now->format('Y-m-d H:i:s').'.',
+                            'color' => 'success',
+                            'status' => 'success',
+                            'actions' => [],
+                        ]),
+                    ]);
                 }
 
                 return 'resent';
@@ -97,19 +101,25 @@ class ResendReceiptController extends Controller
     }
 
     /**
-     * Notifications for this payment: tagged rows first, plus a URL fallback
-     * so rows created before the payment_id tag (e.g. earlier dev data) are
-     * still found and flipped to resolved.
+     * Failure notifications for this payment: tagged rows (`data.payment_id`)
+     * first, plus a path-suffix fallback so legacy rows created before the tag
+     * (or under a different APP_URL host) are still found and flipped to
+     * resolved. Only Filament-format rows are eligible — scoped so a row that
+     * merely shares a payment id in unrelated payloads is never rewritten.
      *
      * @return Builder<DatabaseNotification>
      */
     private function notificationsFor(Payment $payment): Builder
     {
-        $url = route('admin.payments.resend-receipt', $payment);
+        $path = (string) parse_url(route('admin.payments.resend-receipt', $payment), PHP_URL_PATH);
 
         return DatabaseNotification::query()
-            ->where('data->payment_id', (string) $payment->id)
-            ->orWhere('data->actions->0->url', $url);
+            ->where('data->format', 'filament')
+            ->where(function (Builder $query) use ($payment, $path): void {
+                $query
+                    ->where('data->payment_id', (string) $payment->id)
+                    ->orWhere('data->actions->0->url', 'like', '%'.$path);
+            });
     }
 
     protected function redirectWith(string $color, string $title, string $body): RedirectResponse

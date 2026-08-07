@@ -258,11 +258,13 @@ npm run dev
 - [x] Failed receipt visibility: admin DB notification on confirmation-email failure (+ error logged to `paymongo`) — 2026-08-05
 - [x] `php artisan paymongo:send-receipt {invoice}` resends a receipt to all linked users — 2026-08-05
 - [x] Notification hub UI (read/mark-all, history list) — `AdminDatabaseNotifications` (custom bell: dismiss/clear = mark-read, never deletes) + `NotificationHub` page (`/admin/notifications`: full history, read/unread/resolved/action-needed filters, per-row mark read/unread, mark-all-read, no delete — history is the audit trail; resolution state `data.resolved_at` written by `ResendReceiptController` is the only way a row stops needing action) — 2026-08-07
+- [x] Host-agnostic notification tagging/resolution — failure notifications store the resend action as a **relative route path** (no host); tagging and the resend controller match by `data.payment_id` first with a URL **path-suffix** fallback, so rows created under any APP_URL/XAMPP host are found and resolved; resolution also stamps `payment_id`/`invoice_id` so already-detection survives action-wipe; hub action links are rebuilt from `payment_id` for the current host (never renders a stored foreign-host URL) — 2026-08-07
+- [x] Bell unread badge restored + hub nav badge — the custom bell must extend the panel-aware `Filament\Livewire\DatabaseNotifications` (base returns a null trigger → invisible bell, regression hit 2026-08-07); the Hub's sidebar item shows an unread-count badge (`getNavigationBadge`) alongside the topbar bell — 2026-08-07
 - [ ] SMS notifications wired up (Semaphore/Twilio) — optional, later
 
 **Ops notes (Notifications):**
-- Worker-generated notification URLs have no request host and fall back to `APP_URL` — keep it matching the real dev/prod host or bell buttons land on the wrong server (dev gotcha hit 2026-08-06: `APP_URL=http://localhost` + XAMPP on port 80 → "Resend receipt" clicked into Apache's docroot → 404; dev value is `http://127.0.0.1:8000`).
-- Notifications created before the `data.payment_id` tag (earlier dev data) are still found and resolved by the stored action-URL fallback in `ResendReceiptController`.
+- Worker-generated notification URLs have no request host and fall back to `APP_URL` — resolved 2026-08-07: action URLs are now stored host-independent (relative path), and the resend controller matches by `payment_id` + path suffix, so the old dev gotcha (stored `http://localhost` URL vs `APP_URL=http://127.0.0.1:8000`) no longer orphans rows. One stuck row from the old behavior was purged from dev data (id `f71b6b03-…`, 2026-08-07).
+- Notifications created before the `data.payment_id` tag (earlier dev data) are still found and resolved by the stored action-URL path-suffix fallback in `ResendReceiptController`, regardless of the host embedded in the stored URL.
 
 ### Infra / Ops
 - [x] Graphify graph rebuilt vendor-free (`.graphifyignore` added: `backend/vendor/`, `backend/public/js/`; graph pruned 72,935 → 2,135 nodes, 2026-08-01)

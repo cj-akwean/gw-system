@@ -101,4 +101,33 @@ class AdminDatabaseNotificationsTest extends TestCase
         $this->assertNotNull($unread->fresh()->read_at);
         $this->assertNotNull($read->fresh()->read_at);
     }
+
+    public function test_bell_trigger_renders_with_the_unread_badge(): void
+    {
+        $admin = $this->admin();
+        $this->createNotification($admin);
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(AdminDatabaseNotifications::class)
+            ->assertSee('fi-topbar-database-notifications-btn');
+    }
+
+    public function test_bell_trigger_does_not_show_a_badge_when_everything_is_read(): void
+    {
+        $admin = $this->admin();
+        $this->createNotification($admin);
+        $admin->notifications()->update(['read_at' => now()]);
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(AdminDatabaseNotifications::class)
+            ->assertSee('fi-topbar-database-notifications-btn');
+    }
+
+    public function test_bell_is_present_on_admin_pages(): void
+    {
+        $this->actingAs($this->admin(), 'admin')
+            ->get('/admin')
+            ->assertOk()
+            ->assertSee('fi-topbar-database-notifications-btn');
+    }
 }

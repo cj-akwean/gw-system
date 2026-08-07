@@ -43,6 +43,45 @@ class NotificationHub extends Page implements HasTable
 
     protected string $view = 'filament-panels::pages.page';
 
+    /**
+     * Unread count shown on the sidebar "Notification Hub" item so the hub is
+     * discoverable even when the topbar bell is out of view. Null when there
+     * is nothing unread — no badge. The count is recomputed on every
+     * navigation render; trivial at this scale.
+     */
+    public static function getNavigationBadge(): ?string
+    {
+        $count = static::unreadCountForCurrentUser();
+
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): string|array|null
+    {
+        return static::unreadCountForCurrentUser() > 0 ? 'danger' : null;
+    }
+
+    /**
+     * Unread Filament-format notifications for the current admin. Returns 0
+     * when there is no authenticated admin (e.g. console/CLI renders) so the
+     * navigation badge never crashes outside a request context.
+     */
+    public static function unreadCountForCurrentUser(): int
+    {
+        $user = Filament::auth()->user();
+
+        if (! $user instanceof User) {
+            return 0;
+        }
+
+        return DatabaseNotification::query()
+            ->where('notifiable_id', $user->getKey())
+            ->where('notifiable_type', $user->getMorphClass())
+            ->where('data->format', 'filament')
+            ->unread()
+            ->count();
+    }
+
     public function table(Table $table): Table
     {
         return $table
@@ -83,7 +122,7 @@ class NotificationHub extends Page implements HasTable
                 TextColumn::make('action')
                     ->label('Action')
                     ->getStateUsing(fn (DatabaseNotification $record): string => (string) (Arr::get($record->data, 'actions.0.label') ?? '—'))
-                    ->url(fn (DatabaseNotification $record): ?string => Arr::get($record->data, 'actions.0.url'))
+                    ->url(fn (DatabaseNotification $record): ?string => $this->actionUrlFor($record))
                     ->color('primary'),
 
                 TextColumn::make('created_at')
@@ -148,6 +187,43 @@ class NotificationHub extends Page implements HasTable
     public function markAllNotificationsAsRead(): void
     {
         $this->notificationsQuery()->unread()->update(['read_at' => now()]);
+    }
+
+    /**
+     * Current-host resend URL for a row, so the action always works no matter
+     * what host the stored payload was created under.
+     *
+     * 1. `data.payment_id` (tagged rows) → rebuild the route for this host.
+     * 2. Otherwise a relative action path (new rows store the route as a path
+     *    suffix, host-independent) → render path relative to current origin.
+     * 3. Otherwise an absolute legacy URL → rebuild from the payment id inside
+     *    it (covers pre-tag rows whose host no longer matches APP_URL).
+     * 4. Unparseable / not a resend action → null, so the label renders as
+     *    plain text instead of a dead link.
+     */
+    private function actionUrlFor(DatabaseNotification $record): ?string
+    {
+        $paymentId = Arr::get($record->data, 'payment_id');
+
+        if (is_numeric($paymentId)) {
+            return (string) route('admin.payments.resend-receipt', (int) $paymentId);
+        }
+
+        $url = Arr::get($record->data, 'actions.0.url');
+
+        if (! is_string($url) || $url === '') {
+            return null;
+        }
+
+        if (str_starts_with($url, '/')) {
+            return $url;
+        }
+
+        if (preg_match('#/payments/(\d+)/resend-receipt$#', $url, $matches) === 1) {
+            return (string) route('admin.payments.resend-receipt', (int) $matches[1]);
+        }
+
+        return null;
     }
 
     /**

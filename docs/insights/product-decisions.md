@@ -948,3 +948,42 @@ resend get resolved?"). Where should full history live, and what should dismissa
   reuses the same query (`data->format = "filament"` + current admin) with `EmbeddedTable`.
 - **Why no checkboxes/group actions:** with delete off the table, there's no reason to
   select; mark read/unread is per-row or all-at-once. Keeps the page minimal.
+
+## 32. Never match notifications by absolute URL — tag by payment id, match by path suffix (2026-08-07)
+
+**Question asked:** a "Payment confirmation email failed" notification (GW-2026-00008 /
+payment #8) was permanently stuck as "Action needed" even though the receipt had already been
+resent successfully on the XAMPP/127.0.0.1 instance. Why? And since the hub + bell now
+never delete, the row was unfixable through the UI — the user asked to just purge the data.
+
+**Answer + reasoning:**
+
+- **Root cause — host-dependent click and host-dependent lookup.** The failure
+  notification stores its "Resend receipt" action URL as an *absolute* URL built from
+  `APP_URL` at job time. That row was born under `http://localhost` (XAMPP/port-80 era);
+  the current env uses `http://127.0.0.1:8000`. Tagging (`tagNotifications`) and resolution
+  (`ResendReceiptController::notificationsFor`) both matched rows by *exact* URL equality
+  with today's `route(...)` — so this row was untaggle (no `payment_id`) and unfindable.
+  The resend route still sent the email (matching found zero rows → send proceeded, no
+  resolution written), which is why "resend worked" but the notification stayed broken.
+- **Rule: absolute URLs are not data for lookup; a payment is.** A row's resend target is
+  inherently the payment it references. The fix has three layers:
+  1. **Store host-independent**: new failure notifications keep the button's URL as the
+     *relative route path* (`/admin/payments/8/resend-receipt`) — a relative href renders
+     correctly from any origin.
+  2. **Match by identity + path**: `ResendReceiptController` matches `data.payment_id`
+     first, with a `LIKE '%<path>'` suffix fallback for pre-tag/legacy rows. Suffix (not
+     whole-URL) matching means `localhost`, `127.0.0.1:8000`, and prod domains all resolve
+     the same legacy row.
+  3. **Stamp what you resolved**: a resolved row now gets `payment_id`/`invoice_id`
+     written back. Resolution wipes the action (so URL/path matching can't work anymore),
+     and without the stamp an *already-resolved* legacy row would be invisible to the
+     next click → duplicate email. The stamp is what makes idempotency survive resolution.
+- Also fixed a latent logic bug found while tracing: a single resolved copy among several
+  used to short-circuit the whole resend ("already") and block resolving the other copies —
+  resolution now acts per-pending-row.
+- **Why match scoped to `data->format = 'filament'`:** prevents future unrelated
+  customer/portal notifications that happen to carry a `payment_id` from being rewritten
+  by the admin resend controller (confused-deputy style). Deletion of genuinely-broken
+  rows stays out of the UI (decision #31) — this incident was a one-off dev-data purge,
+  not a new delete feature.
