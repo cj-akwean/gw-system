@@ -881,9 +881,41 @@ issued by the utility and exist nowhere in the system beforehand. Who types them
   and the whole test corpus, so nothing existing surprises. Invoice numbers stay `GW-YYYY-#####`
   (distinct namespace, no functional conflict; known and accepted ambiguity).
 - **Race handling:** two admins creating simultaneously can both compute the same next number; the
-  form-level `unique()` validator catches it pre-insert, and `handleRecordCreation` retries once on a
-  Postgres `23505` unique violation by re-deriving (then keeps the office's typed value on any later
-  attempt). Single-office workload -> no sequence table, same stance as the invoice numbers.
+  form-level `unique()` validator catches it pre-insert, and `handleRecordCreation` retries on a
+  Postgres `23505` unique violation by re-deriving. Corrected 2026-08-07 after an audit found the
+  original retry could never work: Filament wraps `create()` in a transaction, so a raw `23505`
+  aborts it (`25P02`) and the follow-up lookup itself threw. Fix = each save runs in its own
+  SAVEPOINT; the colliding column is read from Postgres's `DETAIL:  Key (…)` line (a plain
+  substring match is ambiguous — the SQL mentions every column in the INSERT); only that column is
+  regenerated, and only when it still holds a machine-generated value, so hand-typed office numbers
+  are never overwritten (a collision on one surfaces as a normal form error). Single-office
+  workload -> no sequence table, same stance as the invoice numbers.
 - **`connection_date` stays required** and create defaults to `active` (user decisions, recorded
   earlier the flow doc): pending applications still carry a planned connection date, and the status
   badge handles the rest; no schema change needed.
+
+## 30. Duplicate "Standard Flat Rate" options — cleanup, not a unique index (2026-08-07, fixed same day)
+
+**Question asked:** the Rate Schedule dropdown on the new-connection form shows the same option
+twice — "Standard Flat Rate, Standard Flat Rate" (plus a stray "minus Rate 2001"). Is this a
+validation/DUPE bug, and should we add a unique constraint on the name so it can't happen again?
+
+**Answer + reasoning (after a DB-level review):**
+
+- **It was seeded data, not a code regression.** `RateScheduleSeeder`'s `exists()` guard came in
+  with the idempotent seeders (`b45ee74`); before that, running `db:seed` twice inserted a second
+  identical "Standard Flat Rate". A third row (`minus Rate 2001`) was a manual-test leftover tied to
+  incomplete dev connections. The CRM form was added later and simply surfaced the duplicates. Root
+  cause: no protection when there *is* no UI path that can create these — so the only writer was the
+  seeder + manual SQL.
+- **No unique index on `name` — deliberately.** The domain legitimately allows two open-ended
+  schedules that share a name across different billing periods (a scheduled change). A name-unique
+  index (even partial, `WHERE effective_to IS NULL`) breaks that and immediately clashed with
+  existing `BillingServiceTest` cases that create two same-named open-ended schedules. The fix is:
+  (1) a data migration that collapses exact-duplicate rows (keep lowest id, repoint FKs, delete the
+  rest) and removes orphaned manual-test rows, singly-guarded so real data is never matched; (2) the
+  dropdown labels disambiguate identical names with `name · effective_from`, which is what the human
+  actually needs to pick the right schedule.
+- **Rule to follow when this bites again:** if duplicate-looking domain rows show up in a dropdown,
+  check the DB first (dupes? leftovers?) before adding constraints — a constraint must not
+  contradict legitimate same-name/date-versioned rows that tests already rely on.

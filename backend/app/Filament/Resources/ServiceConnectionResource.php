@@ -6,6 +6,7 @@ use App\Filament\Resources\ServiceConnectionResource\Pages;
 use App\Filament\Resources\ServiceConnectionResource\RelationManagers\ConnectionLinksRelationManager;
 use App\Filament\Resources\ServiceConnectionResource\RelationManagers\InvoicesRelationManager;
 use App\Filament\Resources\ServiceConnectionResource\RelationManagers\MeterReadingsRelationManager;
+use App\Models\RateSchedule;
 use App\Models\ServiceConnection;
 use Filament\Actions;
 use Filament\Forms\Components\DatePicker;
@@ -122,6 +123,9 @@ class ServiceConnectionResource extends Resource
                     ->relationship('rateSchedule', 'name')
                     ->searchable()
                     ->preload()
+                    ->getOptionLabelFromRecordUsing(fn (RateSchedule $record): string => trim(
+                        $record->name.' · '.($record->effective_from?->toDateString() ?? ''),
+                    ))
                     ->helperText('Empty = falls back to the globally active schedule when billing.'),
             ]);
     }

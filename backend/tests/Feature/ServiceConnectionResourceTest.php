@@ -12,10 +12,12 @@ use App\Jobs\SendConnectionIdentifierChangedEmail;
 use App\Models\Barangay;
 use App\Models\ConnectionLink;
 use App\Models\Invoice;
+use App\Models\RateSchedule;
 use App\Models\ServiceConnection;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -575,5 +577,103 @@ class ServiceConnectionResourceTest extends TestCase
             ->assertSee('Linked Portal User')
             ->assertSee('linked@example.com')
             ->assertSee('Active');
+    }
+
+    public function test_create_rolls_forward_suggested_identifier_on_concurrent_collision(): void
+    {
+        $barangay = Barangay::factory()->create();
+
+        ServiceConnection::factory()->create([
+            'account_number' => 'GW-00001',
+            'meter_number' => 'MTR-00001',
+            'barangay_id' => $barangay->id,
+        ]);
+
+        $page = app(CreateServiceConnection::class);
+        $handleRecordCreation = new \ReflectionMethod($page, 'handleRecordCreation');
+        $handleRecordCreation->setAccessible(true);
+
+        $record = $handleRecordCreation->invoke($page, [
+            'account_number' => 'GW-00001',
+            'meter_number' => 'MTR-00001',
+            'registered_name' => 'New Applicant',
+            'barangay_id' => $barangay->id,
+            'address' => 'Purok 3, New St.',
+            'status' => 'active',
+            'connection_date' => '2026-08-07',
+        ]);
+
+        $this->assertSame('GW-00002', $record->account_number);
+        $this->assertSame('MTR-00002', $record->meter_number);
+
+        $this->assertDatabaseHas('service_connections', [
+            'account_number' => 'GW-00001',
+            'meter_number' => 'MTR-00001',
+        ]);
+
+        $this->assertDatabaseHas('service_connections', [
+            'account_number' => 'GW-00002',
+            'meter_number' => 'MTR-00002',
+            'registered_name' => 'New Applicant',
+        ]);
+    }
+
+    public function test_create_collision_on_admin_typed_identifier_surfaces_form_error(): void
+    {
+        $barangay = Barangay::factory()->create();
+
+        ServiceConnection::factory()->create([
+            'account_number' => 'GW-REAL-900',
+            'meter_number' => 'COMPETITOR-1',
+            'barangay_id' => $barangay->id,
+        ]);
+
+        $page = app(CreateServiceConnection::class);
+        $handleRecordCreation = new \ReflectionMethod($page, 'handleRecordCreation');
+        $handleRecordCreation->setAccessible(true);
+
+        $this->expectException(ValidationException::class);
+
+        try {
+            $handleRecordCreation->invoke($page, [
+                'account_number' => 'GW-REAL-900',
+                'meter_number' => 'MTR-REAL-777',
+                'registered_name' => 'Office Issued',
+                'barangay_id' => $barangay->id,
+                'address' => 'Anywhere',
+                'status' => 'active',
+                'connection_date' => '2026-08-07',
+            ]);
+        } finally {
+            $this->assertCount(1, ServiceConnection::where('account_number', 'GW-REAL-900')->get());
+            $this->assertDatabaseHas('service_connections', [
+                'account_number' => 'GW-REAL-900',
+                'meter_number' => 'COMPETITOR-1',
+            ]);
+            $this->assertDatabaseMissing('service_connections', ['registered_name' => 'Office Issued']);
+        }
+    }
+
+    public function test_rate_schedule_select_labels_disambiguate_same_name_schedules(): void
+    {
+        RateSchedule::create([
+            'name' => 'Standard Flat Rate',
+            'type' => 'flat',
+            'flat_rate' => 10.00,
+            'effective_from' => '2026-01-01',
+            'effective_to' => null,
+        ]);
+        RateSchedule::create([
+            'name' => 'Standard Flat Rate',
+            'type' => 'flat',
+            'flat_rate' => 12.00,
+            'effective_from' => '2025-01-01',
+            'effective_to' => '2025-12-31',
+        ]);
+
+        Livewire::actingAs($this->admin(), 'admin')
+            ->test(CreateServiceConnection::class)
+            ->assertSee('Standard Flat Rate · 2026-01-01')
+            ->assertSee('Standard Flat Rate · 2025-01-01');
     }
 }
