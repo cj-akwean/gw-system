@@ -2,6 +2,7 @@
 
 namespace App\Exports;
 
+use App\Exports\Concerns\SanitizesCsvFields;
 use App\Models\Invoice;
 use Illuminate\Database\Eloquent\Builder;
 use Maatwebsite\Excel\Concerns\FromQuery;
@@ -10,6 +11,8 @@ use Maatwebsite\Excel\Concerns\WithMapping;
 
 class InvoicesExport implements FromQuery, WithHeadings, WithMapping
 {
+    use SanitizesCsvFields;
+
     public function __construct(protected Builder $query) {}
 
     public function query(): Builder
@@ -64,17 +67,5 @@ class InvoicesExport implements FromQuery, WithHeadings, WithMapping
             $reading ? number_format((float) $reading->cu_m_used, 2, '.', '') : '',
             $reading?->entered_at?->toDateTimeString(),
         ];
-    }
-
-    private function sanitize(string $value): string
-    {
-        if (
-            $value !== ''
-            && in_array($value[0], ['=', '+', '-', '@', "\t", "\r", "\n"], true)
-        ) {
-            return "'".$value;
-        }
-
-        return $value;
     }
 }

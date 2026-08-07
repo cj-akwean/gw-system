@@ -317,4 +317,11 @@ class InvoicesExportTest extends TestCase
         $this->assertSame("'\n=cmd()", $rows[1][3]);
         $this->assertCount(2, $rows);
     }
+
+    public function test_export_action_is_visible_to_admins(): void
+    {
+        Livewire::actingAs($this->admin(), 'admin')
+            ->test(ListInvoices::class)
+            ->assertActionVisible('exportCsv');
+    }
 }

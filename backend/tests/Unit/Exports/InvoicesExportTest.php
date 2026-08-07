@@ -7,11 +7,14 @@ use App\Models\Invoice;
 use App\Models\MeterReading;
 use App\Models\RateSchedule;
 use App\Models\ServiceConnection;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Tests\TestCase;
 
 class InvoicesExportTest extends TestCase
 {
+    use RefreshDatabase;
+
     private function exportFor(Invoice $invoice): InvoicesExport
     {
         return new InvoicesExport(Invoice::query());
@@ -193,5 +196,101 @@ class InvoicesExportTest extends TestCase
         $this->assertSame('0.00', $row[9]);
         $this->assertSame('50.00', $row[10]);
         $this->assertSame('24.50', $row[11]);
+    }
+
+    public function test_map_escapes_null_byte_prefixed_injection(): void
+    {
+        $connection = (new ServiceConnection)
+            ->forceFill(['account_number' => "\0=cmd()", 'meter_number' => "\0@evil"]);
+
+        $invoice = (new Invoice)
+            ->forceFill(['invoice_number' => 'GW-2026-00008', 'status' => 'paid'])
+            ->setRelation('serviceConnection', $connection)
+            ->setRelation('meterReading', null)
+            ->setRelation('rateSchedule', null);
+
+        $row = $this->exportFor($invoice)->map($invoice);
+
+        $this->assertSame("'\0=cmd()", $row[1]);
+        $this->assertSame("'\0@evil", $row[2]);
+    }
+
+    public function test_map_escapes_formula_injection_in_invoice_number(): void
+    {
+        $invoice = (new Invoice)
+            ->forceFill(['invoice_number' => '=cmd()', 'status' => 'paid'])
+            ->setRelation('serviceConnection', null)
+            ->setRelation('meterReading', null)
+            ->setRelation('rateSchedule', null);
+
+        $row = $this->exportFor($invoice)->map($invoice);
+
+        $this->assertSame("'=cmd()", $row[0]);
+    }
+
+    public function test_query_clones_the_original_builder_and_orders_by_billing_period_end_desc(): void
+    {
+        $connection = ServiceConnection::factory()->create([
+            'account_number' => 'UQ-00001',
+            'meter_number' => 'UM-00001',
+        ]);
+
+        $schedule = RateSchedule::factory()->create();
+
+        $endDates = ['2026-07-31', '2026-06-30', '2026-08-31'];
+
+        foreach ($endDates as $index => $end) {
+            Invoice::factory()->create([
+                'service_connection_id' => $connection->id,
+                'meter_reading_id' => MeterReading::factory([
+                    'service_connection_id' => $connection->id,
+                    'entered_at' => Carbon::parse('2026-08-07')->addDays($index),
+                ]),
+                'rate_schedule_id' => $schedule->id,
+                'billing_period_end' => $end,
+            ]);
+        }
+
+        $original = Invoice::query()->orderBy('created_at');
+        $export = new InvoicesExport($original);
+
+        $obtained = $export->query()->get();
+
+        $this->assertSame(
+            ['2026-08-31', '2026-07-31', '2026-06-30'],
+            $obtained->pluck('billing_period_end')->map(fn ($date) => $date->toDateString())->all(),
+        );
+
+        $this->assertNotSame($original, $export->query());
+
+        $this->assertFalse($original->getQuery()->orders === $export->query()->getQuery()->orders);
+    }
+
+    public function test_query_only_selects_invoice_columns_when_input_is_a_relation_query(): void
+    {
+        $connection = ServiceConnection::factory()->create([
+            'account_number' => 'UQ-00002',
+            'meter_number' => 'UM-00002',
+        ]);
+
+        $schedule = RateSchedule::factory()->create();
+
+        $reader = MeterReading::factory()->create([
+            'service_connection_id' => $connection->id,
+        ]);
+
+        Invoice::factory()->create([
+            'service_connection_id' => $connection->id,
+            'meter_reading_id' => $reader->id,
+            'rate_schedule_id' => $schedule->id,
+        ]);
+
+        $original = $connection->invoices()->getQuery();
+        $export = new InvoicesExport($original);
+
+        $rows = $export->query()->get();
+
+        $this->assertCount(1, $rows);
+        $this->assertInstanceOf(Invoice::class, $rows->first());
     }
 }

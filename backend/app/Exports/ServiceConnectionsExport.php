@@ -2,6 +2,7 @@
 
 namespace App\Exports;
 
+use App\Exports\Concerns\SanitizesCsvFields;
 use App\Models\ServiceConnection;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Expression;
@@ -11,6 +12,8 @@ use Maatwebsite\Excel\Concerns\WithMapping;
 
 class ServiceConnectionsExport implements FromQuery, WithHeadings, WithMapping
 {
+    use SanitizesCsvFields;
+
     public function __construct(protected Builder $query) {}
 
     public function query(): Builder
@@ -71,17 +74,5 @@ class ServiceConnectionsExport implements FromQuery, WithHeadings, WithMapping
         }
 
         return false;
-    }
-
-    private function sanitize(string $value): string
-    {
-        if (
-            $value !== ''
-            && in_array($value[0], ['=', '+', '-', '@', "\t", "\r", "\n"], true)
-        ) {
-            return "'".$value;
-        }
-
-        return $value;
     }
 }

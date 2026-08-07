@@ -2,6 +2,7 @@
 
 namespace App\Exports;
 
+use App\Exports\Concerns\SanitizesCsvFields;
 use App\Filament\Resources\PaymentResource;
 use App\Models\Payment;
 use Illuminate\Database\Eloquent\Builder;
@@ -11,6 +12,8 @@ use Maatwebsite\Excel\Concerns\WithMapping;
 
 class PaymentsExport implements FromQuery, WithHeadings, WithMapping
 {
+    use SanitizesCsvFields;
+
     public function __construct(protected Builder $query) {}
 
     public function query(): Builder
@@ -57,17 +60,5 @@ class PaymentsExport implements FromQuery, WithHeadings, WithMapping
             $this->sanitize((string) ($payment->payer_email ?? '')),
             $this->sanitize(PaymentResource::processedByLabel($payment)),
         ];
-    }
-
-    private function sanitize(string $value): string
-    {
-        if (
-            $value !== ''
-            && in_array($value[0], ['=', '+', '-', '@', "\t", "\r", "\n"], true)
-        ) {
-            return "'".$value;
-        }
-
-        return $value;
     }
 }
