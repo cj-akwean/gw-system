@@ -61,7 +61,8 @@ Payment Gateway (PayMongo) ───────── webhook → marks invoice
 - Start with `database` driver (no extra service needed)
 - Prevents request timeouts during bulk operations
 - Dev worker: `php artisan queue:work --tries=3` (or `--once` to process a single job and exit); failed jobs land in `failed_jobs` — check with `php artisan queue:failed`
-- The monthly billing run is dispatched by `billing:run` (queued by default) — see Billing section; automatic scheduling deferred to Infra (needs cron + a running worker on the host)
+- **Durable worker (2026-08-07):** on this dev machine the worker is a Windows Scheduled Task (`GW-System Queue Worker`) wrapping `deploy/windows/queue-worker.ps1` — registered/status/unregistered via `deploy/windows/register-worker.ps1`, polls `database` with `--tries=3 --timeout=120 --sleep=3`, self-restarts every 8h (`--max-time`) for memory/config hygiene, logs to `storage/logs/queue-worker.log`, task restarts on crash. **Production** runs the same flags under supervisor (`deploy/linux/supervisor-gw-worker.conf`) — applied at go-live per `docs/deployment-runbook.md`; the artifact is ready, the host install is an Infra-phase action. Restart the worker with `php artisan queue:restart` after any `.env` change. All 4 jobs declare `tries = 3` explicitly, so job-level tries wins over any CLI `--tries` (guards the `composer dev` helper's `--tries=1`). Covered by `tests/Feature/QueueWorkerTest` (DB-queue smoke via the real `queue:work` command, config fallback, job-tries introspection).
+- **Scheduler wiring (2026-08-07):** the app-side schedule lives in `routes/console.php` — monthly `billing:run` (1st 03:05 PH, explicit `--period` = previous month end, `withoutOverlapping`, queued by default) and daily `paymongo:reconcile` (06:00 PH, read-only). The server needs exactly one host cron line (`* * * * * php artisan schedule:run`, in `deploy/linux/cron-gw-system`), installed during Infra; until then `billing:run` stays manual. Covered by `tests/Feature/ScheduleTest`.
 
 ## Meter Readings
 
@@ -106,7 +107,7 @@ Based on real Sorsogon-area water bills reviewed:
 - Billing math lives in `App\Services\BillingService` (never in admin UI/widgets). Each run bills one calendar month for **active** connections: usage × rate (flat or tiered — connection's assigned schedule when effective for the period, else the global active one) + carried arrears (`previous_balance`) + penalty (`2%/month` after due date + grace, full 30-day buckets, per `PenaltyRule` — data, never hardcoded); due date = period end + grace days.
 - Anything billing can't trust is **skipped + reported, never billed**: flagged readings (meter swap / `present < previous`), no reading in the period, zero usage, invalid inputs (negative usage, misconfigured schedule), and invalid `--period` (rejected, not normalized). No minimum charge until the office confirms a value.
 - Idempotent + race-safe: already-billed readings are skipped on re-runs; a DB unique constraint on `invoices (service_connection_id, meter_reading_id)` + a Postgres partial unique index block double-billing and concurrent runs for the same month.
-- Run = queued job (`RunBillingJob`, database driver; `--sync` runs inline). Every run records a `billing_runs` row (status + JSON report); `billing:report {id}` prints it — the data source for the Admin Panel phase's future "Run billing" page. Monthly scheduler (cron + worker) is the Infra phase; until then `billing:run` is manual.
+- Run = queued job (`RunBillingJob`, database driver; `--sync` runs inline). Every run records a `billing_runs` row (status + JSON report); `billing:report {id}` prints it — the data source for the Admin Panel phase's future "Run billing" page. Scheduling is wired (routes/console.php, 1st 03:05 PH, `withoutOverlapping`); only the host cron line (`deploy/linux/cron-gw-system`) is needed at go-live — until then `billing:run` is manual.
 - Full decision catalog (decided + still-needs-office-confirmation): `docs/insights/billing-decisions.md`.
 
 ## Security
@@ -268,7 +269,7 @@ npm run dev
 
 ### Infra / Ops
 - [x] Graphify graph rebuilt vendor-free (`.graphifyignore` added: `backend/vendor/`, `backend/public/js/`; graph pruned 72,935 → 2,135 nodes, 2026-08-01)
-- [ ] Queue worker running (database driver)
+- [x] Queue worker: running in dev + host deploy artifacts ready (worker only truly live on the server at go-live) — dev: Windows Scheduled Task `GW-System Queue Worker` → `deploy/windows/queue-worker.ps1` (`--tries=3 --timeout=120 --sleep=3`, self-restart every 8h via `--max-time`, crash-restart 3×/1min), register/status/unregister via `deploy/windows/register-worker.ps1`. Host: `deploy/linux/supervisor-gw-worker.conf` (same flags) + `deploy/linux/cron-gw-system` + `deploy/linux/backup.sh` + `docs/deployment-runbook.md` — applied when a server is chosen (Infra). All 4 jobs declare `tries=3`; scheduler wiring (monthly billing 1st 03:05 PH, daily reconcile 06:00 PH) in `routes/console.php`. Tests: `QueueWorkerTest` (real DB-queue → `queue:work`), `ScheduleTest` *(2026-08-07)*
 - [ ] Automatic daily DB backups enabled on host
 - [ ] Basic rate limiting on public API routes
 

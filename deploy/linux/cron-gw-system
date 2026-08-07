@@ -1,0 +1,29 @@
+# GW-System — host-side cron entries (Linux production host)
+#
+# Install (as root):
+#     cp deploy/linux/cron-gw-system /etc/cron.d/gw-system
+#     chmod 0644 /etc/cron.d/gw-system
+#
+# Two things live here; nearly everything else is inside the application's own
+# Laravel scheduler (routes/console.php), which needs exactly ONE host cron line:
+#
+#   1. The scheduler clock (`schedule:run`) — must tick every minute. The app's
+#      scheduler then decides WHEN (monthly billing 1st 03:05 PH, daily
+#      paymongo:reconcile 06:00 PH). If this line is missing, NOTHING automatic
+#      fires even though the code ships in the repo.
+#   2. The host-side postgres backup at 02:30 AM — deliberately before the
+#      03:05 billing run and outside the 06:00 reconcile, so a dump never
+#      lands mid-billing. The worker (supervisor) must be running for queued
+#      jobs; without it the billing job waits in `jobs`.
+#
+# Backend path matches deploy/linux/supervisor-gw-worker.conf. Adjust if the
+# server's deploy path differs.
+
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+
+# Laravel scheduler clock (1-minute tick necessary; log of last run)
+* * * * * www-data /var/www/gw-system/backend/artisan schedule:run >> /var/log/gw-scheduler.log 2>&1
+
+# Daily Postgres backup (02:30, before billing 03:05); rotation in backup.sh
+30 2 * * * root /var/www/gw-system/deploy/linux/backup.sh >> /var/log/gw-backup.log 2>&1

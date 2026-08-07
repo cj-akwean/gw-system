@@ -148,6 +148,47 @@ cd backend
 php artisan make:filament-user
 ```
 
+## Queue worker (background jobs)
+
+The queue uses the **database** driver. Payment-confirmation emails (with the PDF
+attachment), connection-identifier-change emails, webhook `mark paid` jobs, and billing
+runs are all queued — **a running worker is required** or jobs sit in the `jobs` table
+silently. Two ways to run it:
+
+**1. Manual (quick dev):** a second terminal, from `backend`:
+
+```bash
+php artisan queue:work --tries=3       # (or --once to process one job and exit)
+```
+
+**2. Durable (recommended on this machine):** a Windows Scheduled Task starts the worker
+at logon and restarts it on a crash. From the repo root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy\windows\register-worker.ps1        # register + start
+powershell -ExecutionPolicy Bypass -File deploy\windows\register-worker.ps1 -Status # state / last result
+powershell -ExecutionPolicy Bypass -File deploy\windows\register-worker.ps1 -Unregister
+```
+
+The task wraps `deploy\windows\queue-worker.ps1`, which polls the `database` queue
+with `--tries=3 --timeout=120 --sleep=3` and restarts itself every 8 hours
+(`--max-time`) to shed memory and stale config. Its log lives in
+`backend/storage/logs/queue-worker.log`. A non-zero worker exit is propagated so the
+task's restart-on-failure (3× / 1 min) applies. `deploy/linux/supervisor-gw-worker.conf`
+(plus the host cron + backup in `deploy/linux/` and the full sequence in
+`docs/deployment-runbook.md`) is the production setup for a real server — a machine on
+the desk is dev-only, the live worker is an Infra-phase action on the host you choose.
+
+Operational notes:
+
+- **After any `.env` / queue-config change**, restart the worker with
+  `php artisan queue:restart` — it caches config at startup.
+- **Failed jobs** land in `failed_jobs`; inspect with `php artisan queue:failed`.
+  Receipt failures additionally raise the admin bell ("Resend receipt").
+- **Check for a stuck backlog:** `SELECT count(*) FROM jobs;` — should be ~0 at rest.
+- Jobs declare their own `tries = 3`, which wins over any worker CLI `--tries` — so
+  the `composer dev` helper's `--tries=1` never throttles a real job's retries.
+
 ## Testing the customer API (Thunder Client / REST clients)
 
 The customer portal is a **JSON API** (`POST /api/login` → Bearer token → authenticated

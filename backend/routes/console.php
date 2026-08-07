@@ -1,8 +1,36 @@
 <?php
 
 use Illuminate\Foundation\Inspiring;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Schedule;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
+
+/**
+ * Monthly billing run — the 1st at 03:05 (Asia/Manila), queued by default.
+ * The explicit --period pins the computation to the app timezone: "last day of
+ * the previous month". The worker (supervisor / Windows task) must be running;
+ * without it the queued RunBillingJob waits in `jobs`. withoutOverlapping()
+ * guards a slow/stuck prior run. If the office routinely imports month-end
+ * readings ON the 1st, move the hour/date here (single edit point).
+ */
+Schedule::command('billing:run', [
+    '--period' => Carbon::now('Asia/Manila')->startOfMonth()->subDay()->toDateString(),
+])
+    ->monthlyOn(1, '03:05')
+    ->timezone('Asia/Manila')
+    ->withoutOverlapping();
+
+/**
+ * Daily read-only PayMongo reconciliation safety net (never mutates state).
+ * Reports discrepancies to the `paymongo` log channel; exit code 1 when it
+ * finds any — the scheduler records the failure, the 'paymongo' log is the
+ * audit trail.
+ */
+Schedule::command('paymongo:reconcile')
+    ->dailyAt('06:00')
+    ->timezone('Asia/Manila')
+    ->withoutOverlapping();
