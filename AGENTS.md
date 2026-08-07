@@ -134,7 +134,9 @@ Run before suggesting a commit:
 
 ### 8. Documentation workflow (product-decisions.md + session summaries)
 
-This project keeps two kinds of running documentation, in addition to ARCHITECTURE.md's checklist. Both are living documents — append to them, don't rewrite history.
+This project keeps several kinds of running documentation, in addition to ARCHITECTURE.md's checklist. All are living documents — append to them, don't rewrite history.
+
+**`docs/insights/implementation-notes.md`** — the detail archive for ARCHITECTURE.md's Implementation Status checklist (same sections, `§N` items). When a checklist item is completed, its full implementation note goes HERE as a new `###` item — ARCHITECTURE.md bullets stay one-liners with `(details: … → §Section-N)` pointers.
 
 **`docs/insights/product-decisions.md`** — the "why" behind non-obvious choices. Append a new dated section whenever:
 - A design question comes up with real trade-offs (not "what did I build" but "why this way and not the obvious alternative")
