@@ -257,7 +257,7 @@ npm run dev
 - [x] Email sending working (Mailtrap in dev, Resend in prod)
 - [x] Failed receipt visibility: admin DB notification on confirmation-email failure (+ error logged to `paymongo`) — 2026-08-05
 - [x] `php artisan paymongo:send-receipt {invoice}` resends a receipt to all linked users — 2026-08-05
-- [ ] Notification hub UI (read/mark-all, history list) — Phase 2, after Admin Panel dashboard; the bell only lists **unread** notifications — reading/dismissing hides them, there is no history anywhere (user-confirmed gap 2026-08-06, deferred by user choice)
+- [x] Notification hub UI (read/mark-all, history list) — `AdminDatabaseNotifications` (custom bell: dismiss/clear = mark-read, never deletes) + `NotificationHub` page (`/admin/notifications`: full history, read/unread/resolved/action-needed filters, per-row mark read/unread, mark-all-read, no delete — history is the audit trail; resolution state `data.resolved_at` written by `ResendReceiptController` is the only way a row stops needing action) — 2026-08-07
 - [ ] SMS notifications wired up (Semaphore/Twilio) — optional, later
 
 **Ops notes (Notifications):**

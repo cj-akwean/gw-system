@@ -919,3 +919,32 @@ validation/DUPE bug, and should we add a unique constraint on the name so it can
 - **Rule to follow when this bites again:** if duplicate-looking domain rows show up in a dropdown,
   check the DB first (dupes? leftovers?) before adding constraints — a constraint must not
   contradict legitimate same-name/date-versioned rows that tests already rely on.
+
+## 31. Notification history is permanent — dismiss means read, never delete (2026-08-07, built same day)
+
+**Question asked:** the bell dropdown only lists unread notifications and treats dismissal
+(`X`, "Clear all") as *deletion* — so an admin cannot audit past failures ("did that receipt
+resend get resolved?"). Where should full history live, and what should dismissal mean?
+
+**Answer + reasoning:**
+
+- **Two surfaces, one intent.** The bell stays as a quick "what's unread" launcher; a new
+  Notification Hub page (`/admin/notifications`) is the audit trail with the *full* history
+  (read, unread, resolved alike) plus filters (unread/read/resolved/action-needed), per-row
+  mark read/unread, and mark-all-read. The bell X / Clear no longer deletes — it marks read.
+  Rows are **never deletable anywhere**: the receipt-failure history is the record of what an
+  admin was (or wasn't) alerted about, so deleting it would hide exactly the evidence the
+  hub exists to surface.
+- **"Resolved" is business state, "read" is UI state.** Read/unread is just the UI's
+  bookkeeping; whether a failed receipt *needs acting on* is written to `data.resolved_at`
+  by `ResendReceiptController` on a successful resend. The hub's "State" column shows
+  Resolved / Action needed / Info from that flag (not from `read_at`), so a row can be
+  resolved-but-unread and still truthful. This is why the visible "Resend receipt" link on
+  an action column must survive until resolution, independent of read state.
+- **Bell reuse via LivewireComponent override.** The stock bell was kept and the dismissal
+  behavior swapped by subclassing `Filament\Notifications\Livewire\DatabaseNotifications`
+  and re-declaring the Livewire v3 `#[On('notificationClosed')]` handler (`removeNotification`)
+  to mark read instead of delete, hiding "Clear all". The hub page (`Page implements HasTable`)
+  reuses the same query (`data->format = "filament"` + current admin) with `EmbeddedTable`.
+- **Why no checkboxes/group actions:** with delete off the table, there's no reason to
+  select; mark read/unread is per-row or all-at-once. Keeps the page minimal.
