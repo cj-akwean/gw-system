@@ -27,7 +27,7 @@ class ServiceConnectionFactory extends Factory
             'email' => fake()->safeEmail(),
             'gender' => fake()->randomElement(['male', 'female']),
             'birthdate' => fake()->dateTimeBetween('-70 years', '-18 years')->format('Y-m-d'),
-            'civil_status' => fake()->randomElement(['single', 'married']),
+            'civil_status' => fake()->randomElement(['single', 'married', 'widowed', 'separated']),
             'occupation' => fake()->jobTitle(),
             'status' => 'active',
             'connection_date' => fake()->dateTimeBetween('-5 years', 'now')->format('Y-m-d'),

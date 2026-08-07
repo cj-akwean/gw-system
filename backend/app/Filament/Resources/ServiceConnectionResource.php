@@ -66,6 +66,7 @@ class ServiceConnectionResource extends Resource
                     ->label('Phone')
                     ->tel()
                     ->maxLength(20)
+                    ->rules(['nullable', 'regex:/^[0-9+\-() ]+$/'])
                     ->helperText('Applicant contact number.'),
 
                 TextInput::make('email')
@@ -79,7 +80,8 @@ class ServiceConnectionResource extends Resource
                     ->options([
                         'male' => 'Male',
                         'female' => 'Female',
-                    ]),
+                    ])
+                    ->rules(['nullable', 'in:male,female']),
 
                 DatePicker::make('birthdate')
                     ->label('Birthdate')
@@ -92,7 +94,8 @@ class ServiceConnectionResource extends Resource
                         'married' => 'Married',
                         'widowed' => 'Widowed',
                         'separated' => 'Separated',
-                    ]),
+                    ])
+                    ->rules(['nullable', 'in:single,married,widowed,separated']),
 
                 TextInput::make('occupation')
                     ->label('Occupation')

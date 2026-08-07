@@ -25,6 +25,7 @@ class ConnectionLinkController extends Controller
     {
         $connection = ServiceConnection::where('account_number', $request->account_number)
             ->where('meter_number', $request->meter_number)
+            ->where('status', 'active')
             ->firstOrFail();
 
         $link = ConnectionLink::updateOrCreate(

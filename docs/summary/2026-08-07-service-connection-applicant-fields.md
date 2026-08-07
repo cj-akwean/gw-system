@@ -36,9 +36,22 @@ Registration (Admin): add `phone`, `email`, `gender`, `birthdate`, `civil_status
   (`status !== 'active'`), and dashboard active-count all already exclude it. Verified by new tests.
 
 ## Test results
-- Targeted: 96/96 green (ServiceConnection*, Reading, Billing, Dashboard).
-- **Full suite: 369/369 passed, 1316 assertions** (`php -d memory_limit=512M vendor/phpunit/phpunit/phpunit`).
-- `./vendor/bin/pint --dirty` reformatted factory + migration only (cosmetic); `php -l` clean.
+- Targeted: 96/96 green (ServiceConnection*, Reading, Billing, Dashboard) at first pass.
+- **Full suite: 369/369 passed, 1316 assertions** at first pass; **375/375, 1338 assertions** after audit fixes (`php -d memory_limit=512M vendor/phpunit/phpunit/phpunit`).
+- `./vendor/bin/pint --dirty` / pint on changed files (cosmetic); `php -l` clean.
+
+## Audit fixes applied (senior-BE review of commit 11dc8a2)
+- **Server-side enum validation**: `gender` (`in:male,female`) and `civil_status`
+  (`in:single,married,widowed,separated`) gained `->rules()` in the Filament form — before, the Select
+  only constrained the UI, so direct writes (tinker/seeders/future API) could persist arbitrary values.
+  `phone` gained a `regex:/^[0-9+\-() ]+$/` rule.
+- **Portal link gating**: `ConnectionLinkController::store()` now requires `where('status','active')` —
+  previously a customer could self-link a `pending`/`inactive`/`disconnected` connection by
+  account+meter number. Aligns with the existing `index()` `where('status','active')` guard.
+- **Factory breadth**: `civil_status` now rotates through all 4 accepted values (was single/married only)
+  so widowed/separated enum paths get exercised.
+- **6 new tests**: invalid gender rejected, invalid civil_status rejected, pending→active promotion,
+  active linkable via `/api/links`, pending + disconnected not linkable (404, no row).
 
 ## Edge cases checked (audit second pass)
 - Existing rows keep working — all new columns nullable, no backfill.
@@ -48,8 +61,8 @@ Registration (Admin): add `phone`, `email`, `gender`, `birthdate`, `civil_status
 - CSV formula-injection sanitize applies to the new free-text cells (same helper).
 
 ## Known gaps / next step
-- No commit yet (needs explicit approval). Suggest committing this bundle as one unit.
-- Manual verify: edit a connection in `/admin`, save applicant fields, view page + export CSV.
+- Manual verify: edit a connection in `/admin`, save applicant fields (invalid gender/civil_status must
+  fail), link a `pending` account via the portal (must 404), view page + export CSV.
 - Migration already applied to dev DB (`php artisan migrate`).
 - Next unchecked item: **Create-new-connection flow in CRM** (create page + account/meter issuance).
 - Not yet run: `graphify . --update` (model gained fillable columns; small — run next structural session).

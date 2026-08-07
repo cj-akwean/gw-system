@@ -152,6 +152,66 @@ class ServiceConnectionResourceTest extends TestCase
             ->assertSee('Pending');
     }
 
+    public function test_pending_connection_can_be_promoted_to_active(): void
+    {
+        $barangay = Barangay::factory()->create();
+        $connection = ServiceConnection::factory()->create([
+            'barangay_id' => $barangay->id,
+            'status' => 'pending',
+        ]);
+
+        Livewire::actingAs($this->admin(), 'admin')
+            ->test(EditServiceConnection::class, ['record' => $connection->id])
+            ->fillForm([
+                'status' => 'active',
+                'barangay_id' => $barangay->id,
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame('active', $connection->fresh()->status);
+    }
+
+    public function test_invalid_gender_value_is_rejected(): void
+    {
+        $barangay = Barangay::factory()->create();
+        $connection = ServiceConnection::factory()->create([
+            'barangay_id' => $barangay->id,
+            'gender' => null,
+        ]);
+
+        Livewire::actingAs($this->admin(), 'admin')
+            ->test(EditServiceConnection::class, ['record' => $connection->id])
+            ->fillForm([
+                'gender' => 'unknown',
+                'barangay_id' => $barangay->id,
+            ])
+            ->call('save')
+            ->assertHasFormErrors(['gender']);
+
+        $this->assertNull($connection->fresh()->gender);
+    }
+
+    public function test_invalid_civil_status_value_is_rejected(): void
+    {
+        $barangay = Barangay::factory()->create();
+        $connection = ServiceConnection::factory()->create([
+            'barangay_id' => $barangay->id,
+            'civil_status' => null,
+        ]);
+
+        Livewire::actingAs($this->admin(), 'admin')
+            ->test(EditServiceConnection::class, ['record' => $connection->id])
+            ->fillForm([
+                'civil_status' => 'unknown',
+                'barangay_id' => $barangay->id,
+            ])
+            ->call('save')
+            ->assertHasFormErrors(['civil_status']);
+
+        $this->assertNull($connection->fresh()->civil_status);
+    }
+
     public function test_duplicate_identifier_rejected_on_edit_but_own_value_allowed(): void
     {
         $other = ServiceConnection::factory()->create(['account_number' => 'GW-AAA']);
