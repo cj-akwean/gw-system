@@ -35,8 +35,9 @@ PayMongo's API surface is broad. Before implementing or modifying anything payme
 | Email | Password | Role | Access |
 |---|---|---|---|
 | admin@gwsystem.com | admin123 | Super Admin | `/admin` (Filament dashboard) |
+| test@example.com | password | Portal Test User | customer portal `/dashboard` (linked to connection #1 with paid/overdue/unpaid bills) |
 
-> Use `admin@gwsystem.com` / `admin123` to log into the Filament admin panel. Seeded via `php artisan db:seed`.
+> Use `admin@gwsystem.com` / `admin123` to log into the Filament admin panel; `test@example.com` / `password` for the customer portal. Both seeded via `php artisan db:seed` (updateOrCreate — re-seeding resets these credentials).
 
 ## Key Decisions
 

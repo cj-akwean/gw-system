@@ -16,8 +16,9 @@ class DatabaseSeeder extends Seeder
         $this->call(PenaltyRuleSeeder::class);
         $this->call(RateScheduleSeeder::class);
         $this->call(ServiceConnectionSeeder::class);
+        $this->call(DemoPortalDataSeeder::class);
 
-        User::firstOrCreate([
+        User::updateOrCreate([
             'email' => 'admin@gwsystem.com',
         ], [
             'name' => 'Admin',
@@ -25,10 +26,11 @@ class DatabaseSeeder extends Seeder
             'is_admin' => true,
         ]);
 
-        User::firstOrCreate([
+        User::updateOrCreate([
             'email' => 'test@example.com',
         ], [
             'name' => 'Test User',
+            'password' => bcrypt('password'),
             'is_admin' => false,
         ]);
     }
