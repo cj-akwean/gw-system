@@ -5,12 +5,14 @@ import { BillsList } from "./bills-list";
 import type { PortalInvoice } from "@/lib/api";
 
 const mockGetInvoices = vi.fn();
+const mockGetRecentPayments = vi.fn();
 const mockLogout = vi.fn();
 const mockReplace = vi.fn();
 const mockRouter = { replace: mockReplace, push: vi.fn() };
 
 vi.mock("@/lib/api", () => ({
   getInvoices: (...args: unknown[]) => mockGetInvoices(...args),
+  getRecentPayments: (...args: unknown[]) => mockGetRecentPayments(...args),
   formatPeso: (n: number) => `₱${n.toFixed(2)}`,
   ApiError: class extends Error {
     status: number;
@@ -52,6 +54,7 @@ const invoice = (overrides: Partial<PortalInvoice> = {}): PortalInvoice => ({
 describe("BillsList", () => {
   beforeEach(() => {
     mockGetInvoices.mockReset();
+    mockGetRecentPayments.mockReset();
     mockLogout.mockReset();
     mockReplace.mockReset();
   });
@@ -151,5 +154,54 @@ describe("BillsList", () => {
 
     await user.click(screen.getByTestId("pay-2"));
     expect(mockRouter.push).toHaveBeenCalledWith("/dashboard/pay?id=2");
+  });
+
+  it("groups bills under a divider per connection", async () => {
+    mockGetInvoices.mockResolvedValue([
+      invoice({ id: 1 }),
+      invoice({
+        id: 2,
+        invoice_number: "GW-2026-00002",
+        service_connection: {
+          account_number: "GW-00002",
+          meter_number: "MTR-00002",
+          registered_name: "Juan Dela Cruz",
+          barangay: "Maipon",
+        },
+      }),
+      invoice({
+        id: 3,
+        invoice_number: "GW-2026-00003",
+      }),
+    ]);
+
+    render(<BillsList />);
+
+    await screen.findByTestId("connection-GW-00001");
+    expect(screen.getByTestId("connection-GW-00002")).toBeInTheDocument();
+
+    expect(screen.getAllByText(/MTR-00001/)).toHaveLength(1);
+    expect(screen.getByText(/GW-00002 · MTR-00002/)).toBeInTheDocument();
+    expect(screen.getByText(/Juan Dela Cruz · Maipon/)).toBeInTheDocument();
+
+    const firstGroup = screen.getByTestId("connection-GW-00001");
+    expect(firstGroup).toContainElement(screen.getByTestId("invoice-1"));
+    expect(firstGroup).toContainElement(screen.getByTestId("invoice-3"));
+    const secondGroup = screen.getByTestId("connection-GW-00002");
+    expect(secondGroup).toContainElement(screen.getByTestId("invoice-2"));
+  });
+
+  it("renders the past payments drawer collapsed without fetching", async () => {
+    mockGetInvoices.mockResolvedValue([invoice()]);
+
+    render(<BillsList />);
+
+    await screen.findByTestId("invoice-1");
+
+    expect(screen.getByTestId("past-payments-toggle")).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    );
+    expect(mockGetRecentPayments).not.toHaveBeenCalled();
   });
 });

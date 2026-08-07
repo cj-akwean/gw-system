@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { formatPeso, getInvoices, ApiError, type PortalInvoice } from "@/lib/api";
 import { BillCard } from "@/components/portal/bill-card";
+import { PastPayments } from "@/components/portal/past-payments";
 import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
 
@@ -85,6 +86,20 @@ export function BillsList() {
     0
   );
 
+  // Group by connection (account/meter) — the API already sorts overdue-first
+  // then by due date, and grouping preserves that order within each group.
+  const groups: { key: string; connection: PortalInvoice["service_connection"]; invoices: PortalInvoice[] }[] =
+    [];
+  for (const inv of invoices) {
+    const key = inv.service_connection.account_number;
+    const existing = groups.find((g) => g.key === key);
+    if (existing) {
+      existing.invoices.push(inv);
+    } else {
+      groups.push({ key, connection: inv.service_connection, invoices: [inv] });
+    }
+  }
+
   return (
     <section className="space-y-6">
       <div>
@@ -106,16 +121,33 @@ export function BillsList() {
           </p>
         </div>
       ) : (
-        <ul className="space-y-4">
-          {invoices.map((invoice) => (
-            <BillCard
-              key={invoice.id}
-              invoice={invoice}
-              onPay={() => router.push(`/dashboard/pay?id=${invoice.id}`)}
-            />
+        <div className="space-y-6">
+          {groups.map((group) => (
+            <div key={group.key} data-testid={`connection-${group.key}`} className="space-y-3">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 border-b border-border pb-2">
+                <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                  {group.connection.account_number} · {group.connection.meter_number}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {group.connection.registered_name}
+                  {group.connection.barangay ? ` · ${group.connection.barangay}` : ""}
+                </p>
+              </div>
+              <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {group.invoices.map((invoice) => (
+                  <BillCard
+                    key={invoice.id}
+                    invoice={invoice}
+                    onPay={() => router.push(`/dashboard/pay?id=${invoice.id}`)}
+                  />
+                ))}
+              </ul>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
+
+      <PastPayments />
     </section>
   );
 }

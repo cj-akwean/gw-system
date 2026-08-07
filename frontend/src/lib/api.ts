@@ -110,6 +110,28 @@ export function buildReturnUrl(invoiceId: number | string): string {
   return `${window.location.origin}/dashboard/pay?id=${invoiceId}&from=gcash`;
 }
 
+export interface PortalPayment {
+  id: number;
+  invoice_number: string;
+  billing_period_start: string;
+  billing_period_end: string;
+  amount: number;
+  method: string;
+  channel: string | null;
+  paid_at: string;
+  service_connection: {
+    account_number: string;
+    meter_number: string;
+    registered_name: string;
+    barangay: string | null;
+  };
+}
+
+export async function getRecentPayments(): Promise<PortalPayment[]> {
+  const res = await authFetch("/api/payments");
+  return res.json();
+}
+
 export function formatPeso(amount: number | string | null | undefined): string {
   const n = Number(amount ?? 0);
   return Number.isFinite(n)

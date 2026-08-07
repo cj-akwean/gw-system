@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\ConnectionLinkController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\InvoicePaymentController;
 use App\Http\Controllers\Api\PayMongoWebhookController;
+use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\AuthController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -34,4 +35,5 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/invoices/{invoice}', [InvoiceController::class, 'show'])->middleware('throttle:30,1,invoices-index');
     Route::post('/invoices/{invoice}/pay', [InvoicePaymentController::class, 'store'])
         ->middleware('throttle:20,1,invoices-pay');
+    Route::get('/payments', [PaymentController::class, 'index'])->middleware('throttle:30,1,payments-index');
 });

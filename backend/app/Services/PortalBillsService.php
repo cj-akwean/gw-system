@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Invoice;
+use App\Models\Payment;
 use App\Models\User;
 use Illuminate\Support\Collection;
 
@@ -28,6 +29,29 @@ class PortalBillsService
             ->whereIn('status', ['unpaid', 'overdue'])
             ->orderByRaw("case when status = 'overdue' then 0 else 1 end")
             ->orderBy('due_date')
+            ->get();
+    }
+
+    /**
+     * Most recent payments on the user's active linked connections, newest
+     * first. Feeds the portal's "Past payments" drawer (paid bills never
+     * vanish — they move here).
+     */
+    public function recentPayments(User $user, int $limit = 10): Collection
+    {
+        $connectionIds = $user->connectionLinks()
+            ->where('status', 'active')
+            ->pluck('service_connection_id');
+
+        if ($connectionIds->isEmpty()) {
+            return collect();
+        }
+
+        return Payment::query()
+            ->with(['invoice.serviceConnection.barangay'])
+            ->whereHas('invoice', fn ($query) => $query->whereIn('service_connection_id', $connectionIds))
+            ->orderByDesc('paid_at')
+            ->limit($limit)
             ->get();
     }
 }

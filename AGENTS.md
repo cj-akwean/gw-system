@@ -163,3 +163,16 @@ Format: mirror the existing structure — **Question asked** → **Answer + reas
   mid-implementation check.
 - Finished-but-unverified work mid-session is fine — record it as unverified in the
   session summary (Rule 8) and let the end-of-implementation batch run catch it.
+
+### 10. Responsive rule — mobile-first, verified at tablet AND desktop
+- All customer-facing frontend work is **mobile-first**: design the phone layout first, then
+  extend it for tablet (≥768px / `md:`) and desktop (≥1024px / `lg:`). A screen is not done
+  until it has been laid out and visually verified at all three widths.
+- Never hard-cap the page at a phone width (`max-w-md` alone) — use fluid containers that
+  widen (`max-w-md md:max-w-4xl lg:max-w-5xl`) and multi-column grids at larger breakpoints
+  (e.g. the bills list is 1-col → 2-col (`sm:`) → 3-col (`lg:`)). The old phone-column-with-
+  dead-space dashboard was the anti-pattern that spawned this rule.
+- Money flows (payment screens) follow the same rule: stacked single column on mobile,
+  two-column (summary + QR/actions) at `lg:`.
+- Every frontend session's manual verification must include a viewport pass: phone (~390px),
+  tablet (~768px), desktop (~1280px), and the result noted in the session summary.
