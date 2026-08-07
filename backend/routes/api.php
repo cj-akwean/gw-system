@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\ConnectionLinkController;
+use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\InvoicePaymentController;
 use App\Http\Controllers\Api\PayMongoWebhookController;
 use App\Http\Controllers\AuthController;
@@ -29,6 +30,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/links', [ConnectionLinkController::class, 'index'])->middleware('throttle:30,1,links-index');
     Route::post('/links', [ConnectionLinkController::class, 'store'])->middleware('throttle:30,1,links-store');
     Route::delete('/links/{link}', [ConnectionLinkController::class, 'destroy'])->middleware('throttle:30,1,links-destroy');
+    Route::get('/invoices', [InvoiceController::class, 'index'])->middleware('throttle:30,1,invoices-index');
     Route::post('/invoices/{invoice}/pay', [InvoicePaymentController::class, 'store'])
         ->middleware('throttle:20,1,invoices-pay');
 });

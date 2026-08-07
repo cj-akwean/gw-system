@@ -5,6 +5,25 @@ interface LoginResponse {
   user: { id: number; name: string; email: string };
 }
 
+export interface PortalInvoice {
+  id: number;
+  invoice_number: string;
+  billing_period_start: string;
+  billing_period_end: string;
+  due_date: string;
+  previous_balance: number;
+  base_amount: number;
+  penalty_amount: number;
+  total_amount: number;
+  status: "unpaid" | "overdue";
+  service_connection: {
+    account_number: string;
+    meter_number: string;
+    registered_name: string;
+    barangay: string | null;
+  };
+}
+
 function getToken(): string | null {
   try {
     const stored = localStorage.getItem("auth");
@@ -51,33 +70,70 @@ export async function logoutApi(): Promise<void> {
   });
 }
 
+export async function getInvoices(): Promise<PortalInvoice[]> {
+  const res = await authFetch("/api/invoices");
+  return res.json();
+}
+
+export function formatPeso(amount: number | string | null | undefined): string {
+  const n = Number(amount ?? 0);
+  return Number.isFinite(n)
+    ? `₱${n.toLocaleString("en-PH", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })}`
+    : "—";
+}
+
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+async function resolveResponse(res: Response): Promise<Response> {
+  if (res.ok) return res;
+
+  const body = await res.json().catch(() => ({}));
+  throw new ApiError(
+    (body as { message?: string }).message ?? "Request failed",
+    res.status
+  );
+}
+
 export async function authFetch(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<Response> {
   const token = getToken();
+
+  if (!token) {
+    throw new ApiError("Session expired. Please sign in again.", 401);
+  }
+
   const headers: Record<string, string> = {
     Accept: "application/json",
+    Authorization: `Bearer ${token}`,
     ...(options.headers as Record<string, string>),
   };
-
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
 
   if (options.body && typeof options.body === "string") {
     headers["Content-Type"] = "application/json";
   }
 
-  const res = await fetch(`${API_URL}${endpoint}`, {
-    ...options,
-    headers,
-  });
-
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.message ?? "Request failed");
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${endpoint}`, {
+      ...options,
+      headers,
+    });
+  } catch {
+    throw new ApiError("Unable to reach the server. Please try again.", 0);
   }
 
-  return res;
+  return resolveResponse(res);
 }

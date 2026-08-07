@@ -994,7 +994,7 @@ never delete, the row was unfixable through the UI â€” the user asked to just pu
 (`throttle:60,1` webhook, `throttle:10,1` login, etc.) actually give each route its own
 budget?
 
-**Answer + reasoning:** no — Laravel's inline `ThrottleRequests` key for an *anonymous*
+**Answer + reasoning:** no ï¿½ Laravel's inline `ThrottleRequests` key for an *anonymous*
 request is `sha1(route-domain . "|" . client-ip)` (`vendor/.../Routing/Middleware/ThrottleRequests.php`),
 which contains **no route identity at all**. `getDomain()` is `null` for all `/api/*`
 routes, so `/login` and `/paymongo/webhook` silently shared ONE per-IP counter. Two real
@@ -1003,20 +1003,49 @@ consequences:
 - **Cross-route lockout:** 10 webhook hits from an IP meant that IP's login budget was gone
   for the minute (the counter read against login's lower 10-cap), and vice versa.
 - **Exploitable DoS on login:** signature verification happens inside the controller,
-  *after* the throttle — so 10 unauthenticated junk POSTs to the webhook from a victim's IP
+  *after* the throttle ï¿½ so 10 unauthenticated junk POSTs to the webhook from a victim's IP
   locked that IP out of login for 60s, no secret needed. On a shared NAT/CGNAT one
   hostile/buggy client poisons login for the whole pool.
 
 **Rule: give every inline throttle its own prefix** (`throttle:60,1,paymongo-webhook`,
 `throttle:10,1,auth-login`, ...). The prefix is prepended before hashing, so each route
 gets an independent bucket while keeping the exact inline-throttle idiom. Authenticated keys
-are `sha1(user-id)` (no IP), which is a *good* property — an authenticated attacker cannot
-reset their budget by rotating IPs — and per-route prefixes also remove the previous
+are `sha1(user-id)` (no IP), which is a *good* property ï¿½ an authenticated attacker cannot
+reset their budget by rotating IPs ï¿½ and per-route prefixes also remove the previous
 "combined 30/min across all portal routes" semantic, so heavy `/user` polling can no longer
 starve the money-critical `/invoices/{id}/pay` route of the same user.
 
 **Deferred:** the check-then-hit gate is non-atomic; a concurrent burst near the cap can
 briefly exceed it by the in-flight count. The database cache store serializes increments via
-`SELECT ... FOR UPDATE`, so the overshoot is bounded and transient — accepted. A strict
+`SELECT ... FOR UPDATE`, so the overshoot is bounded and transient ï¿½ accepted. A strict
 atomic ceiling would require `RateLimiter::attempt()` (reservation) and is only worth it if
 the `/pay` route ever shows abuse in practice.
+
+## 34. No auto-start queue worker on dev â€” manual terminal only; prod keeps supervisor with rotated logs (2026-08-07)
+
+**Question asked:** the "durable worker" scheduled task starts `php artisan queue:work`
+at every logon and keeps a transcript running â€” my laptop's disk hits 100% shortly after
+boot. Can I remove it and just run the worker in the terminal?
+
+**Answer + reasoning (user decision, implemented same day):**
+
+- **Auto-starting a dev worker was the wrong default for a dev machine.** At boot the
+  disk is already contended (Windows Update, OneDrive, antivirus); the task added
+  continuous DB polling (`--sleep=3`) plus a PowerShell `Start-Transcript` writing every
+  worker line to `queue-worker.log` with **no rotation** â€” sustained disk I/O at exactly
+  the wrong moment. On a production server the worker is *the* process that must always
+  run (unattended), but on a developer's laptop the queue is only exercised when
+  features are being tested â€” a terminal command is zero-cost and always visible.
+- **Rule that fell out: dev convenience â‰  prod behavior; never let a dev convenience
+  ship unbounded resource use.** The scheduled task stayed unregistered and the
+  `deploy/windows/` scripts are deleted from the repo. The prod artifact
+  (`deploy/linux/supervisor-gw-worker.conf`) already had the two guards that the dev
+  task lacked: an 8-hour `--max-time` self-restart (memory/config hygiene) and rotating
+  stdout logs (`stdout_logfile_maxbytes=10MB`, `stdout_logfile_backups=5`), so worker
+  output can never fill a disk. Its header comment now documents the dev incident and
+  that rotation is the guard â€” nothing in this repo auto-starts a worker except
+  Supervisor on a chosen prod host.
+- **Manual dev workflow** (README + ARCHITECTURE now say only this): run
+  `php artisan queue:work --tries=3` in a second terminal when testing queued flows, or
+  `--once` for a single job; `queue:restart` after `.env` changes. Failed jobs land in
+  `failed_jobs` and the admin bell regardless of how the worker was started.

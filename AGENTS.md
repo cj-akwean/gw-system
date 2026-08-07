@@ -150,3 +150,15 @@ Format: mirror the existing structure — **Question asked** → **Answer + reas
 **At the start of every session**, read the most recent `docs/summary/*.md` file and skim `docs/insights/product-decisions.md` — not just `ARCHITECTURE.md`/`AGENTS.md` — before continuing work. The summary carries context ARCHITECTURE.md's checklist alone doesn't (what was tried, what broke, what's still unverified).
 
 **Never let these silently go stale.** If a session ends without a summary being written, that's a rule violation worth flagging to the user, not skipping quietly.
+
+### 9. Batch verification — test once, near the end
+- Do NOT run the test suite after every file edit. Implement the whole checklist item
+  first, then run the full suite once, close to the end (right before Rule 5 pre-commit
+  checks), so all breakages surface in a single pass instead of per edit. Per-edit runs
+  cost more time than they save and test half-built code.
+- Applies to both suites: `npm test` (frontend Vitest) and the phpunit invocation in
+  Rule 5 (backend).
+- Exceptions: tests themselves are the task; the user explicitly asks for a
+  mid-implementation check.
+- Finished-but-unverified work mid-session is fine — record it as unverified in the
+  session summary (Rule 8) and let the end-of-implementation batch run catch it.

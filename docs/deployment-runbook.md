@@ -207,7 +207,7 @@ production. Scheduler entries need no cron changes (single `schedule:run` tick).
 | Dev (Windows) | Prod (Linux) |
 |---|---|
 | `cURL error 60` without CA bundle (README §PHP HTTPS/SSL) | Never happens — system CA bundle |
-| Worker = manual terminal or Windows Scheduled Task | Worker = supervisor (this runbook §4) |
+| Worker = manual terminal (dev runs `php artisan queue:work --tries=3` by hand; no auto-start) | Worker = supervisor (this runbook §4) |
 | Mailtrap / `MAIL_MAILER=log` | Resend + verified domain (SPF/DKIM/DMARC) |
 | Postgres on localhost | Same native Postgres, `localhost` or socket |
 
