@@ -755,17 +755,17 @@ connection model, which is unsafe if the record is gone by the time a job dies.
 - **Recipients are now a snapshot, not a re-query.** The service resolves the recipient list once,
   passes it in the job payload, and the job emails exactly that list. Toast count, log line, and
   actual send can no longer drift. Trade-off: a user who unlinks *after* the save still receives the
-  one email about the change that happened while they were linked — acceptable and deterministic.
+  one email about the change that happened while they were linked ï¿½ acceptable and deterministic.
 - **Duplicates are dropped at dispatch, not at send.** The job implements `ShouldBeUnique` with a
   `uniqueId()` keyed on (connection id + changed identifiers + recipients) and a 1h lock
   (`#[UniqueFor(3600)]`). Laravel's `UniqueLock` acquires the lock in `PendingDispatch` before the
   queue write, so a second identical dispatch never even reaches the `jobs` table. Cache store is
-  `database` in prod — `DatabaseStore` implements `LockProvider`, verified against the installed
+  `database` in prod ï¿½ `DatabaseStore` implements `LockProvider`, verified against the installed
   Laravel 13 source. A different edit (different old identifiers, or a new recipient) gets its own
   key and emails normally.
 - **`failed()` is model-free.** The job carries `serviceConnectionId` as a plain int, so the admin
   alert + log fire even if the connection row is deleted before the job resolves (can't happen via
-  the CRM — no delete — but imports/other code could).
+  the CRM ï¿½ no delete ï¿½ but imports/other code could).
 
 ## 26. Admin reports + payer identity + registration: three user asks, one plan (2026-08-06, planned â€” not yet built)
 
@@ -808,27 +808,27 @@ fakes with only account/meter/name/address/barangay/status/connection_date).
 is intentionally not built here â€” the billing object covers the proofing need without a webhook â†’
 intent â†’ user join. If ever required, the intent-creation endpoint is the place to record it.
 
-## 27. Admin failure notifications must be actionable — buttons, not command strings (2026-08-06, built same day)
+## 27. Admin failure notifications must be actionable ï¿½ buttons, not command strings (2026-08-06, built same day)
 
-**Question asked:** the admin bell notification for a failed payment-confirmation email told the operator to "Fix the mailer, then resend with: php artisan paymongo:send-receipt 6". The user: "how is a normal user still needing to run a command like that — it should be a button right?"
+**Question asked:** the admin bell notification for a failed payment-confirmation email told the operator to "Fix the mailer, then resend with: php artisan paymongo:send-receipt 6". The user: "how is a normal user still needing to run a command like that ï¿½ it should be a button right?"
 
 **Answer + reasoning (decided with the user 2026-08-06; built same day):**
 
 - Filament database notifications support actions: Notification::make()->actions([...]) serializes each action (name/label/color/url/...) into the notification's data, Notification::fromDatabase() restores them, and the bell modal renders them as a real button/link. So an admin-facing failure can carry a one-click recovery with zero vendor changes.
-- The button targets an admin-guarded route (GET /admin/payments/{payment}/resend-receipt, `web` + `auth:admin` — provider `admins` = User where is_admin, the same session as the panel), which runs the resend synchronously (same code path as the CLI) and flashes a Filament toast (success names the recipients; danger shows the error), then redirects to the dashboard.
-- Why synchronous rather than queued: the very failure being recovered from is often a dead/stale queue worker — queueing the resend would reuse the same failure path. A request-scoped send needs no worker and gives the operator immediate feedback.
+- The button targets an admin-guarded route (GET /admin/payments/{payment}/resend-receipt, `web` + `auth:admin` ï¿½ provider `admins` = User where is_admin, the same session as the panel), which runs the resend synchronously (same code path as the CLI) and flashes a Filament toast (success names the recipients; danger shows the error), then redirects to the dashboard.
+- Why synchronous rather than queued: the very failure being recovered from is often a dead/stale queue worker ï¿½ queueing the resend would reuse the same failure path. A request-scoped send needs no worker and gives the operator immediate feedback.
 - Why a plain GET link rather than POST: Filament notification url actions render as links end-to-end in this version; postToUrl forms carry no CSRF token (would 419 with the panel's PreventRequestForgery). Resend is idempotent (worst case: a duplicate email), so a GET link is acceptable for an explicitly-clicked, admin-only action.
 - Rule going forward: **any admin-facing failure notification must offer an in-app recovery action, never a CLI instruction.** CLIs stay as a fallback for automation, not the operator's primary path.
 
 **Ops lessons from the same incident (2026-08-06):**
 - A long-running `php artisan queue:work` daemon never reloads changed classes. After the payer-row PDF change, the still-running worker used the old PdfService/PaymentConfirmation in memory while Blade recompiled the new view fresh ? "Undefined variable " (failed_jobs, 3 tries) even though on-disk code and the whole test suite were correct (tests run in fresh PHP processes). Rule: restart the worker after any code change; when a queued job fails in a way tests can't reproduce, suspect the worker first.
-- `queue:retry` with no argument prints "No retryable jobs found" even when failed_jobs is non-empty — it needs `all` or a concrete job id. For a single failed receipt, `paymongo:send-receipt {invoice}` (synchronous) is the simplest recovery.
+- `queue:retry` with no argument prints "No retryable jobs found" even when failed_jobs is non-empty ï¿½ it needs `all` or a concrete job id. For a single failed receipt, `paymongo:send-receipt {invoice}` (synchronous) is the simplest recovery.
 
 ## 28. Resend must be idempotent and leave the notification in a truthful state (2026-08-06, built same day)
 
 **Question asked:** the admin resend-receipt button/link could be clicked repeatedly, sending a duplicate
 email per click; and after a successful resend the bell entry still read "Payment confirmation email
-failed" with an active button — the notification lied about the world. Also: marking notifications read
+failed" with an active button ï¿½ the notification lied about the world. Also: marking notifications read
 makes them vanish (no history), which surfaced during the same test round.
 
 **Answer + reasoning (decided with the user):**
@@ -836,25 +836,54 @@ makes them vanish (no history), which surfaced during the same test round.
 - **Idempotency, not just throttling.** The route now carries `throttle:10,1` as a blunt backstop, but
   the real fix is state: `SendPaymentConfirmationEmail::failed()` tags each notification row with
   `data.payment_id`/`invoice_id` (matched deterministically by the action-URL fingerprint, not by
-  creation order — notification PKs are UUIDs, so "latest id" is meaningless). `ResendReceiptController`
+  creation order ï¿½ notification PKs are UUIDs, so "latest id" is meaningless). `ResendReceiptController`
   finds the linked rows, and a `lockForUpdate` transaction spanning check ? send ? resolve serializes
   concurrent clicks: the first one wins, the second sees `resolved_at` and only warns ("already
-  resent"), never sending again. The lock is held across the SMTP send — acceptable for a low-traffic
+  resent"), never sending again. The lock is held across the SMTP send ï¿½ acceptable for a low-traffic
   admin action, and it makes the dedupe airtight instead of best-effort.
 - **The notification is the source of truth about its own outcome.** A successful resend rewrites the
-  rows: `resolved_at` + `resend_count` (audit trail), success color, body "Receipt resent to … at …",
-  and the action removed — the button disappears because the failure is over. A failed resend or the
+  rows: `resolved_at` + `resend_count` (audit trail), success color, body "Receipt resent to ï¿½ at ï¿½",
+  and the action removed ï¿½ the button disappears because the failure is over. A failed resend or the
   no-recipients skip leaves the row untouched, button intact. Keep the row after resolution (audit);
   only the action goes away.
 - **Resolving crosses admins.** Every admin's copy of the notification is updated, and any admin's
-  resend resolves all copies — one payment = one receipt, regardless of who clicked.
+  resend resolves all copies ï¿½ one payment = one receipt, regardless of who clicked.
 - **Legacy rows still work.** Notifications created before tagging (like the dev row that started this)
   carry no `payment_id`; the controller falls back to matching the stored action URL, so those rows
   resolve too on first click. New rows use the tag.
 - **History view is still missing (known, deferred).** Read notifications vanish from Filament's bell
-  (it lists unread only) and there is no hub — that is the existing unchecked "Notification hub UI"
+  (it lists unread only) and there is no hub ï¿½ that is the existing unchecked "Notification hub UI"
   item, deliberately not pulled into this change. The resolved-state rewrite also makes the bell more
   useful without a hub: a resolution is visible before you dismiss it.
-- Rule extension to §27: **an actionable notification must also be truthful after the action** — either
+- Rule extension to ï¿½27: **an actionable notification must also be truthful after the action** ï¿½ either
   resolve it or leave it exactly as it was; never keep a "click me to fix this" button after the fix is
   done.
+
+## 29. How are account/meter numbers issued (and why auto-suggested)? (2026-08-07, built same day)
+
+**Question asked:** the office has to create new service connections, but real account numbers are
+issued by the utility and exist nowhere in the system beforehand. Who types them?
+
+**Answer + reasoning (decided with the user):**
+
+- **Both paths, one form.** The create form pre-fills suggested identifiers on mount (`GW-00001` /
+  `MTR-00001` style, zero-padded 5) but they are plain editable fields permanently overwritten by the
+  office's real issued number. Blanking a field is a normal form error (`required()` stays on) - a
+  deliberate clear tells the user to type the real number, which is the office's normal workflow.
+- **`existing file = system` pattern already provides identity, so suggestions are derived from it
+  without a new table.** `ServiceConnectionService::nextIdentifier()` scans only values matching
+  `^prefix\d+$` and returns max suffix + 1. Office-issued values in arbitrary formats (e.g. real meter
+  serials like `H-409912`) are ignored and never bump or block the sequence. This matches how
+  `BillingService::generateInvoiceNumber()` works (max+1, collision caught loudly), and the same
+  generator will back the upcoming CSV-import item with its uniqueness backstops - one code path, no
+  duplicated sequence logic.
+- **Format choice:** account `GW-#####`, meter `MTR-#####` - matches the existing seed/factory data
+  and the whole test corpus, so nothing existing surprises. Invoice numbers stay `GW-YYYY-#####`
+  (distinct namespace, no functional conflict; known and accepted ambiguity).
+- **Race handling:** two admins creating simultaneously can both compute the same next number; the
+  form-level `unique()` validator catches it pre-insert, and `handleRecordCreation` retries once on a
+  Postgres `23505` unique violation by re-deriving (then keeps the office's typed value on any later
+  attempt). Single-office workload -> no sequence table, same stance as the invoice numbers.
+- **`connection_date` stays required** and create defaults to `active` (user decisions, recorded
+  earlier the flow doc): pending applications still carry a planned connection date, and the status
+  badge handles the rest; no schema change needed.

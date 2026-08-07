@@ -37,13 +37,14 @@ class ServiceConnectionResource extends Resource
                     ->required()
                     ->maxLength(20)
                     ->unique('service_connections', 'account_number')
-                    ->helperText('Used by customers to self-link their portal account. Changes notify linked users by email.'),
+                    ->helperText('Used by customers to self-link their portal account. Auto-suggested on create — overwrite with the office-issued number. Changes notify linked users by email.'),
 
                 TextInput::make('meter_number')
                     ->label('Meter Number')
                     ->required()
                     ->maxLength(20)
-                    ->unique('service_connections', 'meter_number'),
+                    ->unique('service_connections', 'meter_number')
+                    ->helperText('Auto-suggested on create — overwrite with the meter serial printed on the physical meter.'),
 
                 TextInput::make('registered_name')
                     ->label('Registered Name')
@@ -201,11 +202,6 @@ class ServiceConnectionResource extends Resource
             ->bulkActions([]);
     }
 
-    public static function canCreate(): bool
-    {
-        return false;
-    }
-
     public static function canDelete(Model $record): bool
     {
         return false;
@@ -224,6 +220,7 @@ class ServiceConnectionResource extends Resource
     {
         return [
             'index' => Pages\ListServiceConnections::route('/'),
+            'create' => Pages\CreateServiceConnection::route('/create'),
             'view' => Pages\ViewServiceConnection::route('/view/{record}'),
             'edit' => Pages\EditServiceConnection::route('/{record}/edit'),
         ];

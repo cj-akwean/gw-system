@@ -8,6 +8,37 @@ use App\Models\ServiceConnection;
 class ServiceConnectionService
 {
     /**
+     * Next unused identifier for the given column and prefix, derived from
+     * the highest numeric suffix currently in use (e.g. "GW-00042" + 1).
+     * Rows whose values don't match the prefix are ignored, so office-issued
+     * numbers of any format never block the sequence.
+     */
+    public function nextIdentifier(string $column, string $prefix, int $pad = 5): string
+    {
+        $max = (int) ServiceConnection::query()
+            ->where($column, '~', '^'.preg_quote($prefix, '/').'\d+$')
+            ->pluck($column)
+            ->map(fn (string $value): int => (int) substr($value, strlen($prefix)))
+            ->max();
+
+        return $prefix.str_pad((string) ($max + 1), $pad, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Auto-suggested identifiers for a new connection: account "GW-00001"
+     * style and meter "MTR-00001" style, both guaranteed unused at call time.
+     *
+     * @return array{account_number: string, meter_number: string}
+     */
+    public function suggestIdentifiers(): array
+    {
+        return [
+            'account_number' => $this->nextIdentifier('account_number', 'GW-'),
+            'meter_number' => $this->nextIdentifier('meter_number', 'MTR-'),
+        ];
+    }
+
+    /**
      * After a connection is saved, compares its current account_number and
      * meter_number against the values held before the save and, if either
      * changed, emails every linked portal user the old → new identifiers.

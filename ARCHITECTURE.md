@@ -250,7 +250,7 @@ npm run dev
 
 ### Customer Registration (Admin) *(planned 2026-08-06)*
 - [x] Applicant fields on `service_connections` — `phone`, `email`, `gender`, `birthdate`, `civil_status`, `occupation` (all nullable so existing rows keep working; gender/civil_status are constrained selects — male/female, single/married/widowed/separated); `status` gains `pending` (application → active; `pending` excluded from billing, readings, dashboard active-count by the existing `'active'`-only guards); CRM edit form + factory updated (`*2026-08-07*)
-- [ ] Create-new-connection flow in CRM — `ServiceConnectionResource` create enabled; office issues (or form auto-suggests) account + meter numbers
+- [x] Create-new-connection flow in CRM — `ServiceConnectionResource` create enabled; account/meter numbers auto-suggested (`GW-#####`/`MTR-#####`, max numeric suffix + 1 via `ServiceConnectionService::nextIdentifier()`, office-issued formats skipped, Postgres `23505` retry backstop) and editable so the office can type the real issued numbers; shared generator is the base for the CSV-import item's blank-identifier backstops *(2026-08-07)*
 - [ ] CSV import to onboard existing registrants — `ImportServiceConnections`, ImportMeterReadings-style (upload → preview → validate → import); blank identifiers auto-generated with uniqueness backstops. Rationale: product-decisions §26.
 
 ### Notifications

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\Resources\ServiceConnectionResource;
+use App\Filament\Resources\ServiceConnectionResource\Pages\CreateServiceConnection;
 use App\Filament\Resources\ServiceConnectionResource\Pages\EditServiceConnection;
 use App\Filament\Resources\ServiceConnectionResource\Pages\ListServiceConnections;
 use App\Filament\Resources\ServiceConnectionResource\Pages\ViewServiceConnection;
@@ -232,11 +233,192 @@ class ServiceConnectionResourceTest extends TestCase
             ->assertHasNoFormErrors();
     }
 
-    public function test_create_route_never_registered(): void
+    public function test_create_route_is_registered_and_renders_for_admin(): void
     {
         $this->actingAs($this->admin(), 'admin')
             ->get('/admin/service-connections/create')
-            ->assertNotFound();
+            ->assertOk();
+    }
+
+    public function test_create_prefills_suggested_identifiers(): void
+    {
+        $barangay = Barangay::factory()->create();
+
+        Livewire::actingAs($this->admin(), 'admin')
+            ->test(CreateServiceConnection::class)
+            ->fillForm(['barangay_id' => $barangay->id])
+            ->assertFormSet([
+                'account_number' => 'GW-00001',
+                'meter_number' => 'MTR-00001',
+            ]);
+    }
+
+    public function test_create_persists_full_connection_and_redirects_to_view(): void
+    {
+        $barangay = Barangay::factory()->create();
+
+        $admin = $this->admin();
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(CreateServiceConnection::class)
+            ->fillForm([
+                'registered_name' => 'New Applicant',
+                'barangay_id' => $barangay->id,
+                'address' => 'Purok 3, New St.',
+                'phone' => '09171234567',
+                'email' => 'applicant@example.com',
+                'gender' => 'male',
+                'birthdate' => '1992-06-15',
+                'civil_status' => 'single',
+                'occupation' => 'Farmer',
+                'status' => 'active',
+                'connection_date' => '2026-08-07',
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors()
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('service_connections', [
+            'account_number' => 'GW-00001',
+            'meter_number' => 'MTR-00001',
+            'registered_name' => 'New Applicant',
+            'barangay_id' => $barangay->id,
+            'address' => 'Purok 3, New St.',
+            'phone' => '09171234567',
+            'email' => 'applicant@example.com',
+            'gender' => 'male',
+            'birthdate' => '1992-06-15',
+            'civil_status' => 'single',
+            'occupation' => 'Farmer',
+            'status' => 'active',
+            'connection_date' => '2026-08-07',
+        ]);
+    }
+
+    public function test_create_respects_office_overridden_identifiers(): void
+    {
+        $barangay = Barangay::factory()->create();
+
+        Livewire::actingAs($this->admin(), 'admin')
+            ->test(CreateServiceConnection::class)
+            ->fillForm([
+                'account_number' => 'GW-REAL-900',
+                'meter_number' => 'H-409912',
+                'registered_name' => 'Office Issued',
+                'barangay_id' => $barangay->id,
+                'address' => 'Anywhere',
+                'connection_date' => '2026-08-07',
+            ])
+            ->call('create')
+            ->assertHasNoErrors()
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('service_connections', [
+            'account_number' => 'GW-REAL-900',
+            'meter_number' => 'H-409912',
+        ]);
+    }
+
+    public function test_create_another_suggests_next_identifier(): void
+    {
+        $barangay = Barangay::factory()->create();
+
+        Livewire::actingAs($this->admin(), 'admin')
+            ->test(CreateServiceConnection::class)
+            ->fillForm([
+                'registered_name' => 'First',
+                'barangay_id' => $barangay->id,
+                'address' => 'A',
+                'connection_date' => '2026-08-07',
+            ])
+            ->call('createAnother')
+            ->assertHasNoErrors()
+            ->assertFormSet([
+                'account_number' => 'GW-00002',
+                'meter_number' => 'MTR-00002',
+            ]);
+    }
+
+    public function test_create_duplicate_account_number_is_rejected(): void
+    {
+        $barangay = Barangay::factory()->create();
+        ServiceConnection::factory()->create(['account_number' => 'GW-00001']);
+
+        Livewire::actingAs($this->admin(), 'admin')
+            ->test(CreateServiceConnection::class)
+            ->fillForm([
+                'account_number' => 'GW-00001',
+                'registered_name' => 'Dup',
+                'barangay_id' => $barangay->id,
+                'address' => 'A',
+                'connection_date' => '2026-08-07',
+            ])
+            ->call('create')
+            ->assertHasFormErrors(['account_number']);
+    }
+
+    public function test_create_pending_connection_succeeds_without_applicant_fields(): void
+    {
+        $barangay = Barangay::factory()->create();
+
+        Livewire::actingAs($this->admin(), 'admin')
+            ->test(CreateServiceConnection::class)
+            ->fillForm([
+                'registered_name' => 'Pending Applicant',
+                'barangay_id' => $barangay->id,
+                'address' => 'Barangay Hall',
+                'status' => 'pending',
+                'connection_date' => '2026-08-07',
+            ])
+            ->call('create')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('service_connections', [
+            'account_number' => 'GW-00001',
+            'status' => 'pending',
+        ]);
+    }
+
+    public function test_create_does_not_dispatch_identifier_change_email(): void
+    {
+        Queue::fake();
+        $barangay = Barangay::factory()->create();
+
+        Livewire::actingAs($this->admin(), 'admin')
+            ->test(CreateServiceConnection::class)
+            ->fillForm([
+                'registered_name' => 'Fresh',
+                'barangay_id' => $barangay->id,
+                'address' => 'A',
+                'connection_date' => '2026-08-07',
+            ])
+            ->call('create')
+            ->assertHasNoErrors();
+
+        Queue::assertNotPushed(SendConnectionIdentifierChangedEmail::class);
+    }
+
+    public function test_suggest_identifiers_skips_office_issued_formats_and_rolls_forward(): void
+    {
+        $barangay = Barangay::factory()->create();
+        ServiceConnection::factory()->create([
+            'account_number' => 'GW-00001',
+            'meter_number' => 'MTR-00005',
+            'barangay_id' => $barangay->id,
+        ]);
+        ServiceConnection::factory()->create([
+            'account_number' => 'ABC-XYZ',
+            'meter_number' => 'MTR-00002',
+            'barangay_id' => $barangay->id,
+        ]);
+
+        Livewire::actingAs($this->admin(), 'admin')
+            ->test(CreateServiceConnection::class)
+            ->fillForm(['barangay_id' => $barangay->id])
+            ->assertFormSet([
+                'account_number' => 'GW-00002',
+                'meter_number' => 'MTR-00006',
+            ]);
     }
 
     public function test_identifier_change_dispatches_email_to_linked_users_with_old_values(): void
