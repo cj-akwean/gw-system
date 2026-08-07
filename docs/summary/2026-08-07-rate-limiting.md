@@ -65,3 +65,55 @@ Verify margins: keep webhook at 60/min/IP (retries + bursts are idempotent and r
 ## Commit
 Not committed (needs explicit approval). Bundle: `backend/routes/api.php` +
 `backend/tests/Feature/RateLimitTest.php` + ARCHITECTURE.md checkbox + this summary.
+
+---
+
+## Audit follow-up (same day) — route-scoped buckets, log gate, gap tests
+
+**Goal:** senior review of the committed feature found a real defect; user approved applying
+all findings in one session.
+
+### Bug found and fixed (root cause)
+- **Cross-route bucket sharing:** anonymous `ThrottleRequests` keys are `sha1(domain|ip)` —
+  no route identity. `/login` and `/paymongo/webhook` shared ONE per-IP counter. Effects:
+  10 webhook hits → that IP's login budget gone (and vice versa); an attacker could 429-lock
+  a victim IP out of login with 10 junk webhook POSTs (signature is verified inside the
+  controller, AFTER the throttle). **Fix:** per-route prefixes (`throttle:60,1,paymongo-webhook`,
+  `throttle:10,1,auth-login`, `30,1,{route}` for user/logout/links-*, `20,1,invoices-pay`).
+  This also split the old *combined 30/min-per-user portal bucket* into per-route per-user
+  budgets (a recorded design change, see product-decisions #33).
+- **Webhook diagnostic log spam:** `header_spelling` was logged for every request including
+  junk floods, pre-validation. Now `app.debug`-gated (junk flood can't fill the log file).
+
+### Verified NOT a bug (documented)
+- Authenticated key = user id only (no IP) — IP rotation can't reset a bucket; regression
+  test added proving it.
+- Boundary race (check-then-hit) is bounded: Database `FOR UPDATE` serializes increments.
+  Accepted + documented; strict ceiling would need `RateLimiter::attempt()`.
+
+### Tests added (RateLimitTest 4 -> 13)
+login↔webhook same-IP isolation both directions (regression); `/api/user`, `/api/logout`,
+links `store` + `destroy` 30/min throttles (previously untested); bucket resets after decay
+window (`travel(61)`s); authenticated bucket persists across IP change; webhook 429 also
+asserts `X-RateLimit-Reset`.
+
+### Test results
+- `RateLimitTest` 13/13 (498 assertions).
+- Full suite **476/476 passed, 2146 assertions** (was 468 — +8 net tests).
+- `php -l` clean on `routes/api.php` + `PayMongoWebhookController.php` + `RateLimitTest.php`.
+
+### Docs updated
+- `ARCHITECTURE.md` rate-limit bullet rewritten (prefix requirement, per-route semantics,
+  race + log-gate security notes).
+- `docs/insights/product-decisions.md` #33 (route-scoped buckets, why the prefix is load-bearing).
+- This summary appended.
+
+### Known gaps / deferred
+- Trusted-proxies at deploy (unchanged, infra phase).
+- Atomic reservation limiter only if `/pay` shows abuse.
+- `graphify . --update` not needed (routes/tests/docs only).
+
+## Next step (recommended)
+Same as before: Infra host selection (apply `deploy/linux/*` + trusted proxies) or Customer
+Portal UI wiring. Manual confirm: 10 webhook POSTs from one IP then login → 401 (not 429);
+60 signed webhooks → 61st 429 with `Retry-After`; wait ~60s → 200 again.

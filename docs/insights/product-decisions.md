@@ -987,3 +987,36 @@ never delete, the row was unfixable through the UI â€” the user asked to just pu
   by the admin resend controller (confused-deputy style). Deletion of genuinely-broken
   rows stays out of the UI (decision #31) â€” this incident was a one-off dev-data purge,
   not a new delete feature.
+
+## 33. Rate-limit buckets must be route-scoped; Laravel's inline throttle key never is (2026-08-07)
+
+**Question asked:** the rate-limit review asked: do the per-route inline throttles
+(`throttle:60,1` webhook, `throttle:10,1` login, etc.) actually give each route its own
+budget?
+
+**Answer + reasoning:** no — Laravel's inline `ThrottleRequests` key for an *anonymous*
+request is `sha1(route-domain . "|" . client-ip)` (`vendor/.../Routing/Middleware/ThrottleRequests.php`),
+which contains **no route identity at all**. `getDomain()` is `null` for all `/api/*`
+routes, so `/login` and `/paymongo/webhook` silently shared ONE per-IP counter. Two real
+consequences:
+
+- **Cross-route lockout:** 10 webhook hits from an IP meant that IP's login budget was gone
+  for the minute (the counter read against login's lower 10-cap), and vice versa.
+- **Exploitable DoS on login:** signature verification happens inside the controller,
+  *after* the throttle — so 10 unauthenticated junk POSTs to the webhook from a victim's IP
+  locked that IP out of login for 60s, no secret needed. On a shared NAT/CGNAT one
+  hostile/buggy client poisons login for the whole pool.
+
+**Rule: give every inline throttle its own prefix** (`throttle:60,1,paymongo-webhook`,
+`throttle:10,1,auth-login`, ...). The prefix is prepended before hashing, so each route
+gets an independent bucket while keeping the exact inline-throttle idiom. Authenticated keys
+are `sha1(user-id)` (no IP), which is a *good* property — an authenticated attacker cannot
+reset their budget by rotating IPs — and per-route prefixes also remove the previous
+"combined 30/min across all portal routes" semantic, so heavy `/user` polling can no longer
+starve the money-critical `/invoices/{id}/pay` route of the same user.
+
+**Deferred:** the check-then-hit gate is non-atomic; a concurrent burst near the cap can
+briefly exceed it by the in-flight count. The database cache store serializes increments via
+`SELECT ... FOR UPDATE`, so the overshoot is bounded and transient — accepted. A strict
+atomic ceiling would require `RateLimiter::attempt()` (reservation) and is only worth it if
+the `/pay` route ever shows abuse in practice.

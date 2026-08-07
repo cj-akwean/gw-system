@@ -26,16 +26,19 @@ class PayMongoWebhookController extends Controller
     {
         $rawBody = $request->getContent();
 
-        // Current docs spell the header "Paymongo-Signature"; older docs used
-        // "X-Paymongo-Signature". Log which spelling actually arrives.
+        // Only the spellings "Paymongo-Signature" (current docs) and the legacy
+        // "X-Paymongo-Signature" are accepted. The spelling diagnostic runs once,
+        // debug-only, so a flood of unsigned requests cannot spam the log file.
         $signature = $request->header('Paymongo-Signature')
             ?? $request->header('X-Paymongo-Signature');
 
-        Log::channel('paymongo')->info('PayMongo webhook received', [
-            'header_spelling' => $request->header('Paymongo-Signature') !== null
-                ? 'Paymongo-Signature'
-                : 'X-Paymongo-Signature',
-        ]);
+        if (config('app.debug')) {
+            Log::channel('paymongo')->info('PayMongo webhook received', [
+                'header_spelling' => $request->header('Paymongo-Signature') !== null
+                    ? 'Paymongo-Signature'
+                    : 'X-Paymongo-Signature',
+            ]);
+        }
 
         if (! $payMongo->verifyWebhookSignature($rawBody, $signature, (bool) config('services.paymongo.livemode'))) {
             Log::channel('paymongo')->warning('PayMongo webhook rejected: signature verification failed');
