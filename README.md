@@ -179,6 +179,11 @@ task's restart-on-failure (3× / 1 min) applies. `deploy/linux/supervisor-gw-wor
 `docs/deployment-runbook.md`) is the production setup for a real server — a machine on
 the desk is dev-only, the live worker is an Infra-phase action on the host you choose.
 
+**Backups:** the same `deploy/linux/backup.sh` daily `pg_dump -Fc` produces onto the
+host. Backups are confirmed with `deploy/linux/restore-drill.sh` (restores into a
+scratch DB and drops it — a backup that was never restored is a rumor); credentials on
+a real host go in a root-only `/etc/gw-backup.env` that the cron line sources.
+
 Operational notes:
 
 - **After any `.env` / queue-config change**, restart the worker with

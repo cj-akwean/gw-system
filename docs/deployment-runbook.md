@@ -85,25 +85,65 @@ so in-flight PDF jobs finish on release) are already in the conf.
 
 ```bash
 sudo cp deploy/linux/cron-gw-system /etc/cron.d/gw-system && sudo chmod 0644 /etc/cron.d/gw-system
-chmod 0755 deploy/linux/backup.sh
-# edit backup.sh DB_* if they differ from .env
+chmod 0755 deploy/linux/backup.sh deploy/linux/restore-drill.sh
 ```
+
+**Backup credentials — do not run with the script's dev defaults.** The script's
+`DB_USER=postgres`/`DB_PASSWORD=postgres` defaults are dev-only and will not work
+against vanilla Ubuntu Postgres anyway (peer auth, no password for `postgres`).
+Create a dedicated backup role and put its credentials in a root-only env file
+at `/etc/gw-backup.env` — the shipped cron line sources it automatically when
+present (and falls back to defaults when absent):
+
+```bash
+sudo -u postgres psql -c "CREATE ROLE gw_backup LOGIN PASSWORD '<secret>';"
+sudo -u postgres psql -d gw_system -c \
+  "GRANT CONNECT ON DATABASE gw_system TO gw_backup; \
+   GRANT USAGE ON SCHEMA public TO gw_backup; \
+   GRANT SELECT ON ALL TABLES IN SCHEMA public TO gw_backup; \
+   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO gw_backup;"
+
+sudo tee /etc/gw-backup.env >/dev/null <<'EOF'
+export DB_USER=gw_backup
+export DB_PASSWORD='<secret>'
+export BACKUP_DIR=/var/backups/gw-system
+EOF
+sudo chmod 600 /etc/gw-backup.env
+```
+
+`backup.sh` reads `DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD/BACKUP_DIR`
+from its environment, so the sourced file is the whole configuration surface.
+Also confirm the host's timezone is `Asia/Manila` — cron times are host-local,
+and the 02:30 slot exists specifically to land before the 03:05 PH billing run.
 
 What fires (all times Asia/Manila, app-side scheduler in `routes/console.php`):
 
 - `billing:run` — 1st 03:05, period = last month (queued; needs the worker up).
 - `paymongo:reconcile` — daily 06:00, read-only discrepancy check (`paymongo` log).
-- host `backup.sh` — daily 02:30 pg_dump rotation (before billing; never mid-billing).
+- host `backup.sh` — daily 02:30 rotating `pg_dump -Fc` (before billing; never
+  mid-billing). Serialized with `flock`, rotates before dumping (retention holds
+  even on a failed run), and verifies each new dump via `pg_restore -l` before
+  logging success.
 
 Verification after install:
 
 ```bash
 tail -f /var/log/gw-scheduler.log      # expect "Running scheduled command" once/min
 ls -la /var/backups/gw-system/         # dump exists next morning
+tail -n 1 /var/log/gw-backup.log       # backup ok: ... (not FAILED)
 ```
 
-**Restore drill (mandatory, money data):** at least once before go-live,
-`pg_restore --clean -d gw_system_test <dump>` onto a scratch DB and diff a row count.
+**Restore drill (mandatory, money data):** run the shipped drill at least once
+before go-live — it restores a dump into a scratch DB (`gw_drill_<ts>`), counts
+`service_connections`/`invoices`, then drops it. Never points at the live DB.
+
+```bash
+sudo . /etc/gw-backup.env; sudo /var/www/gw-system/deploy/linux/restore-drill.sh
+# expect: drill ok: restored ... into gw_drill_<ts> (service_connections=N, invoices=N)
+```
+
+Green-light a false alarm: a dump that is empty or fails `pg_restore -l` exits
+non-zero and is logged as FAILED — trust logs, not file presence.
 
 ## 6. nginx + TLS + domains
 
