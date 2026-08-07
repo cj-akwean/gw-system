@@ -26,6 +26,12 @@ class ServiceConnectionsExportTest extends TestCase
             'name',
             'barangay',
             'address',
+            'phone',
+            'email',
+            'gender',
+            'birthdate',
+            'civil_status',
+            'occupation',
             'status',
             'connection_date',
             'rate_schedule',
@@ -45,6 +51,12 @@ class ServiceConnectionsExportTest extends TestCase
                 'meter_number' => 'MTR-00001',
                 'registered_name' => 'Ana Dela Cruz',
                 'address' => '123 Poblacion 3',
+                'phone' => '09171234567',
+                'email' => 'ana@example.com',
+                'gender' => 'female',
+                'birthdate' => '1985-06-15',
+                'civil_status' => 'married',
+                'occupation' => 'Teacher',
                 'status' => 'active',
                 'pending_balance' => 1250.50,
                 'created_at' => now(),
@@ -63,6 +75,12 @@ class ServiceConnectionsExportTest extends TestCase
             'Ana Dela Cruz',
             'Mauraro',
             '123 Poblacion 3',
+            '09171234567',
+            'ana@example.com',
+            'female',
+            '1985-06-15',
+            'married',
+            'Teacher',
             'active',
             '2024-03-15',
             'Standard Flat Rate',
@@ -90,9 +108,9 @@ class ServiceConnectionsExportTest extends TestCase
 
         $row = $this->exportFor($connection)->map($connection);
 
-        $this->assertSame('', $row[7]);
-        $this->assertSame('0.00', $row[8]);
-        $this->assertNull($row[9]);
+        $this->assertSame('', $row[13]);
+        $this->assertSame('0.00', $row[14]);
+        $this->assertNull($row[15]);
     }
 
     public function test_map_outputs_an_empty_date_for_a_null_connection_date(): void
@@ -110,7 +128,7 @@ class ServiceConnectionsExportTest extends TestCase
 
         $row = $this->exportFor($connection)->map($connection);
 
-        $this->assertNull($row[6]);
+        $this->assertNull($row[12]);
         $this->assertSame('', $row[3]);
     }
 
@@ -133,7 +151,7 @@ class ServiceConnectionsExportTest extends TestCase
         $this->assertSame("'@evil.com", $row[1]);
         $this->assertSame("'+SUM(A1)", $row[2]);
         $this->assertSame("'-1+1", $row[4]);
-        $this->assertSame("'\t=cmd()", $row[5]);
+        $this->assertSame("'\t=cmd()", $row[11]);
     }
 
     public function test_map_escapes_formula_injection_in_relation_names(): void
@@ -155,7 +173,7 @@ class ServiceConnectionsExportTest extends TestCase
         $row = $this->exportFor($connection)->map($connection);
 
         $this->assertSame("'=HYPERLINK(\"http://evil.example\")", $row[3]);
-        $this->assertSame("'@rate", $row[7]);
+        $this->assertSame("'@rate", $row[13]);
     }
 
     public function test_map_escapes_newline_prefixed_formula_injection(): void

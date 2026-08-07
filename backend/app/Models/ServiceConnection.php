@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['account_number', 'meter_number', 'registered_name', 'barangay_id', 'address', 'status', 'connection_date', 'rate_schedule_id'])]
+#[Fillable(['account_number', 'meter_number', 'registered_name', 'barangay_id', 'address', 'phone', 'email', 'gender', 'birthdate', 'civil_status', 'occupation', 'status', 'connection_date', 'rate_schedule_id'])]
 class ServiceConnection extends Model
 {
     /** @use HasFactory<ServiceConnectionFactory> */
@@ -20,6 +20,7 @@ class ServiceConnection extends Model
     {
         return [
             'connection_date' => 'date',
+            'birthdate' => 'date',
         ];
     }
 

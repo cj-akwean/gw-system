@@ -249,7 +249,7 @@ npm run dev
 - [x] Invoices CSV export — `App\Exports\InvoicesExport` (same pattern), respects status/due_date filters; columns: invoice no, account no, meter no, customer name, status, billing period start/end, due date, previous balance, base, penalty, total, rate schedule, cu.m. used, reading entered at, formula-injection sanitized *(2026-08-07)*
 
 ### Customer Registration (Admin) *(planned 2026-08-06)*
-- [ ] Applicant fields on `service_connections` — `phone`, `email`, `gender`, `birthdate`, `civil_status`, `occupation` (all nullable so existing rows keep working); `status` gains `pending` (application → active); CRM edit form + factory/seeder updated
+- [x] Applicant fields on `service_connections` — `phone`, `email`, `gender`, `birthdate`, `civil_status`, `occupation` (all nullable so existing rows keep working; gender/civil_status are constrained selects — male/female, single/married/widowed/separated); `status` gains `pending` (application → active; `pending` excluded from billing, readings, dashboard active-count by the existing `'active'`-only guards); CRM edit form + factory updated (`*2026-08-07*)
 - [ ] Create-new-connection flow in CRM — `ServiceConnectionResource` create enabled; office issues (or form auto-suggests) account + meter numbers
 - [ ] CSV import to onboard existing registrants — `ImportServiceConnections`, ImportMeterReadings-style (upload → preview → validate → import); blank identifiers auto-generated with uniqueness backstops. Rationale: product-decisions §26.
 

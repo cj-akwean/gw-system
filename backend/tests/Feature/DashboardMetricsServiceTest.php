@@ -33,6 +33,14 @@ class DashboardMetricsServiceTest extends TestCase
         $this->assertSame(3, app(DashboardMetricsService::class)->activeConnectionsCount());
     }
 
+    public function test_connections_count_excludes_pending(): void
+    {
+        ServiceConnection::factory()->count(2)->create(['status' => 'active']);
+        ServiceConnection::factory()->count(1)->create(['status' => 'pending']);
+
+        $this->assertSame(2, app(DashboardMetricsService::class)->activeConnectionsCount());
+    }
+
     public function test_invoice_counts_split_by_status(): void
     {
         Invoice::factory()->count(4)->create(['status' => 'unpaid']);

@@ -13,6 +13,18 @@ class ReadingServiceTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_validate_reading_rejects_non_active_connections(): void
+    {
+        $service = new ReadingService;
+        $connection = ServiceConnection::factory()->create(['status' => 'pending']);
+
+        $result = $service->validateReading($connection->id, 100.0);
+
+        $this->assertFalse($result['valid']);
+        $this->assertStringContainsString('is not active', $result['errors'][0]);
+        $this->assertStringContainsString('pending', $result['errors'][0]);
+    }
+
     public function test_reading_date_rejects_future_dates(): void
     {
         $service = new ReadingService;

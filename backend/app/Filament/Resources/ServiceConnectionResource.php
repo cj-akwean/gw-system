@@ -62,9 +62,46 @@ class ServiceConnectionResource extends Resource
                     ->required()
                     ->maxLength(255),
 
+                TextInput::make('phone')
+                    ->label('Phone')
+                    ->tel()
+                    ->maxLength(20)
+                    ->helperText('Applicant contact number.'),
+
+                TextInput::make('email')
+                    ->label('Email')
+                    ->email()
+                    ->maxLength(255)
+                    ->helperText('Applicant email.'),
+
+                Select::make('gender')
+                    ->label('Gender')
+                    ->options([
+                        'male' => 'Male',
+                        'female' => 'Female',
+                    ]),
+
+                DatePicker::make('birthdate')
+                    ->label('Birthdate')
+                    ->maxDate(today()),
+
+                Select::make('civil_status')
+                    ->label('Civil Status')
+                    ->options([
+                        'single' => 'Single',
+                        'married' => 'Married',
+                        'widowed' => 'Widowed',
+                        'separated' => 'Separated',
+                    ]),
+
+                TextInput::make('occupation')
+                    ->label('Occupation')
+                    ->maxLength(100),
+
                 Select::make('status')
                     ->label('Status')
                     ->options([
+                        'pending' => 'Pending',
                         'active' => 'Active',
                         'inactive' => 'Inactive',
                         'disconnected' => 'Disconnected',
@@ -121,6 +158,7 @@ class ServiceConnectionResource extends Resource
                     ->sortable()
                     ->formatStateUsing(fn (string $state): string => ucfirst($state))
                     ->color(fn (string $state): string => match ($state) {
+                        'pending' => 'info',
                         'active' => 'success',
                         'inactive' => 'warning',
                         'disconnected' => 'danger',
@@ -141,6 +179,7 @@ class ServiceConnectionResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
                     ->options([
+                        'pending' => 'Pending',
                         'active' => 'Active',
                         'inactive' => 'Inactive',
                         'disconnected' => 'Disconnected',

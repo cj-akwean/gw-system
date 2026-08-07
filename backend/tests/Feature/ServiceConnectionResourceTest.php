@@ -93,6 +93,12 @@ class ServiceConnectionResourceTest extends TestCase
                 'registered_name' => 'Renamed Customer',
                 'barangay_id' => $barangay->id,
                 'address' => 'New Address St.',
+                'phone' => '09171234567',
+                'email' => 'applicant@example.com',
+                'gender' => 'female',
+                'birthdate' => '1990-04-12',
+                'civil_status' => 'married',
+                'occupation' => 'Teacher',
                 'status' => 'active',
                 'connection_date' => '2026-01-15',
                 'rate_schedule_id' => null,
@@ -106,7 +112,44 @@ class ServiceConnectionResourceTest extends TestCase
             'account_number' => 'GW-NEW-001',
             'meter_number' => 'MTR-NEW-001',
             'registered_name' => 'Renamed Customer',
+            'phone' => '09171234567',
+            'email' => 'applicant@example.com',
+            'gender' => 'female',
+            'birthdate' => '1990-04-12',
+            'civil_status' => 'married',
+            'occupation' => 'Teacher',
         ]);
+    }
+
+    public function test_edit_can_set_pending_status_without_required_applicant_fields(): void
+    {
+        $barangay = Barangay::factory()->create();
+        $connection = ServiceConnection::factory()->create(['barangay_id' => $barangay->id]);
+
+        Livewire::actingAs($this->admin(), 'admin')
+            ->test(EditServiceConnection::class, ['record' => $connection->id])
+            ->fillForm([
+                'status' => 'pending',
+                'barangay_id' => $barangay->id,
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame('pending', $connection->fresh()->status);
+    }
+
+    public function test_pending_status_renders_in_list_badge_and_filter(): void
+    {
+        $pending = ServiceConnection::factory()->create([
+            'status' => 'pending',
+            'account_number' => 'GW-PEND',
+        ]);
+
+        Livewire::actingAs($this->admin(), 'admin')
+            ->test(ListServiceConnections::class)
+            ->assertCanSeeTableRecords([$pending])
+            ->assertSee('GW-PEND')
+            ->assertSee('Pending');
     }
 
     public function test_duplicate_identifier_rejected_on_edit_but_own_value_allowed(): void

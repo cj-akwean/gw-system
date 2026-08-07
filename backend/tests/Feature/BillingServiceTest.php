@@ -291,6 +291,20 @@ class BillingServiceTest extends TestCase
         $this->assertSame(0, Invoice::count());
     }
 
+    public function test_run_skips_pending_connections(): void
+    {
+        $service = new BillingService;
+        $this->seedPenaltyRule();
+        $schedule = $this->flatSchedule(10.00);
+        $connection = ServiceConnection::factory()->create(['rate_schedule_id' => $schedule->id, 'status' => 'pending']);
+        $this->reading($connection->id, 75.00, '2026-07-30');
+
+        $report = $service->run('2026-07-31');
+
+        $this->assertTrue($report->where('account_number', $connection->account_number)->isEmpty());
+        $this->assertSame(0, Invoice::count());
+    }
+
     public function test_invoice_number_sequences_after_last(): void
     {
         $service = new BillingService;

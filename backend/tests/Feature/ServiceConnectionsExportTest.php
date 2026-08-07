@@ -73,6 +73,12 @@ class ServiceConnectionsExportTest extends TestCase
             'name',
             'barangay',
             'address',
+            'phone',
+            'email',
+            'gender',
+            'birthdate',
+            'civil_status',
+            'occupation',
             'status',
             'connection_date',
             'rate_schedule',
@@ -93,6 +99,12 @@ class ServiceConnectionsExportTest extends TestCase
             'registered_name' => 'Ana Dela Cruz',
             'barangay_id' => $hauraro->id,
             'address' => '123 Poblacion St',
+            'phone' => '09171234567',
+            'email' => 'ana@example.com',
+            'gender' => 'female',
+            'birthdate' => '1985-06-15',
+            'civil_status' => 'married',
+            'occupation' => 'Teacher',
             'status' => 'active',
             'connection_date' => '2024-03-15',
             'rate_schedule_id' => $rate->id,
@@ -104,6 +116,12 @@ class ServiceConnectionsExportTest extends TestCase
             'registered_name' => 'Ben Santos',
             'barangay_id' => $poblacion->id,
             'address' => '456 Poblacion St',
+            'phone' => null,
+            'email' => null,
+            'gender' => null,
+            'birthdate' => null,
+            'civil_status' => null,
+            'occupation' => null,
             'status' => 'disconnected',
             'connection_date' => '2025-01-10',
             'rate_schedule_id' => null,
@@ -129,6 +147,12 @@ class ServiceConnectionsExportTest extends TestCase
             'Ana Dela Cruz',
             'Mauraro',
             '123 Poblacion St',
+            '09171234567',
+            'ana@example.com',
+            'female',
+            '1985-06-15',
+            'married',
+            'Teacher',
             'active',
             '2024-03-15',
             'Standard Flat Rate',
@@ -142,6 +166,12 @@ class ServiceConnectionsExportTest extends TestCase
             'Ben Santos',
             'Poblacion',
             '456 Poblacion St',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
             'disconnected',
             '2025-01-10',
             '',
@@ -176,7 +206,7 @@ class ServiceConnectionsExportTest extends TestCase
 
         $this->assertCount(2, $rows);
         $this->assertSame('GW-00001', $rows[1][0]);
-        $this->assertSame('active', $rows[1][5]);
+        $this->assertSame('active', $rows[1][11]);
     }
 
     public function test_export_respects_barangay_filter(): void
@@ -309,6 +339,6 @@ class ServiceConnectionsExportTest extends TestCase
         $row = $export->query()->get()->sole();
 
         $this->assertSame(500.0, (float) $row->pending_balance);
-        $this->assertSame('500.00', $export->map($row)[8]);
+        $this->assertSame('500.00', $export->map($row)[14]);
     }
 }
