@@ -108,7 +108,11 @@ export function BillsList() {
       ) : (
         <ul className="space-y-4">
           {invoices.map((invoice) => (
-            <BillCard key={invoice.id} invoice={invoice} />
+            <BillCard
+              key={invoice.id}
+              invoice={invoice}
+              onPay={() => router.push(`/dashboard/pay?id=${invoice.id}`)}
+            />
           ))}
         </ul>
       )}

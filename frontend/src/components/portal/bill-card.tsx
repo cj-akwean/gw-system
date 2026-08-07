@@ -5,6 +5,7 @@ import { formatPeso, type PortalInvoice } from "@/lib/api";
 
 interface BillCardProps {
   invoice: PortalInvoice;
+  onPay?: () => void;
 }
 
 function formatDate(iso: string): string {
@@ -23,7 +24,7 @@ function formatPeriod(invoice: PortalInvoice): string {
   return `${start} – ${end}`;
 }
 
-export function BillCard({ invoice }: BillCardProps) {
+export function BillCard({ invoice, onPay }: BillCardProps) {
   const overdue = invoice.status === "overdue";
 
   return (
@@ -80,18 +81,30 @@ export function BillCard({ invoice }: BillCardProps) {
         )}
       </dl>
 
-      <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
+      <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-3">
         <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
           Total due
         </span>
-        <span
-          className={cn(
-            "text-lg font-bold",
-            overdue ? "text-destructive" : "text-foreground"
+        <div className="flex items-center gap-3">
+          {onPay && (
+            <button
+              type="button"
+              onClick={onPay}
+              data-testid={`pay-${invoice.id}`}
+              className="rounded-md border border-border bg-primary px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-primary-foreground transition-colors hover:bg-primary/90"
+            >
+              Pay now
+            </button>
           )}
-        >
-          {formatPeso(invoice.total_amount)}
-        </span>
+          <span
+            className={cn(
+              "text-lg font-bold",
+              overdue ? "text-destructive" : "text-foreground"
+            )}
+          >
+            {formatPeso(invoice.total_amount)}
+          </span>
+        </div>
       </div>
     </li>
   );

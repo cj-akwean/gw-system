@@ -27,6 +27,10 @@ return [
         'public_key' => env('PAYMONGO_PUBLIC_KEY'),
         'webhook_secret' => env('PAYMONGO_WEBHOOK_SECRET'),
         'livemode' => filter_var(env('PAYMONGO_LIVEMODE', false), FILTER_VALIDATE_BOOLEAN),
+        // QR Ph payment-method expiry (seconds, 60–9000 per PayMongo docs). Sent to the
+        // customer portal as the checkout deadline — the countdown is always driven by
+        // this backend value, never a frontend constant.
+        'qr_expiry_seconds' => (int) env('PAYMONGO_QR_EXPIRY_SECONDS', 600),
     ],
 
     'ses' => [

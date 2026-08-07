@@ -1049,3 +1049,46 @@ boot. Can I remove it and just run the worker in the terminal?
   `php artisan queue:work --tries=3` in a second terminal when testing queued flows, or
   `--once` for a single job; `queue:restart` after `.env` changes. Failed jobs land in
   `failed_jobs` and the admin bell regardless of how the worker was started.
+
+## 35. QR Ph countdown: the backend owns the duration, the browser owns the deadline (2026-08-07, built same day)
+
+**Question asked:** the portal's QR Ph screen needs a 10-minute countdown. PayMongo's QR
+Ph expiry (60–9000s) is set at *payment-method creation* (docs: "expiry_seconds when
+creating a payment method" — not on the intent), and the method is created **client-side
+with the public key** (the docs' canonical flow, same pattern the card form will use
+later). Where should the countdown value live?
+
+**Answer + reasoning:**
+
+- **The value lives in the backend; the deadline is computed in the browser at attach
+  time.** `POST /api/invoices/{id}/pay` now returns `expiry_seconds` from
+  `services.paymongo.qr_expiry_seconds` (config, default 600) alongside the existing
+  `client_key`/`payment_intent_id`. The frontend passes exactly that value into the
+  client-side payment-method creation (so PayMongo, the backend, and the countdown all
+  agree) and computes `deadline = attach-time + expiry_seconds`. Nothing in the frontend
+  source hardcodes a timer value — change the config, restart, and the screen follows.
+- **Why client-side attach (not a backend proxy endpoint):** it's the documented flow,
+  it was already proven in test mode via `pay-checkout.html`, it needs no extra API
+  surface, and the card flow (next checklist item) must do client-side PM creation
+  anyway for PCI reasons — one pattern for both. The backend only ever handles the
+  intent via the secret key; card details never transit it.
+- **Clock skew is a non-issue by construction:** PayMongo starts the expiry clock when
+  the method is attached; the browser starts the countdown at the same moment. Both use
+  the same instant, so even a badly skewed device clock can't mis-state the QR's
+  remaining life. (A server-computed `expires_at` would have needed a backend attach
+  round-trip to be truthful — not worth it.)
+- **Refresh safety:** the deadline + QR image are persisted to `sessionStorage` keyed by
+  intent id and resumed only while still valid; an expired or missing record falls back
+  to a fresh attach. PayMongo reuses the stored intent id, so a refresh never creates a
+  zombie intent.
+- **The one hardcoded thing is deliberate:** 15-second polling of the bills list while
+  the screen is open (4 req/min, far under the `throttle:30,1` limit) — payment
+  detection, not the countdown.
+
+**Correction (same day, found on first live test):** PayMongo's attach response for QR Ph
+carries `next_action.type = "consume_qr"` (not `"code"` — the docs describe the
+`next_action.code` *object* but never document the `type` enum value; verified against a
+live test-mode attach). The response also includes `next_action.code.expires_at`
+(RFC3339) — PayMongo's own expiry moment, now used as the authoritative countdown
+deadline (fallback: attach time + backend `expiry_seconds`). Another entry for the
+"verify against the live API, not just the docs" book.

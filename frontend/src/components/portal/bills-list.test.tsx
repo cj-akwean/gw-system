@@ -134,4 +134,22 @@ describe("BillsList", () => {
       expect(mockReplace).toHaveBeenCalledWith("/auth");
     });
   });
+
+  it("renders a Pay button per bill that opens the payment screen", async () => {
+    mockGetInvoices.mockResolvedValue([
+      invoice({ id: 1 }),
+      invoice({ id: 2, invoice_number: "GW-2026-00002" }),
+    ]);
+
+    const user = userEvent.setup();
+    render(<BillsList />);
+
+    await screen.findByTestId("invoice-1");
+
+    await user.click(screen.getByTestId("pay-1"));
+    expect(mockRouter.push).toHaveBeenCalledWith("/dashboard/pay?id=1");
+
+    await user.click(screen.getByTestId("pay-2"));
+    expect(mockRouter.push).toHaveBeenCalledWith("/dashboard/pay?id=2");
+  });
 });

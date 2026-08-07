@@ -75,6 +75,34 @@ export async function getInvoices(): Promise<PortalInvoice[]> {
   return res.json();
 }
 
+export interface PaymentIntentInfo {
+  client_key: string;
+  payment_intent_id: string;
+  expiry_seconds: number;
+}
+
+export async function startPayment(invoiceId: number | string): Promise<PaymentIntentInfo> {
+  const res = await authFetch(`/api/invoices/${invoiceId}/pay`, { method: "POST" });
+  const body = await res.json();
+
+  if (
+    typeof body.client_key !== "string" ||
+    typeof body.payment_intent_id !== "string" ||
+    typeof body.expiry_seconds !== "number"
+  ) {
+    throw new ApiError(
+      "The payment gateway returned an invalid response. Please try again.",
+      res.status
+    );
+  }
+
+  return body;
+}
+
+export function buildReturnUrl(invoiceId: number | string): string {
+  return `${window.location.origin}/dashboard/pay?id=${invoiceId}&from=gcash`;
+}
+
 export function formatPeso(amount: number | string | null | undefined): string {
   const n = Number(amount ?? 0);
   return Number.isFinite(n)

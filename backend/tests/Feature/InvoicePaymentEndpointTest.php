@@ -138,9 +138,25 @@ class InvoicePaymentEndpointTest extends TestCase
             ->assertJson([
                 'client_key' => 'pi_test_intent_1_client_key',
                 'payment_intent_id' => 'pi_test_intent_1',
+                'expiry_seconds' => 600,
             ]);
 
         $this->assertSame('pi_test_intent_1', $invoice->fresh()->paymongo_payment_intent_id);
+    }
+
+    public function test_pay_expiry_seconds_comes_from_config(): void
+    {
+        [$user, $connection] = $this->makeLinkedUser();
+        $invoice = $this->makeInvoice($connection);
+        $this->fakePayMongoIntent($invoice);
+
+        config()->set('services.paymongo.qr_expiry_seconds', 120);
+
+        Sanctum::actingAs($user);
+
+        $this->postJson("/api/invoices/{$invoice->id}/pay")
+            ->assertOk()
+            ->assertJson(['expiry_seconds' => 120]);
     }
 
     public function test_pay_allows_an_overdue_invoice(): void

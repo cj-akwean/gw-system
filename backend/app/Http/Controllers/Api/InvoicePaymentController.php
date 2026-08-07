@@ -50,6 +50,7 @@ class InvoicePaymentController extends Controller
         return response()->json([
             'client_key' => $intent['client_key'],
             'payment_intent_id' => $intent['intent_id'],
+            'expiry_seconds' => (int) config('services.paymongo.qr_expiry_seconds'),
         ]);
     }
 }
