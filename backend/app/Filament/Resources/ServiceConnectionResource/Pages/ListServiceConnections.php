@@ -18,6 +18,11 @@ class ListServiceConnections extends ListRecords
         return [
             Actions\CreateAction::make(),
 
+            Actions\Action::make('importCsv')
+                ->label('Import CSV')
+                ->icon('heroicon-o-arrow-up-on-square')
+                ->url(ServiceConnectionResource::getUrl('import')),
+
             Actions\Action::make('exportCsv')
                 ->label('Export CSV')
                 ->icon('heroicon-o-arrow-down-tray')

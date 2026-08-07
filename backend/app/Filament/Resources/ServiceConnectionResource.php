@@ -225,6 +225,7 @@ class ServiceConnectionResource extends Resource
         return [
             'index' => Pages\ListServiceConnections::route('/'),
             'create' => Pages\CreateServiceConnection::route('/create'),
+            'import' => Pages\ImportServiceConnections::route('/import'),
             'view' => Pages\ViewServiceConnection::route('/view/{record}'),
             'edit' => Pages\EditServiceConnection::route('/{record}/edit'),
         ];
