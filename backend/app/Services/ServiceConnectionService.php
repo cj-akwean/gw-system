@@ -6,6 +6,7 @@ use App\Jobs\SendConnectionIdentifierChangedEmail;
 use App\Models\Barangay;
 use App\Models\RateSchedule;
 use App\Models\ServiceConnection;
+use DateTimeImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -82,6 +83,16 @@ class ServiceConnectionService
         $results = collect();
         $accounts = [];
         $meters = [];
+        $nextSuffix = ['account_number' => null, 'meter_number' => null];
+
+        $barangays = Barangay::query()
+            ->get(['id', 'name'])
+            ->mapWithKeys(fn (Barangay $barangay): array => [
+                strtolower($barangay->name) => ['id' => $barangay->id, 'name' => $barangay->name],
+            ])
+            ->all();
+
+        $rateSchedules = RateSchedule::query()->get(['id', 'name'])->groupBy('name');
 
         foreach ($csvRows as $index => $row) {
             $rowIndex = $index + 2;
@@ -105,20 +116,19 @@ class ServiceConnectionService
             }
 
             $barangayName = trim((string) ($row['barangay'] ?? ''));
-            $barangay = null;
+            $barangayMatch = $barangayName === ''
+                ? null
+                : ($barangays[strtolower($barangayName)] ?? null);
+
             if ($barangayName === '') {
                 $errors[] = 'Missing required column: barangay.';
-            } else {
-                $barangay = Barangay::whereRaw('LOWER(name) = ?', [strtolower($barangayName)])->first();
-
-                if (! $barangay) {
-                    $errors[] = "Unknown barangay: {$barangayName}.";
-                }
+            } elseif ($barangayMatch === null) {
+                $errors[] = "Unknown barangay: {$barangayName}.";
             }
 
             $providedAccount = trim((string) ($row['account_number'] ?? ''));
             $accountNumber = $providedAccount === ''
-                ? $this->nextFreeIdentifier('account_number', 'GW-', $accounts)
+                ? $this->nextFreeIdentifier('account_number', 'GW-', $accounts, $nextSuffix['account_number'], $rowIndex)
                 : $providedAccount;
             if ($providedAccount === '') {
                 $generated['account_number'] = true;
@@ -129,7 +139,7 @@ class ServiceConnectionService
 
             $providedMeter = trim((string) ($row['meter_number'] ?? ''));
             $meterNumber = $providedMeter === ''
-                ? $this->nextFreeIdentifier('meter_number', 'MTR-', $meters)
+                ? $this->nextFreeIdentifier('meter_number', 'MTR-', $meters, $nextSuffix['meter_number'], $rowIndex)
                 : $providedMeter;
             if ($providedMeter === '') {
                 $generated['meter_number'] = true;
@@ -192,7 +202,7 @@ class ServiceConnectionService
             $rateScheduleId = null;
             $rateScheduleName = trim((string) ($row['rate_schedule'] ?? ''));
             if ($rateScheduleName !== '') {
-                $matches = RateSchedule::where('name', $rateScheduleName)->get();
+                $matches = $rateSchedules->get($rateScheduleName) ?? collect();
 
                 if ($matches->isEmpty()) {
                     $errors[] = "Unknown rate schedule: {$rateScheduleName}.";
@@ -207,7 +217,7 @@ class ServiceConnectionService
                 'account_number' => $accountNumber,
                 'meter_number' => $meterNumber,
                 'registered_name' => $name,
-                'barangay_id' => $barangay?->id,
+                'barangay_id' => $barangayMatch['id'] ?? null,
                 'address' => $address,
                 'phone' => $phone !== '' ? $phone : null,
                 'email' => $email !== '' ? $email : null,
@@ -235,7 +245,7 @@ class ServiceConnectionService
                 'account_number' => $accountNumber,
                 'meter_number' => $meterNumber,
                 'name' => $name,
-                'barangay' => $barangay?->name ?? $barangayName,
+                'barangay' => $barangayMatch['name'] ?? $barangayName,
                 'status' => $status,
                 'connection_date' => $connectionDate,
             ]);
@@ -256,13 +266,17 @@ class ServiceConnectionService
      * the follow-up `nextIdentifier()` lookup would itself throw `25P02` and
      * the retry could never succeed.
      *
-     * Only machine-format identifiers (GW-/MTR- + digits) are regenerated, and
-     * only when the value still looks generated (the blank-identifier value
-     * auto-assigned at preview). A non-matching value, or three failed save
-     * attempts, surfaces as a normal validation error instead of leaking a raw
-     * 23505 to the caller.
+     * Roll-forward is restricted to identifiers this caller actually generated
+     * itself: a column only rolls when `$generated[$column]` is true (the flag
+     * `prepareImportRows()` sets for blank cells, or the create form marks for
+     * values it auto-suggested) AND the value still looks like the generated
+     * `GW-`/`MTR-` + digits format. A value the caller typed or imported
+     * verbatim is never silently replaced — after the retry budget is spent it
+     * surfaces as a normal validation error instead of leaking a raw 23505.
+     *
+     * @param  array<string, bool>  $generated  per-column provenance from the preview
      */
-    public function createWithIdentifierBackstops(array $data): ServiceConnection
+    public function createWithIdentifierBackstops(array $data, array $generated = []): ServiceConnection
     {
         $attempts = 0;
 
@@ -282,7 +296,11 @@ class ServiceConnectionService
 
                 $column = $this->collidedColumn($e);
 
-                if ($attempts >= 2 || $column === null || ! $this->isGenerated((string) ($data[$column] ?? ''))) {
+                $rollForward = $column !== null
+                    && ($generated[$column] ?? false) === true
+                    && $this->isGenerated((string) ($data[$column] ?? ''));
+
+                if ($attempts >= 2 || ! $rollForward) {
                     throw ValidationException::withMessages([
                         $column ?? 'account_number' => 'This value is already in use. Please enter a different account or meter number.',
                     ]);
@@ -370,21 +388,23 @@ class ServiceConnectionService
      * Next unused identifier for the given column/prefix that also skips every
      * value already claimed by the current file (totals provided or generated),
      * so two blank rows can never receive the same number during a single
-     * import.
+     * import. The database `max+1` lookup is computed once per pass and then
+     * advanced locally, avoiding a full-table scan for every blank cell.
      *
      * @param  array<string, int>  $claimed  value => first row index
      */
-    private function nextFreeIdentifier(string $column, string $prefix, array &$claimed): string
+    private function nextFreeIdentifier(string $column, string $prefix, array &$claimed, ?int &$nextSuffix, int $rowIndex): string
     {
-        $base = $this->nextIdentifier($column, $prefix);
-        $suffix = (int) substr($base, strlen($prefix));
+        if ($nextSuffix === null) {
+            $nextSuffix = (int) substr($this->nextIdentifier($column, $prefix), strlen($prefix));
+        }
 
         do {
-            $candidate = $prefix.str_pad((string) $suffix, 5, '0', STR_PAD_LEFT);
-            $suffix++;
+            $candidate = $prefix.str_pad((string) $nextSuffix, 5, '0', STR_PAD_LEFT);
+            $nextSuffix++;
         } while (isset($claimed[$candidate]));
 
-        $claimed[$candidate] = 0;
+        $claimed[$candidate] = $rowIndex;
 
         return $candidate;
     }
@@ -467,10 +487,11 @@ class ServiceConnectionService
     }
 
     /**
-     * True when the value matches the auto-generated identifier format, meaning
-     * it is safe to roll forward (either a value we generated ourselves on an
-     * imported row or an earlier retry). Values not in this format are never
-     * treated as replaceable.
+     * True when the value matches the auto-generated identifier format. Used as
+     * a secondary guard on top of the caller's `$generated` provenance flag, so
+     * a genuinely generated value can never be rejected on format alone and a
+     * hand-typed value in generated format is still only replaced when the
+     * caller says it created it.
      */
     private function isGenerated(string $value): bool
     {
@@ -482,7 +503,23 @@ class ServiceConnectionService
         $out = [];
 
         foreach ($row as $key => $value) {
-            $out[$key] = is_string($value) ? trim($value) : $value;
+            if (is_int($value)) {
+                $value = (string) $value;
+            } elseif (is_float($value)) {
+                $value = rtrim(rtrim(number_format($value, 8, '.', ''), '0'), '.');
+            } elseif (is_string($value)) {
+                $value = trim($value);
+
+                // Undo the export sanitizer's protective apostrophe so an
+                // exported master list round-trips cleanly (`'=…` → `=…`).
+                if (str_starts_with($value, "'")
+                    && strlen($value) > 1
+                    && in_array($value[1], ['=', '+', '-', '@', "\0", "\t", "\r", "\n"], true)) {
+                    $value = substr($value, 1);
+                }
+            }
+
+            $out[$key] = $value;
         }
 
         return $out;
@@ -496,8 +533,20 @@ class ServiceConnectionService
             return null;
         }
 
-        $timestamp = strtotime($value);
+        foreach (['Y-m-d', 'Y/m/d', 'm/d/Y', 'd/m/Y', 'Y-m-d H:i:s'] as $format) {
+            $date = DateTimeImmutable::createFromFormat('!'.$format, $value);
 
-        return $timestamp === false ? null : date('Y-m-d', $timestamp);
+            if ($date === false) {
+                continue;
+            }
+
+            $errors = DateTimeImmutable::getLastErrors();
+
+            if ($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0)) {
+                return $date->format('Y-m-d');
+            }
+        }
+
+        return null;
     }
 }

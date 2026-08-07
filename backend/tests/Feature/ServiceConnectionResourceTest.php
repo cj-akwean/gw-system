@@ -590,6 +590,7 @@ class ServiceConnectionResourceTest extends TestCase
         ]);
 
         $page = app(CreateServiceConnection::class);
+        $page->suggestedIdentifiers = ['account_number' => 'GW-00001', 'meter_number' => 'MTR-00001'];
         $handleRecordCreation = new \ReflectionMethod($page, 'handleRecordCreation');
         $handleRecordCreation->setAccessible(true);
 
@@ -616,6 +617,41 @@ class ServiceConnectionResourceTest extends TestCase
             'meter_number' => 'MTR-00002',
             'registered_name' => 'New Applicant',
         ]);
+    }
+
+    public function test_create_collision_on_admin_typed_machine_format_identifier_surfaces_form_error(): void
+    {
+        $barangay = Barangay::factory()->create();
+
+        ServiceConnection::factory()->create([
+            'account_number' => 'GW-00001',
+            'meter_number' => 'MTR-00001',
+            'barangay_id' => $barangay->id,
+        ]);
+
+        $page = app(CreateServiceConnection::class);
+        // Suggested values differ from what the admin types; the typed
+        // machine-format value must NOT be silently renumbered on collision.
+        $page->suggestedIdentifiers = ['account_number' => 'GW-00888', 'meter_number' => 'MTR-00888'];
+        $handleRecordCreation = new \ReflectionMethod($page, 'handleRecordCreation');
+        $handleRecordCreation->setAccessible(true);
+
+        $this->expectException(ValidationException::class);
+
+        try {
+            $handleRecordCreation->invoke($page, [
+                'account_number' => 'GW-00001',
+                'meter_number' => 'MTR-00001',
+                'registered_name' => 'Typed Collision',
+                'barangay_id' => $barangay->id,
+                'address' => 'Anywhere',
+                'status' => 'active',
+                'connection_date' => '2026-08-07',
+            ]);
+        } finally {
+            $this->assertCount(1, ServiceConnection::where('account_number', 'GW-00001')->get());
+            $this->assertDatabaseMissing('service_connections', ['registered_name' => 'Typed Collision']);
+        }
     }
 
     public function test_create_collision_on_admin_typed_identifier_surfaces_form_error(): void

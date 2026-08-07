@@ -161,6 +161,20 @@ class ServiceConnectionImportTest extends TestCase
         $this->assertStringContainsString('already appears in this file (row 2)', $results[1]['notes']);
     }
 
+    public function test_provided_value_colliding_with_generated_one_names_the_generating_row(): void
+    {
+        $this->barangay();
+
+        $results = $this->service()->prepareImportRows([
+            $this->row(['name' => 'Generates first']),
+            $this->row(['name' => 'Provides the same', 'account_number' => 'GW-00001', 'meter_number' => 'MTR-00001']),
+        ]);
+
+        $this->assertTrue($results[0]['valid']);
+        $this->assertFalse($results[1]['valid']);
+        $this->assertStringContainsString('already appears in this file (row 2)', $results[1]['notes']);
+    }
+
     public function test_identifier_already_in_database_is_invalid(): void
     {
         $this->barangay();
@@ -307,6 +321,61 @@ class ServiceConnectionImportTest extends TestCase
         $this->assertStringContainsString('Email', $results[0]['notes']);
     }
 
+    public function test_export_round_trip_apostrophe_is_stripped(): void
+    {
+        $this->barangay();
+
+        // The CSV exporter prefixes formula-like cells with a protective
+        // apostrophe; re-importing an exported master list must restore the
+        // original value rather than storing the literal apostrophe.
+        $results = $this->service()->prepareImportRows([
+            $this->row(['name' => "'=cmd", 'phone' => "'+639171234567"]),
+        ]);
+
+        $this->assertTrue($results[0]['valid']);
+        $this->assertSame('=cmd', $results[0]['data']['registered_name']);
+        $this->assertSame('+639171234567', $results[0]['data']['phone']);
+    }
+
+    public function test_numeric_cells_are_cast_to_string_without_scientific_notation(): void
+    {
+        $this->barangay();
+
+        $results = $this->service()->prepareImportRows([
+            $this->row(['phone' => 12345678901, 'name' => 'Numeric']),
+        ]);
+
+        $this->assertTrue($results[0]['valid']);
+        $this->assertSame('12345678901', $results[0]['data']['phone']);
+    }
+
+    public function test_impossible_date_is_rejected_instead_of_silently_shifted(): void
+    {
+        $this->barangay();
+
+        $results = $this->service()->prepareImportRows([
+            $this->row(['birthdate' => '2026-02-30', 'name' => 'Shifted']),
+            $this->row(['name' => 'Relative', 'birthdate' => 'next tuesday']),
+        ]);
+
+        $this->assertFalse($results[0]['valid']);
+        $this->assertStringContainsString('Invalid birthdate', $results[0]['notes']);
+        $this->assertFalse($results[1]['valid']);
+    }
+
+    public function test_slash_and_dash_dates_still_accepted(): void
+    {
+        $this->barangay();
+
+        $results = $this->service()->prepareImportRows([
+            $this->row(['name' => 'Slashy', 'birthdate' => '01/15/1990', 'connection_date' => '08/01/2026']),
+        ]);
+
+        $this->assertTrue($results[0]['valid']);
+        $this->assertSame('1990-01-15', $results[0]['data']['birthdate']);
+        $this->assertSame('2026-08-01', $results[0]['data']['connection_date']);
+    }
+
     // --- createWithIdentifierBackstops ------------------------------------
 
     public function test_create_persists_import_data_with_good_rates_and_nullables(): void
@@ -357,12 +426,42 @@ class ServiceConnectionImportTest extends TestCase
             'address' => 'Anywhere',
             'status' => 'active',
             'connection_date' => '2026-08-07',
-        ]);
+        ], ['account_number' => true, 'meter_number' => true]);
 
         $this->assertSame('GW-00002', $record->account_number);
         $this->assertSame('MTR-00002', $record->meter_number);
 
         $this->assertDatabaseHas('service_connections', ['account_number' => 'GW-00002', 'registered_name' => 'Rolled Forward']);
+    }
+
+    public function test_create_collision_on_generated_looking_but_user_provided_identifier_throws(): void
+    {
+        $this->barangay();
+
+        ServiceConnection::factory()->create([
+            'account_number' => 'GW-00009',
+            'meter_number' => 'MTR-00009',
+        ]);
+
+        $this->expectException(ValidationException::class);
+
+        try {
+            // Machine-format, but the caller did NOT generate it (the preview
+            // flagged this identifier as provided), so it must never be
+            // silently renumbered to the next free value.
+            $this->service()->createWithIdentifierBackstops([
+                'account_number' => 'GW-00009',
+                'meter_number' => 'MTR-00009',
+                'registered_name' => 'Office Issued',
+                'barangay_id' => Barangay::first()->id,
+                'address' => 'Anywhere',
+                'status' => 'active',
+                'connection_date' => '2026-08-07',
+            ], ['account_number' => false, 'meter_number' => false]);
+        } finally {
+            $this->assertCount(1, ServiceConnection::where('account_number', 'GW-00009')->get());
+            $this->assertDatabaseMissing('service_connections', ['registered_name' => 'Office Issued']);
+        }
     }
 
     public function test_create_collision_on_non_generated_identifier_throws(): void

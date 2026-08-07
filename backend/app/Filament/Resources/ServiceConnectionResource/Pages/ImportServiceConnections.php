@@ -2,21 +2,33 @@
 
 namespace App\Filament\Resources\ServiceConnectionResource\Pages;
 
+use App\Exports\Concerns\SanitizesCsvFields;
 use App\Filament\Resources\ServiceConnectionResource;
 use App\Imports\ServiceConnectionImport;
 use App\Services\ServiceConnectionService;
 use Filament\Actions\Action;
+use Filament\Facades\Filament;
 use Filament\Forms\Components\FileUpload;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
 use Filament\Schemas\Schema;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Maatwebsite\Excel\Facades\Excel;
 
 class ImportServiceConnections extends Page
 {
+    use SanitizesCsvFields;
+
+    /**
+     * Serializes simultaneous imports so two admins cannot both auto-generate
+     * the same identifier and burn each other's retry budget. Held for the
+     * duration of the import transaction (auto-released on commit/rollback).
+     */
+    private const IMPORT_ADVISORY_LOCK_KEY = 6815473;
+
     protected static string $resource = ServiceConnectionResource::class;
 
     protected string $view = 'filament.pages.import-service-connections';
@@ -31,11 +43,14 @@ class ImportServiceConnections extends Page
 
     public int $importedCount = 0;
 
+    public array $failedRows = [];
+
     public array $data = [];
 
     public function mount(): void
     {
         $this->previewRows = collect();
+        $this->failedRows = [];
         $this->cacheSchema('importForm', $this->getImportForm());
     }
 
@@ -85,8 +100,8 @@ class ImportServiceConnections extends Page
 
                 foreach ($columns as $column) {
                     $row[] = $column === 'notes'
-                        ? $result['notes']
-                        : ($result['original'][$column] ?? '');
+                        ? $this->sanitize($result['notes'])
+                        : $this->sanitize((string) ($result['original'][$column] ?? ''));
                 }
 
                 fputcsv($out, $row);
@@ -109,6 +124,9 @@ class ImportServiceConnections extends Page
 
     public function preview(): void
     {
+        $this->importedCount = 0;
+        $this->failedRows = [];
+
         $file = $this->uploadedCsvFile();
 
         if (! $file) {
@@ -160,23 +178,39 @@ class ImportServiceConnections extends Page
         }
 
         $service = app(ServiceConnectionService::class);
+        $importerId = Filament::auth()->id();
         $imported = 0;
         $failed = 0;
+        $failedRows = [];
 
         $validRows = $this->previewRows->where('valid', true);
 
-        DB::transaction(function () use ($service, $validRows, &$imported, &$failed) {
+        DB::transaction(function () use ($service, $importerId, $validRows, &$imported, &$failed, &$failedRows) {
+            if (DB::connection()->getDriverName() === 'pgsql') {
+                DB::statement('select pg_advisory_xact_lock(?)', [self::IMPORT_ADVISORY_LOCK_KEY]);
+            }
+
             foreach ($validRows as $row) {
                 try {
-                    $service->createWithIdentifierBackstops($row['data']);
+                    $row['data']['imported_by'] = $importerId;
+                    $service->createWithIdentifierBackstops($row['data'], $row['generated']);
                     $imported++;
-                } catch (\Exception $e) {
+                } catch (\Throwable $e) {
                     $failed++;
+                    $failedRows[] = $row['row'];
+                    Log::warning('Service connection import row failed.', [
+                        'row' => $row['row'],
+                        'name' => $row['name'] ?? null,
+                        'account_number' => $row['account_number'] ?? null,
+                        'meter_number' => $row['meter_number'] ?? null,
+                        'exception' => $e->getMessage(),
+                    ]);
                 }
             }
         });
 
         $this->importedCount = $imported;
+        $this->failedRows = $failedRows;
         $this->hasPreview = false;
         $this->previewRows = collect();
         $this->data = [];
@@ -184,10 +218,22 @@ class ImportServiceConnections extends Page
         $title = "Imported {$imported} connection(s)."
             .($failed ? " {$failed} row(s) failed." : '');
 
+        $body = $failed
+            ? 'Failed CSV rows: '.implode(', ', $failedRows).' - see storage/logs/laravel.log for reasons.'
+            : null;
+
         Notification::make()
             ->title($title)
+            ->body($body)
             ->{$failed ? 'warning' : 'success'}()
             ->send();
+
+        Log::info('Service connection import completed.', [
+            'imported_by' => $importerId,
+            'imported' => $imported,
+            'failed' => $failed,
+            'failed_rows' => $failedRows,
+        ]);
     }
 
     public function getTitle(): string
