@@ -57,6 +57,26 @@ class ImportMeterReadings extends Page
         return $this->importForm($this->makeSchema());
     }
 
+    public function downloadTemplate()
+    {
+        $headers = ['account_number', 'meter_number', 'present_reading', 'reading_date', 'flagged'];
+        $rows = [
+            ['ACC-001', 'MTR-001', '12345.67', '2026-08-01', '0'],
+            ['ACC-002', 'MTR-002', '67890.12', '2026-08-01', '1'],
+        ];
+
+        return response()->streamDownload(function () use ($headers, $rows) {
+            $out = fopen('php://output', 'w');
+            fputcsv($out, $headers);
+            foreach ($rows as $row) {
+                fputcsv($out, $row);
+            }
+            fclose($out);
+        }, 'meter-readings-template.csv', [
+            'Content-Type' => 'text/csv',
+        ]);
+    }
+
     public function downloadCsv()
     {
         if (! $this->hasPreview) {

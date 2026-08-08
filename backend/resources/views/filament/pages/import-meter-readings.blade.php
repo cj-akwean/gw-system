@@ -3,6 +3,11 @@
         <x-filament::section
             heading="Upload CSV File"
             description="Expected columns: account_number and/or meter_number, present_reading, reading_date (optional), flagged (optional). Any other columns are ignored.">
+            <div class="mb-4">
+                <x-filament::button wire:click="downloadTemplate" color="gray" size="sm">
+                    Download Template
+                </x-filament::button>
+            </div>
             {{ $this->importForm }}
         </x-filament::section>
 
