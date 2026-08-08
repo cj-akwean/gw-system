@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\InvoicePaymentController;
 use App\Http\Controllers\Api\PayMongoWebhookController;
 use App\Http\Controllers\Api\PaymentController;
+use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\SavedPaymentMethodController;
 use App\Http\Controllers\AuthController;
 use Illuminate\Http\Request;
@@ -21,6 +22,9 @@ Route::post('/paymongo/webhook', [PayMongoWebhookController::class, 'store'])
 Route::post('/login', [AuthController::class, 'login'])
     ->middleware(['guest', 'throttle:10,1,auth-login'])
     ->name('login');
+Route::post('/register', [AuthController::class, 'register'])
+    ->middleware(['guest', 'throttle:10,1,auth-register'])
+    ->name('register');
 Route::post('/logout', [AuthController::class, 'logout'])
     ->middleware(['auth:sanctum', 'throttle:30,1,auth-logout']);
 
@@ -32,6 +36,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/links', [ConnectionLinkController::class, 'index'])->middleware('throttle:30,1,links-index');
     Route::post('/links', [ConnectionLinkController::class, 'store'])->middleware('throttle:30,1,links-store');
     Route::delete('/links/{link}', [ConnectionLinkController::class, 'destroy'])->middleware('throttle:30,1,links-destroy');
+    Route::patch('/profile', [ProfileController::class, 'update'])
+        ->middleware('throttle:30,1,profile-update');
     Route::get('/invoices', [InvoiceController::class, 'index'])->middleware('throttle:30,1,invoices-index');
     Route::get('/invoices/{invoice}', [InvoiceController::class, 'show'])->middleware('throttle:30,1,invoices-index');
     Route::post('/invoices/{invoice}/pay', [InvoicePaymentController::class, 'store'])

@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/input-group";
 import { AuthDivider } from "@/components/auth-divider";
 import { DecorIcon } from "@/components/decor-icon";
-import { AtSignIcon, LockIcon, UserIcon } from "lucide-react";
+import { AtSignIcon, LockIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useAuth } from "@/lib/auth-context";
 
@@ -22,7 +22,7 @@ interface AuthPageProps {
 
 export function AuthPage({ mode, onToggleMode }: AuthPageProps) {
   const isLogin = mode === "login";
-  const { login } = useAuth();
+  const { login, signup } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -33,18 +33,17 @@ export function AuthPage({ mode, onToggleMode }: AuthPageProps) {
     e.preventDefault();
     if (isLoading) return;
 
-    if (!isLogin) {
-      setError("Sign up is not available yet. Contact admin to create an account.");
-      return;
-    }
-
     setIsLoading(true);
     setError("");
 
     try {
-      await login(email, password);
+      if (isLogin) {
+        await login(email, password);
+      } else {
+        await signup(email, password);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      setError(err instanceof Error ? err.message : "Request failed");
     } finally {
       setIsLoading(false);
     }
@@ -78,18 +77,6 @@ export function AuthPage({ mode, onToggleMode }: AuthPageProps) {
 
         <div className="space-y-4">
           <form className="space-y-2" onSubmit={handleSubmit}>
-            {!isLogin && (
-              <InputGroup>
-                <InputGroupInput
-                  placeholder="Your Name"
-                  type="text"
-                />
-                <InputGroupAddon align="inline-start">
-                  <UserIcon />
-                </InputGroupAddon>
-              </InputGroup>
-            )}
-
             <InputGroup>
               <InputGroupInput
                 placeholder="your.email@example.com"
@@ -115,18 +102,6 @@ export function AuthPage({ mode, onToggleMode }: AuthPageProps) {
                 <LockIcon />
               </InputGroupAddon>
             </InputGroup>
-
-            {!isLogin && (
-              <InputGroup>
-                <InputGroupInput
-                  placeholder="Confirm Password"
-                  type="password"
-                />
-                <InputGroupAddon align="inline-start">
-                  <LockIcon />
-                </InputGroupAddon>
-              </InputGroup>
-            )}
 
             {error && (
               <p className="text-sm text-red-500 text-center">{error}</p>

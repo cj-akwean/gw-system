@@ -8,16 +8,16 @@ import { useAuth } from "@/lib/auth-context";
 
 function AuthContent() {
   const [isFlipped, setIsFlipped] = useState(false);
-  const { isAuthenticated, ready } = useAuth();
+  const { isAuthenticated, ready, user } = useAuth();
   const router = useRouter();
   const redirected = useRef(false);
 
   useEffect(() => {
     if (ready && isAuthenticated && !redirected.current) {
       redirected.current = true;
-      router.replace("/dashboard");
+      router.replace(user?.avatar_id ? "/dashboard" : "/onboarding");
     }
-  }, [ready, isAuthenticated, router]);
+  }, [ready, isAuthenticated, router, user?.avatar_id]);
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center p-6"

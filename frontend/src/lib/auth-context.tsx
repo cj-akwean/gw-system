@@ -8,27 +8,23 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
-import { loginApi, logoutApi } from "./api";
-
-interface User {
-  id: number;
-  name: string;
-  email: string;
-}
+import { loginApi, logoutApi, registerApi, updateProfileApi, type PortalUser } from "./api";
 
 interface AuthContextValue {
-  user: User | null;
+  user: PortalUser | null;
   token: string | null;
   isAuthenticated: boolean;
   ready: boolean;
   login: (email: string, password: string) => Promise<void>;
+  signup: (email: string, password: string) => Promise<void>;
+  updateProfile: (name: string, avatarId: number) => Promise<void>;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<PortalUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
@@ -46,13 +42,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setReady(true);
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const data = await loginApi(email, password);
+  const applySession = useCallback((data: { token: string; user: PortalUser }) => {
     const payload = { token: data.token, user: data.user };
     localStorage.setItem("auth", JSON.stringify(payload));
     setToken(data.token);
     setUser(data.user);
   }, []);
+
+  const login = useCallback(async (email: string, password: string) => {
+    applySession(await loginApi(email, password));
+  }, [applySession]);
+
+  const signup = useCallback(async (email: string, password: string) => {
+    applySession(await registerApi(email, password));
+  }, [applySession]);
+
+  const updateProfile = useCallback(
+    async (name: string, avatarId: number) => {
+      const updated = await updateProfileApi(name, avatarId);
+      setUser((prev) => (prev ? { ...prev, ...updated } : prev));
+      try {
+        const stored = JSON.parse(localStorage.getItem("auth") ?? "{}");
+        stored.user = { ...stored.user, ...updated };
+        localStorage.setItem("auth", JSON.stringify(stored));
+      } catch {
+        // ignore — the in-memory state is authoritative for this session
+      }
+    },
+    []
+  );
 
   const logout = useCallback(async () => {
     await logoutApi().catch(() => {});
@@ -63,7 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, token, isAuthenticated: !!token, ready, login, logout }}
+      value={{ user, token, isAuthenticated: !!token, ready, login, signup, updateProfile, logout }}
     >
       {children}
     </AuthContext.Provider>

@@ -8,6 +8,7 @@ use App\Models\ConnectionLink;
 use App\Models\ServiceConnection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ConnectionLinkController extends Controller
 {
@@ -26,19 +27,40 @@ class ConnectionLinkController extends Controller
         $connection = ServiceConnection::where('account_number', $request->account_number)
             ->where('meter_number', $request->meter_number)
             ->where('status', 'active')
-            ->firstOrFail();
+            ->first();
 
-        $link = ConnectionLink::updateOrCreate(
-            [
-                'user_id' => $request->user()->id,
-                'service_connection_id' => $connection->id,
-            ],
-            [
-                'status' => 'active',
-                'linked_at' => now(),
-                'unlinked_at' => null,
-            ]
-        );
+        if (!$connection) {
+            return response()->json([
+                'message' => "We couldn't find an active connection with that account and meter number.",
+            ], 404);
+        }
+
+        $userId = $request->user()->id;
+
+        $link = DB::transaction(function () use ($connection, $userId, $request): ConnectionLink {
+            DB::statement('select pg_advisory_xact_lock(?)', [$connection->id]);
+
+            $ownedElsewhere = ConnectionLink::where('service_connection_id', $connection->id)
+                ->where('status', 'active')
+                ->where('user_id', '!=', $userId)
+                ->exists();
+
+            if ($ownedElsewhere) {
+                abort(409, 'This meter is already linked to another account.');
+            }
+
+            return ConnectionLink::updateOrCreate(
+                [
+                    'user_id' => $userId,
+                    'service_connection_id' => $connection->id,
+                ],
+                [
+                    'status' => 'active',
+                    'linked_at' => now(),
+                    'unlinked_at' => null,
+                ]
+            );
+        });
 
         return response()->json(
             $link->load('serviceConnection.barangay'),

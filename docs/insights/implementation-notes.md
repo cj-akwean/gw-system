@@ -311,6 +311,78 @@ unmount timer cleanup). **Testing constraint learned:** vitest fake timers hang 
 React 19 + happy-dom (happy-dom has no `MessageChannel` → React scheduler falls back to
 faked `setTimeout` → `act` never flushes); InfoTip tests use real timers + small delays.
 
+### 6. Portal self-registration + profile onboarding *(2026-08-08)*
+Signup is **email + password only** — the old stub ("Contact admin to create an account")
+is gone. `POST /api/register` (`guest` + `throttle:10,1,auth-register`): `RegisterRequest`
+validates `email` (required|email|max:255|unique) + `password`
+(required|string|confirmed|`Password::min(8)`); creates the user with `name = null`
+(migration `2026_08_08_000003_add_avatar_id_to_users_table` made `users.name` nullable and
+added `avatar_id` nullable tinyint 1–4) and returns `{token, user}` — **auto-login**, same
+shape as `/login` (both hand-build the user payload: `id, name, email, avatar_id`). The
+frontend sends `password_confirmation = password` implicitly. `AuthPage` signup face now
+collects only email + password (name and confirm-password fields removed); signup calls
+`AuthProvider.signup()` → stores the returned session like login.
+
+**Redirect by completeness:** `/auth`'s post-auth effect routes `avatar_id` null →
+`/onboarding`, else `/dashboard`. Onboarding resume is client-side state, not a server
+flag: on mount it fetches `/user` (already authed) + `GET /api/links` and picks the step —
+no avatar → profile step; avatar set, no links → link step; both → all-set step
+(redirect-to-dashboard there is a manual button; the page itself doesn't auto-redirect).
+
+**`PATCH /api/profile`** (`auth:sanctum`, `throttle:30,1,profile-update`) via
+`Api\ProfileController@update`: `name` required 3–20 chars (mirrors the picker's
+username rules; the username IS `users.name` — decision in product-decisions), `avatar_id`
+required int 1–4; returns the updated user. `AuthProvider.updateProfile()` refreshes both
+the in-memory user and the localStorage session copy.
+
+**The `/onboarding` wizard** (`frontend/src/app/onboarding/page.tsx`): step rail =
+`@blocks-so/onboarding-06` adapted into a parameterized `OnboardingSteps` (done / in
+progress / open dots, lucide `Check`, title + description; the demo's activity timestamps
+dropped). Step 1 = `@kokonutui/avatar-picker` `ProfileSetup` as shipped (4 inline avatars,
+animated color ring, username 3–20 with live counter, disabled Get Started until valid);
+`onComplete` → `updateProfile(username, avatarId)`. Step 2 = Link meter form (account +
+meter number, max 20 each, mirroring `LinkConnectionRequest`) → `POST /api/links`; error
+mapping: `ApiError` 404 → "We couldn't find an active connection with that account and
+meter number.", 409 → "This meter is already linked to another account.", other → raw
+message; **Skip link** ("I'll do this later") is a first-class exit to the all-set step.
+Step 3 = all-set panel (`You're all set` + Go to My Dashboard → `/dashboard`; if skipped,
+the copy points to the dashboard prompt). Layout: mobile-first single column with the
+rail above the card; `lg:grid-cols-[260px_1fr]` puts the rail in a left column (the rail
+is rendered twice, CSS-hidden on mobile — responsive duplicate). No auto-redirect off the
+page when the profile is complete (the button does it).
+
+**One-active-link guard (security hardening):** `ConnectionLinkController::store` no
+longer lets anyone link any active connection. Inside a `DB::transaction` +
+`pg_advisory_xact_lock($connection->id)` (precedent: the CSV import service): if an
+`active` link for this connection belongs to a different user → `abort(409)` (rolls back,
+JSON message above); the user's own re-link stays idempotent (`updateOrCreate`); a
+`revoked` link frees the connection for anyone. The 404 path changed from `firstOrFail`
+(ugly "No query results…" message) to an explicit check returning the friendly message.
+
+**Dashboard prompt:** `LinkMeterPrompt` (portal header area) fetches `GET /api/links`
+once; ≥1 active link → renders nothing; else a dashed "Link your meter" card with a
+button to `/onboarding` (resumes at the link step). 401 → quietly renders nothing
+(session guard handles the flow). After a link is created anywhere, a remount of the
+prompt (page navigation) reflects it.
+
+**Deferred:** email verification (`email_verified_at` still unused); a unique `username`
+column (name stays a display name); multi-connection management UI beyond first-link
+onboarding (adding more links reuses the dashboard prompt → onboarding link step);
+PayMongo Customer provisioning at signup (customer is created lazily on first card
+attempt, unchanged). Tests: backend `RegisterApiTest` (6: success + auto-login token
+usable, duplicate 422 w/ message, short password, confirm mismatch, invalid email, rate
+limit 429), `ProfileUpdateApiTest` (5: success, name <3 / >20, avatar 5, 401),
+`ConnectionLinkApiTest` +4 (409 other-user guard, own re-link idempotent single row,
+revoked link reusable, plus the existing 404 paths now assert the friendly message shape);
+frontend `app/onboarding/page.test.tsx` (11: guards, fresh-account start, profile→link
+transition, link success→all-set, 404/409 messages, skip, dashboard navigation, resume at
+link step, resume all-set), `components/auth.test.tsx` (4: email+password only, signup
+call, error surface, login untouched), `link-meter-prompt.test.tsx` (4: loading / prompt /
+hidden-with-links / navigation), `api.test.ts` +9 (register, profile, createLink,
+getLinks incl. error mapping). Note: the wizard tests seed a localStorage token — without
+it `authFetch` 401s and the flow stalls on the avatar step (caught during the first test
+run).
+
 ## Admin Panel (Filament)
 
 ### 1. Dashboard with key metrics

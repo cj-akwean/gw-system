@@ -32,6 +32,10 @@ vi.mock("@/components/portal/bills-list", () => ({
   BillsList: () => <div>bills</div>,
 }));
 
+vi.mock("@/components/portal/link-meter-prompt", () => ({
+  LinkMeterPrompt: () => <div>link-prompt</div>,
+}));
+
 let mockUseAuth: () => {
   isAuthenticated: boolean;
   ready: boolean;

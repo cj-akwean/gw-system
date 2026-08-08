@@ -3,7 +3,7 @@
 import { LogOutIcon } from "lucide-react";
 
 interface DashboardHeaderProps {
-  userName?: string;
+  userName?: string | null;
   userEmail?: string;
   onLogout: () => void;
 }

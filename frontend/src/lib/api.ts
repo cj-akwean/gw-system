@@ -1,8 +1,15 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
+export interface PortalUser {
+  id: number;
+  name: string | null;
+  email: string;
+  avatar_id: number | null;
+}
+
 interface LoginResponse {
   token: string;
-  user: { id: number; name: string; email: string };
+  user: PortalUser;
 }
 
 export interface PortalInvoice {
@@ -54,6 +61,68 @@ export async function loginApi(
     throw new Error(body.message ?? "Login failed");
   }
 
+  return res.json();
+}
+
+export async function registerApi(
+  email: string,
+  password: string
+): Promise<LoginResponse> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ email, password, password_confirmation: password }),
+    });
+  } catch {
+    throw new Error("Unable to reach the server. Please try again.");
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message ?? "Registration failed");
+  }
+
+  return res.json();
+}
+
+export async function updateProfileApi(
+  name: string,
+  avatarId: number
+): Promise<PortalUser> {
+  const res = await authFetch("/api/profile", {
+    method: "PATCH",
+    body: JSON.stringify({ name, avatar_id: avatarId }),
+  });
+  return res.json();
+}
+
+export interface PortalLink {
+  id: number;
+  status: "active" | "revoked";
+  service_connection: {
+    id: number;
+    account_number: string;
+    meter_number: string;
+    registered_name: string;
+    barangay: { name: string } | null;
+  };
+}
+
+export async function getLinks(): Promise<PortalLink[]> {
+  const res = await authFetch("/api/links");
+  return res.json();
+}
+
+export async function createLink(
+  accountNumber: string,
+  meterNumber: string
+): Promise<PortalLink> {
+  const res = await authFetch("/api/links", {
+    method: "POST",
+    body: JSON.stringify({ account_number: accountNumber, meter_number: meterNumber }),
+  });
   return res.json();
 }
 

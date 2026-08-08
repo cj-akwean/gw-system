@@ -1127,3 +1127,46 @@ laptops?
   `await act(async () => {})` after a `fireEvent.click` times out). InfoTip exposes
   `openDelayMs`/`closeDelayMs` so tests run on real timers with small delays and
   generous waits instead.
+
+## 37. Self-service signup: email + password only, then profile onboarding (2026-08-08)
+
+**Question asked:** the portal previously had no self-service registration ("Contact
+admin to create an account"). What should signup collect, and where do profile and
+meter linking happen?
+
+**Answer + reasoning — three decisions, all user-confirmed:**
+
+**a) Signup collects email + password only.** No name, no account number, no meter
+number at signup time. The moment someone signs up, they are auto-logged-in
+(`/register` returns a token like `/login` — one response shape, one session). Reason:
+the signup moment is the lowest-commitment point of the funnel; every extra field is
+measured in dropped signups. A user who just created an account cannot possibly know
+their account/meter numbers reliably anyway (those live on their paper bill), and a
+new signup may not even have a meter yet (new applicant vs. existing registrant).
+
+**b) The username IS `users.name`, and it is non-unique.** The avatar picker says
+"username", but storing it as the display name (existing `name` column, now nullable)
+means zero new unique-index schema, the dashboard header already renders it, and there
+is no "that username is taken" UX to build. Tradeoff accepted: two people can share a
+display name — harmless because the email stays the identity. A unique `username`
+column remains deferred; nothing in the UI needs it today.
+
+**c) Meter linking is skippable and prompt-driven, never a wall.** Onboarding's link
+step has a first-class "I'll do this later" exit; the dashboard then shows a "Link your
+meter" prompt (dashed card → back into the onboarding link step) until the user has at
+least one active link. Reason: the account + meter number live on a paper bill the
+user may not have at hand, and a mismatch (wrong meter read off an old bill) is a
+support ticket — better to let them into their (empty) portal and remind them gently.
+A user with zero links simply sees no bills, which reads as an honest "nothing here
+yet" state rather than a bug. The whole flow resumes by state, not by a flag: avatar
+set? start at the link step. Links present? skip the wizard entirely.
+
+**d) One active link per connection (security hardening).** `POST /api/links` used to
+let anyone claim any active connection — two strangers could bind the same meter, then
+both see (and one could pay) the same bills. Guard: an `active` link owned by another
+user → 409. Same-user re-link stays idempotent; a revoked link frees the connection.
+Race-closed with a transaction + `pg_advisory_xact_lock` on the connection id (same
+pattern as the CSV import) so a simultaneous double-claim can't slip through the
+check-then-create window. This makes "link this meter" a claim of that bill identity —
+and it's why the 409 message tells the user the meter is *already linked elsewhere*
+instead of silently succeeding.

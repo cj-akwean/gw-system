@@ -2,11 +2,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   buildReturnUrl,
   clearPendingInvoice,
+  createLink,
   formatPeso,
   getInvoice,
+  getLinks,
   readPendingInvoice,
+  registerApi,
   resolveIntentStatus,
   startPayment,
+  updateProfileApi,
   writePendingInvoice,
 } from "@/lib/api";
 
@@ -250,6 +254,173 @@ describe("pending invoice (session + localStorage round trip)", () => {
     window.localStorage.setItem("gw-pending-invoice", "12");
 
     expect(readPendingInvoice()).toBeNull();
+  });
+});
+
+describe("registerApi", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("posts email + password and returns the session", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      jsonResponse(
+        {
+          token: "tok-register",
+          user: { id: 9, name: null, email: "new@example.com", avatar_id: null },
+        },
+        true,
+        201
+      )
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const data = await registerApi("new@example.com", "secret123");
+
+    expect(data.token).toBe("tok-register");
+    expect(data.user).toMatchObject({ email: "new@example.com", avatar_id: null });
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:8000/api/register");
+    expect(JSON.parse(String(init.body))).toEqual({
+      email: "new@example.com",
+      password: "secret123",
+      password_confirmation: "secret123",
+    });
+  });
+
+  it("surfaces the duplicate-email message", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse(
+          { message: "An account with this email already exists." },
+          false,
+          422
+        )
+      )
+    );
+
+    await expect(registerApi("taken@example.com", "secret123")).rejects.toThrow(
+      "An account with this email already exists."
+    );
+  });
+});
+
+describe("updateProfileApi", () => {
+  beforeEach(() => {
+    seedAuthToken();
+  });
+
+  afterEach(() => {
+    localStorage.removeItem("auth");
+    vi.unstubAllGlobals();
+  });
+
+  it("patches name and avatar_id", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      jsonResponse({
+        id: 1,
+        name: "AquaFan",
+        email: "fan@example.com",
+        avatar_id: 3,
+      })
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const user = await updateProfileApi("AquaFan", 3);
+
+    expect(user).toMatchObject({ name: "AquaFan", avatar_id: 3 });
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:8000/api/profile");
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(String(init.body))).toEqual({ name: "AquaFan", avatar_id: 3 });
+  });
+});
+
+describe("links api", () => {
+  beforeEach(() => {
+    seedAuthToken();
+  });
+
+  afterEach(() => {
+    localStorage.removeItem("auth");
+    vi.unstubAllGlobals();
+  });
+
+  it("creates a link with account + meter number", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      jsonResponse(
+        {
+          id: 5,
+          status: "active",
+          service_connection: {
+            id: 2,
+            account_number: "GW-0001",
+            meter_number: "MTR-0001",
+            registered_name: "Maria Santos",
+            barangay: null,
+          },
+        },
+        true,
+        201
+      )
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const link = await createLink("GW-0001", "MTR-0001");
+
+    expect(link.service_connection.account_number).toBe("GW-0001");
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:8000/api/links");
+    expect(JSON.parse(String(init.body))).toEqual({
+      account_number: "GW-0001",
+      meter_number: "MTR-0001",
+    });
+  });
+
+  it("surfaces the already-linked 409 message", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse(
+          { message: "This meter is already linked to another account." },
+          false,
+          409
+        )
+      )
+    );
+
+    await expect(createLink("GW-0001", "MTR-0001")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 409,
+      message: "This meter is already linked to another account.",
+    });
+  });
+
+  it("lists the user's active links", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      jsonResponse([
+        {
+          id: 5,
+          status: "active",
+          service_connection: {
+            id: 2,
+            account_number: "GW-0001",
+            meter_number: "MTR-0001",
+            registered_name: "Maria Santos",
+            barangay: null,
+          },
+        },
+      ])
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const links = await getLinks();
+
+    expect(links).toHaveLength(1);
+    expect(links[0].status).toBe("active");
+    const [url] = fetchSpy.mock.calls[0] as [string];
+    expect(url).toBe("http://127.0.0.1:8000/api/links");
   });
 });
 

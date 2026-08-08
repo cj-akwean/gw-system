@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { DashboardHeader } from "@/components/portal/dashboard-header";
 import { BillsList } from "@/components/portal/bills-list";
+import { LinkMeterPrompt } from "@/components/portal/link-meter-prompt";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -49,6 +50,7 @@ export default function DashboardPage() {
           onLogout={() => logout()}
         />
         <main className="flex-1">
+          <LinkMeterPrompt />
           <BillsList />
         </main>
       </div>
