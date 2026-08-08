@@ -14,7 +14,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
-#[Fillable(['name', 'email', 'phone', 'password', 'is_admin'])]
+#[Fillable(['name', 'email', 'phone', 'password', 'is_admin', 'paymongo_customer_id'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable implements FilamentUser
 {
@@ -34,6 +34,11 @@ class User extends Authenticatable implements FilamentUser
     public function enteredReadings(): HasMany
     {
         return $this->hasMany(MeterReading::class, 'entered_by');
+    }
+
+    public function savedPaymentMethods(): HasMany
+    {
+        return $this->hasMany(SavedPaymentMethod::class);
     }
 
     protected function casts(): array

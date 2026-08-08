@@ -4,6 +4,8 @@ namespace App\Jobs;
 
 use App\Models\Invoice;
 use App\Models\ProcessedWebhookEvent;
+use App\Models\SavedPaymentMethod;
+use App\Models\User;
 use App\Services\PaymentService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -95,6 +97,12 @@ class ProcessPayMongoWebhook implements ShouldQueue
                 $payerEmail = $this->normalizePayerField($billing['email'] ?? null, 255);
                 $payerPhone = $this->normalizePayerField($billing['phone'] ?? null, 40);
 
+                // Card source details for vaulting (brand, last4, payment_method_id)
+                $source = is_array($attributes['source'] ?? null) ? $attributes['source'] : [];
+                $cardBrand = is_string($source['brand'] ?? null) ? $source['brand'] : null;
+                $cardLast4 = is_string($source['last4'] ?? null) ? $source['last4'] : null;
+                $cardPaymentMethodId = is_string($source['payment_method_id'] ?? null) ? $source['payment_method_id'] : null;
+
                 if (! is_string($paymentId) || ! is_string($intentId) || ! is_int($amountCentavos)) {
                     Log::channel('paymongo')->warning('PayMongo payment.paid skipped: malformed payment resource', [
                         'event_id' => $eventId,
@@ -128,6 +136,15 @@ class ProcessPayMongoWebhook implements ShouldQueue
                     $payerEmail,
                     $payerPhone,
                 );
+
+                // If this was a card payment and the card was vaulted (setup_future_usage),
+                // save the payment method details for future use.
+                if ($paymongoSource === 'card'
+                    && $cardPaymentMethodId !== null
+                    && $cardLast4 !== null
+                ) {
+                    $this->saveVaultedCard($invoice, $cardPaymentMethodId, $cardBrand, $cardLast4, $payerName);
+                }
             });
         } catch (UniqueConstraintViolationException) {
             Log::channel('paymongo')->info('PayMongo webhook skipped: event already processed', [
@@ -174,5 +191,62 @@ class ProcessPayMongoWebhook implements ShouldQueue
             'event_type' => $type,
             'processed_at' => now(),
         ]));
+    }
+
+    /**
+     * Saves a vaulted card's metadata to the local saved_payment_methods table.
+     * Fetches expiry from PayMongo's PaymentMethod API (not in webhook payload).
+     * The invoice's service_connection links to portal users via connection_links.
+     * We save for all active linked users so they can all reuse the card.
+     */
+    private function saveVaultedCard(
+        Invoice $invoice,
+        string $paymentMethodId,
+        ?string $brand,
+        string $last4,
+        ?string $payerName,
+    ): void {
+        // Fetch expiry from PayMongo (not included in webhook payload)
+        $pmDetails = app(\App\Services\PayMongoService::class)
+            ->getPaymentMethod($paymentMethodId);
+
+        $expMonth = $pmDetails['exp_month'] ?? now()->month;
+        $expYear = $pmDetails['exp_year'] ?? now()->year;
+
+        // Use brand/last4 from PayMongo if the webhook didn't have them
+        if ($pmDetails !== null) {
+            $brand = $pmDetails['brand'] ?? $brand;
+            $last4 = $pmDetails['last4'] ?? $last4;
+        }
+
+        $users = User::query()
+            ->whereHas('connectionLinks', function ($q) use ($invoice) {
+                $q->where('service_connection_id', $invoice->service_connection_id)
+                    ->where('status', 'active');
+            })
+            ->get();
+
+        foreach ($users as $user) {
+            SavedPaymentMethod::updateOrCreate(
+                [
+                    'user_id' => $user->id,
+                    'paymongo_payment_method_id' => $paymentMethodId,
+                ],
+                [
+                    'brand' => $brand,
+                    'last4' => $last4,
+                    'exp_month' => $expMonth,
+                    'exp_year' => $expYear,
+                    'payer_name' => $payerName,
+                ]
+            );
+
+            Log::channel('paymongo')->info('Vaulted card saved for user', [
+                'user_id' => $user->id,
+                'payment_method_id' => $paymentMethodId,
+                'brand' => $brand,
+                'last4' => $last4,
+            ]);
+        }
     }
 }

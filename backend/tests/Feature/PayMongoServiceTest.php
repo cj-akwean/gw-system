@@ -362,6 +362,27 @@ class PayMongoServiceTest extends TestCase
         Http::assertNotSent(fn (Request $request) => $request->method() === 'POST');
     }
 
+    public function test_get_or_create_throws_on_rate_limit_instead_of_creating_a_second_live_intent(): void
+    {
+        $invoice = $this->makeUnpaidInvoice();
+        $invoice->update(['paymongo_payment_intent_id' => 'pi_test_rate_limited']);
+
+        // A 429 must never be treated as "stale": the stored intent may still
+        // be live and attached — replacing it would open a double-charge
+        // window (the customer could pay both intents).
+        Http::fake([
+            'api.paymongo.com/v1/payment_intents/pi_test_rate_limited' => Http::response(['errors' => []], 429),
+        ]);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('PayMongo retrieve payment intent failed');
+
+        app(PayMongoService::class)->getOrCreatePaymentIntent($invoice);
+
+        $this->assertSame('pi_test_rate_limited', $invoice->fresh()->paymongo_payment_intent_id);
+        Http::assertNotSent(fn (Request $request) => $request->method() === 'POST');
+    }
+
     public function test_get_payment_intent_status_returns_status(): void
     {
         Http::fake([

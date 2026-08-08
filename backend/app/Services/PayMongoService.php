@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Exceptions\InvoiceNotPayableException;
 use App\Exceptions\PaymentAlreadyCompletedException;
 use App\Models\Invoice;
+use App\Models\User;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
@@ -33,9 +34,12 @@ class PayMongoService
 
     private const RETRY_SLEEP_MICROSECONDS = 100_000;
 
-    public function getOrCreatePaymentIntent(Invoice $invoice): array
-    {
-        return DB::transaction(function () use ($invoice): array {
+    public function getOrCreatePaymentIntent(
+        Invoice $invoice,
+        ?string $customerId = null,
+        bool $setupFutureUsage = false,
+    ): array {
+        return DB::transaction(function () use ($invoice, $customerId, $setupFutureUsage): array {
             /** @var Invoice $locked */
             $locked = Invoice::query()->lockForUpdate()->findOrFail($invoice->id);
 
@@ -51,7 +55,7 @@ class PayMongoService
                 }
             }
 
-            return $this->createPaymentIntent($locked);
+            return $this->createPaymentIntent($locked, ['qrph', 'gcash', 'card'], $customerId, $setupFutureUsage);
         });
     }
 
@@ -65,10 +69,11 @@ class PayMongoService
      *   succeeded — the customer's money has moved, so a new payment must not
      *   be created (the payment.paid webhook was likely missed; the reconcile
      *   flow surfaces it for manual credit) — double-charging is impossible;
-     * - returns null when the intent is stale on PayMongo's side (4xx —
+     * - returns null when the intent is stale on PayMongo's side (404/410 —
      *   unknown/expired/revoked) or its metadata no longer matches the
-     *   invoice, so the caller creates a fresh intent. A 5xx/network failure
-     *   throws (the stored id is left untouched for a later retry).
+     *   invoice, so the caller creates a fresh intent. Any other failure
+     *   (5xx/network, 429, 401, …) throws — the stored id is left untouched
+     *   for a later retry, never silently replaced while still live.
      */
     protected function getStoredPaymentIntent(string $intentId, Invoice $invoice): ?array
     {
@@ -76,7 +81,13 @@ class PayMongoService
             ->get(self::API_BASE.'/payment_intents/'.$intentId));
 
         if ($response->failed()) {
-            if ($response->clientError()) {
+            // Only a gone intent (404/410) is stale. Any other 4xx — a 429
+            // rate limit, a 401 bad key, a 400 malformed request — must NOT
+            // be treated as "stale": creating a fresh intent while the stored
+            // one may still be live and attached would open a double-charge
+            // window (the customer could pay both). Those throw instead, and
+            // the stored id is left untouched for a later retry.
+            if ($response->status() === 404 || $response->status() === 410) {
                 Log::channel('paymongo')->info('PayMongo stored payment intent stale; creating a fresh one', [
                     'invoice_id' => $invoice->id,
                     'intent_id' => $intentId,
@@ -158,25 +169,38 @@ class PayMongoService
         return $status;
     }
 
-    public function createPaymentIntent(Invoice $invoice, array $methods = ['qrph', 'gcash', 'card']): array
-    {
+    public function createPaymentIntent(
+        Invoice $invoice,
+        array $methods = ['qrph', 'gcash', 'card'],
+        ?string $customerId = null,
+        bool $setupFutureUsage = false,
+    ): array {
         $methods = $this->validateMethods($methods);
         $amount = $this->toCentavos($invoice->total_amount);
+
+        $attributes = [
+            'amount' => $amount,
+            'currency' => 'PHP',
+            'payment_method_allowed' => $methods,
+            'description' => 'Invoice '.$invoice->invoice_number,
+            'metadata' => [
+                'invoice_id' => (string) $invoice->id,
+                'invoice_number' => $invoice->invoice_number,
+            ],
+        ];
+
+        if ($setupFutureUsage && $customerId !== null) {
+            $attributes['setup_future_usage'] = [
+                'session_type' => 'on_session',
+                'customer_id' => $customerId,
+            ];
+        }
 
         $response = $this->sendWithRetry(fn (): Response => $this->request()
             ->withHeaders(['Idempotency-Key' => 'invoice-pay-'.$invoice->id])
             ->post(self::API_BASE.'/payment_intents', [
                 'data' => [
-                    'attributes' => [
-                        'amount' => $amount,
-                        'currency' => 'PHP',
-                        'payment_method_allowed' => $methods,
-                        'description' => 'Invoice '.$invoice->invoice_number,
-                        'metadata' => [
-                            'invoice_id' => (string) $invoice->id,
-                            'invoice_number' => $invoice->invoice_number,
-                        ],
-                    ],
+                    'attributes' => $attributes,
                 ],
             ]));
 
@@ -203,6 +227,7 @@ class PayMongoService
             'intent_id' => $intentId,
             'amount_centavos' => $amount,
             'methods' => $methods,
+            'vaulting' => $setupFutureUsage,
         ]);
 
         return [
@@ -299,6 +324,271 @@ class PayMongoService
         } while (count($batch) === $limit);
 
         return $payments;
+    }
+
+    /**
+     * Creates or retrieves a PayMongo Customer for the given user.
+     * Stores the customer id on the user record for future lookups.
+     */
+    public function getOrCreateCustomer(User $user): string
+    {
+        if ($user->paymongo_customer_id !== null) {
+            return $user->paymongo_customer_id;
+        }
+
+        // PayMongo's customers API requires first_name, last_name, email, and
+        // default_device ("phone" | "email") — verified against the current
+        // Create Customer reference (2026-08-08). Missing last_name /
+        // default_device used to 422 ("field validation failed on 'required'
+        // tag"), which surfaced as a 502 on /api/saved-payment-methods.
+        [$firstName, $lastName] = $this->splitName($user->name);
+
+        $response = $this->sendWithRetry(fn (): Response => $this->request()
+            ->post(self::API_BASE.'/customers', [
+                'data' => [
+                    'attributes' => [
+                        'first_name' => $firstName,
+                        'last_name' => $lastName,
+                        'email' => $user->email,
+                        'default_device' => 'email',
+                        ...($user->phone ? ['phone' => $user->phone] : []),
+                    ],
+                ],
+            ]));
+
+        if ($response->failed()) {
+            Log::channel('paymongo')->error('PayMongo create customer failed', [
+                'user_id' => $user->id,
+                'response_body' => $response->body(),
+            ]);
+
+            throw new RuntimeException('PayMongo create customer failed: '.$response->body());
+        }
+
+        $customerId = $response->json('data.id');
+
+        if (! is_string($customerId) || $customerId === '') {
+            throw new RuntimeException('PayMongo response missing customer id.');
+        }
+
+        $user->update(['paymongo_customer_id' => $customerId]);
+
+        Log::channel('paymongo')->info('PayMongo customer created', [
+            'user_id' => $user->id,
+            'customer_id' => $customerId,
+        ]);
+
+        return $customerId;
+    }
+
+    /**
+     * Splits a display name into first/last on the last space; a single-word
+     * name repeats as last_name so PayMongo's required fields are never empty.
+     *
+     * @return array{0: string, 1: string}
+     */
+    protected function splitName(string $name): array
+    {
+        $parts = preg_split('/\s+/', trim($name));
+
+        if ($parts === false || $parts === [] || $parts[0] === '') {
+            return ['Portal User', 'Portal User'];
+        }
+
+        if (count($parts) === 1) {
+            return [$parts[0], $parts[0]];
+        }
+
+        $last = array_pop($parts);
+
+        return [implode(' ', $parts), (string) $last];
+    }
+
+    /**
+     * Lists payment methods attached to a PayMongo Customer.
+     *
+     * @return array<int, array{id: string, brand: ?string, last4: string, exp_month: int, exp_year: int}>
+     */
+    public function listCustomerPaymentMethods(string $customerId): array
+    {
+        $response = $this->sendWithRetry(fn (): Response => $this->request()
+            ->get(self::API_BASE.'/customers/'.$customerId.'/payment_methods'));
+
+        if ($response->failed()) {
+            Log::channel('paymongo')->error('PayMongo list payment methods failed', [
+                'customer_id' => $customerId,
+                'response_body' => $response->body(),
+            ]);
+
+            throw new RuntimeException('PayMongo list payment methods failed: '.$response->body());
+        }
+
+        $data = $response->json('data');
+
+        if (! is_array($data)) {
+            return [];
+        }
+
+        $methods = [];
+
+        foreach ($data as $pm) {
+            $id = $pm['id'] ?? null;
+            $type = $pm['attributes']['type'] ?? null;
+            $details = $pm['attributes']['details'] ?? [];
+
+            if (! is_string($id) || $type !== 'card') {
+                continue;
+            }
+
+            $methods[] = [
+                'id' => $id,
+                'brand' => $details['brand'] ?? null,
+                'last4' => $details['last4'] ?? '',
+                'exp_month' => (int) ($details['exp_month'] ?? 0),
+                'exp_year' => (int) ($details['exp_year'] ?? 0),
+            ];
+        }
+
+        return $methods;
+    }
+
+    /**
+     * Deletes a payment method from a PayMongo Customer.
+     */
+    public function deletePaymentMethod(string $customerId, string $paymentMethodId): void
+    {
+        $response = $this->sendWithRetry(fn (): Response => $this->request()
+            ->delete(self::API_BASE.'/customers/'.$customerId.'/payment_methods/'.$paymentMethodId));
+
+        if ($response->failed() && $response->status() !== 404) {
+            Log::channel('paymongo')->error('PayMongo delete payment method failed', [
+                'customer_id' => $customerId,
+                'payment_method_id' => $paymentMethodId,
+                'response_body' => $response->body(),
+            ]);
+
+            throw new RuntimeException('PayMongo delete payment method failed: '.$response->body());
+        }
+    }
+
+    /**
+     * Retrieves a single payment method from PayMongo.
+     */
+    public function getPaymentMethod(string $paymentMethodId): ?array
+    {
+        $response = $this->sendWithRetry(fn (): Response => $this->request()
+            ->get(self::API_BASE.'/payment_methods/'.$paymentMethodId));
+
+        if ($response->failed()) {
+            Log::channel('paymongo')->warning('PayMongo retrieve payment method failed', [
+                'payment_method_id' => $paymentMethodId,
+                'response_body' => $response->body(),
+            ]);
+
+            return null;
+        }
+
+        $data = $response->json('data');
+
+        if (! is_array($data)) {
+            return null;
+        }
+
+        $details = $data['attributes']['details'] ?? [];
+
+        return [
+            'id' => $data['id'] ?? $paymentMethodId,
+            'brand' => $details['brand'] ?? null,
+            'last4' => $details['last4'] ?? '',
+            'exp_month' => (int) ($details['exp_month'] ?? 0),
+            'exp_year' => (int) ($details['exp_year'] ?? 0),
+        ];
+    }
+
+    /**
+     * Updates a payment method's CVC (required before attaching a saved card
+     * for on-session charges).
+     */
+    public function updatePaymentMethodCvc(string $paymentMethodId, string $cvc): void
+    {
+        $response = $this->sendWithRetry(fn (): Response => $this->request()
+            ->patch(self::API_BASE.'/payment_methods/'.$paymentMethodId, [
+                'data' => [
+                    'attributes' => [
+                        'details' => [
+                            'cvc' => $cvc,
+                        ],
+                    ],
+                ],
+            ]));
+
+        if ($response->failed()) {
+            Log::channel('paymongo')->error('PayMongo update payment method CVC failed', [
+                'payment_method_id' => $paymentMethodId,
+                'response_body' => $response->body(),
+            ]);
+
+            throw new RuntimeException('PayMongo update payment method CVC failed: '.$response->body());
+        }
+    }
+
+    /**
+     * Creates a payment intent for charging a saved payment method.
+     * Does NOT include setup_future_usage — the card is already vaulted.
+     */
+    public function createPaymentIntentForSavedMethod(Invoice $invoice, string $paymentMethodId): array
+    {
+        $methods = ['card'];
+        $amount = $this->toCentavos($invoice->total_amount);
+
+        $response = $this->sendWithRetry(fn (): Response => $this->request()
+            ->withHeaders(['Idempotency-Key' => 'invoice-pay-saved-'.$invoice->id.'-'.$paymentMethodId])
+            ->post(self::API_BASE.'/payment_intents', [
+                'data' => [
+                    'attributes' => [
+                        'amount' => $amount,
+                        'currency' => 'PHP',
+                        'payment_method_allowed' => $methods,
+                        'description' => 'Invoice '.$invoice->invoice_number,
+                        'metadata' => [
+                            'invoice_id' => (string) $invoice->id,
+                            'invoice_number' => $invoice->invoice_number,
+                            'saved_payment_method_id' => $paymentMethodId,
+                        ],
+                    ],
+                ],
+            ]));
+
+        if ($response->failed()) {
+            Log::channel('paymongo')->error('PayMongo create payment intent (saved method) failed', [
+                'invoice_id' => $invoice->id,
+                'payment_method_id' => $paymentMethodId,
+                'response_body' => $response->body(),
+            ]);
+
+            throw new RuntimeException('PayMongo create payment intent failed: '.$response->body());
+        }
+
+        $intentId = $response->json('data.id');
+        $clientKey = $response->json('data.attributes.client_key');
+
+        if (! is_string($intentId) || ! is_string($clientKey)) {
+            throw new RuntimeException('PayMongo response missing payment intent id or client key.');
+        }
+
+        $invoice->update(['paymongo_payment_intent_id' => $intentId]);
+
+        Log::channel('paymongo')->info('PayMongo payment intent created (saved method)', [
+            'invoice_id' => $invoice->id,
+            'intent_id' => $intentId,
+            'payment_method_id' => $paymentMethodId,
+            'amount_centavos' => $amount,
+        ]);
+
+        return [
+            'intent_id' => $intentId,
+            'client_key' => $clientKey,
+        ];
     }
 
     protected function request(): PendingRequest
