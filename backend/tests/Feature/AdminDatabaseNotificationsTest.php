@@ -8,6 +8,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
+use ReflectionMethod;
 use Tests\TestCase;
 
 class AdminDatabaseNotificationsTest extends TestCase
@@ -74,6 +75,18 @@ class AdminDatabaseNotificationsTest extends TestCase
 
         $this->assertDatabaseCount('notifications', 1);
         $this->assertNotNull($notification->fresh()->read_at);
+    }
+
+    public function test_listener_parameter_is_named_id_for_the_browser_contract(): void
+    {
+        // The browser forwards the window CustomEvent detail {id: ...} as a
+        // NAMED argument; Livewire container-autowires on a name mismatch,
+        // which crashed with BindingResolutionException when the param was
+        // named $payload (regression 2026-08-07). The name must stay $id.
+        $param = (new ReflectionMethod(AdminDatabaseNotifications::class, 'removeNotification'))
+            ->getParameters()[0];
+
+        $this->assertSame('id', $param->getName());
     }
 
     public function test_clear_notifications_action_is_hidden(): void

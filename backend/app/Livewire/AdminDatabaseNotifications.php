@@ -28,10 +28,22 @@ use Livewire\Attributes\On;
  */
 class AdminDatabaseNotifications extends DatabaseNotifications
 {
+    /**
+     * Marks a dismissed notification as read (never deleted — the Hub is the
+     * history). The parameter MUST stay named `$id` (Filament's contract):
+     * the browser forwards the window CustomEvent detail `{id: ...}` as a
+     * NAMED argument, and Livewire falls back to container autowiring on a
+     * name mismatch — a required `array|string $payload` param then explodes
+     * with BindingResolutionException (hit 2026-08-07 on the billing page).
+     * The array branch keeps Livewire's test dispatcher (positional array)
+     * working.
+     */
     #[On('notificationClosed')]
-    public function removeNotification(string|array $payload): void
+    public function removeNotification(string|array $id): void
     {
-        $id = is_array($payload) ? ($payload['id'] ?? null) : $payload;
+        if (is_array($id)) {
+            $id = $id['id'] ?? null;
+        }
 
         if (! is_string($id) || ! Str::isUuid($id)) {
             return;
