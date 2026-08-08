@@ -1092,3 +1092,38 @@ live test-mode attach). The response also includes `next_action.code.expires_at`
 (RFC3339) — PayMongo's own expiry moment, now used as the authoritative countdown
 deadline (fallback: attach time + backend `expiry_seconds`). Another entry for the
 "verify against the live API, not just the docs" book.
+
+## 36. InfoTip: one popover primitive gated on pointer type — not matchMedia, not a Tooltip swap (2026-08-08, built same day)
+
+**Question asked:** the portal needs one consistent explanation pattern — hover ⓘ on
+desktop, tap-to-toggle popover on touch (spec: `payments-customer-portal-flow.md`). How
+do you detect "touch vs hover" without breaking SSR, hydration, or hybrid touchscreen
+laptops?
+
+**Answer + reasoning:**
+
+- **One Radix `Popover`, always — the hover path is gated on `pointerType === "mouse"`,
+  not on any device query.** Touch taps produce pointer events with `pointerType:
+  "touch"` (spec-mandated across browsers), so the `pointerenter`/`pointerleave`
+  hover handlers simply ignore them; Radix's native trigger-click toggle, outside-tap
+  dismiss, and `Escape` then own the touch interaction with zero custom code.
+- **Why not the two obvious alternatives:** (a) CSS `:hover`/native `title` — no delay
+  control, unstylable, invisible on touch; (b) swapping Radix `Tooltip` on
+  hover-capable devices and `Popover` on touch via `matchMedia("(hover: hover) and
+  (pointer: fine)")` — `matchMedia` doesn't exist server-side, so the first client
+  render can't match the server's, and the post-mount swap remounts the trigger
+  (focus loss + flash). Pointer-type gating has neither problem and kills the hybrid
+  touchscreen-laptop edge case (synthetic mouse events on tap) by construction — the
+  gate reads the *real* input device, not event ordering.
+- **The tradeoff, accepted:** hover-open delay (200 ms) and leave-close grace (120 ms)
+  are hand-rolled `setTimeout`s instead of Radix Tooltip's native `delayDuration` —
+  ~15 lines, pinned by the test suite.
+- **One component, never per-page variants:** every ⓘ in the app renders the same
+  `InfoTip`; per-spot styling differences (if ever real) extend its props and get
+  documented in `docs/insights/frontend-design.md` — not duplicated.
+- **Tests uncovered an environment constraint worth recording:** vitest fake timers
+  hang with React 19 + happy-dom (happy-dom has no `MessageChannel`, so React's
+  scheduler falls back to `setTimeout`; faking it stalls `act` forever — even
+  `await act(async () => {})` after a `fireEvent.click` times out). InfoTip exposes
+  `openDelayMs`/`closeDelayMs` so tests run on real timers with small delays and
+  generous waits instead.

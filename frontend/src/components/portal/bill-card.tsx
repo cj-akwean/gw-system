@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { formatPeso, type PortalInvoice } from "@/lib/api";
+import { InfoTip } from "@/components/ui/info-tip";
 
 interface BillCardProps {
   invoice: PortalInvoice;
@@ -75,7 +76,13 @@ export function BillCard({ invoice, onPay }: BillCardProps) {
         )}
         {invoice.penalty_amount > 0 && (
           <div className="flex justify-between gap-3">
-            <dt className="text-muted-foreground">Penalty</dt>
+            <dt className="flex items-center gap-1 text-muted-foreground">
+              Penalty
+              <InfoTip
+                content="2% per month interest on the unpaid balance, applied after the due date."
+                label="What the penalty covers"
+              />
+            </dt>
             <dd className="text-right">{formatPeso(invoice.penalty_amount)}</dd>
           </div>
         )}
