@@ -185,6 +185,123 @@ pointers; the section intro now states it's the index. **No-loss verified by scr
 the implementation-notes.md entry (new detail archive; never long paragraphs in the
 checklist again).
 
+## Addendum 6 — Card form (client-side PM + 3DS) *(same evening)*
+
+**Built** (last big portal payment item): Card card enabled; inline `CardForm` in the
+review step (Card Info number/expiry/CVC + billing name/address/city/zip required,
+phone/address2 optional, country PH, email prefilled). Validation on Pay press (Luhn,
+MM/YY end-of-month, CVC 3–4) with inline alerts — zero API calls until clean. `startCard`
+creates the PM **client-side with the public key** (details + billing; billing feeds the
+webhook's payer identity), attaches with `return_url`, then: 3DS `redirect.url` assign /
+`processing`+`succeeded` pending note + poll / `awaiting_payment_method` →
+`last_payment_error` surfaced with retry preserving the form. Return marker generalized
+`?from=redirect` (legacy `from=gcash` accepted). Bills > ₱100k become Card-only.
+`lib/card-utils.ts` (formatters + Luhn + expiry). **No backend changes.** Tests:
+card-utils 7, paymongo lastPaymentError, payment-method +7 (form render, validation
+blocking, 3DS payload/redirect, decline retry, processing note) — frontend 85/85, backend
+499/499 (regression), build static, lint clean (only known img warning).
+
+## Addendum 7 — 3DS return dead-end: failed probe ≠ definitive answer (same evening, fixed)
+
+**Symptom:** after the 4120… card 3DS "Authorize", the return page showed "This bill isn't
+available for payment right now." — yet the backend was healthy: payment.paid arrived
+23:09:59, invoice 12 marked paid 23:10:00, email sent, `GET /api/invoices/12` returns
+`status: "paid"` (verified live).
+
+**Root cause:** the paid-vs-not-payable fallback treated ANY non-`paid` probe outcome as
+"not available" — including transient failures (network blip / 429 / 5xx) and
+unrecognized response shapes. A failed probe became a definitive dead-end. The exact
+transient at the moment of return couldn't be pinned down (backend shows no errors), but
+the code path was wrong regardless: an *unknown* must never render a definitive answer.
+
+**Fix:** `Screen` gains `unconfirmed` ("checking your payment status…" panel with a Check
+again button + Back to my bills). Fallback rules: `paid` → paid panel; **403/404** →
+not-available (the only definitive negatives); everything else (failure or unrecognized
+shape) → `unconfirmed`, which keeps the 15s poll (invoice reappears → ready; `getInvoice`
+→ paid → paid panel) so the webhook catch-up resolves it within seconds. Tests: +3
+(failed probe → checking → Check again → paid; unrecognized shape never dead-ends; poll
+auto-resolves checking → paid). Frontend 88/88, backend 499/499 (regression), build
+static, lint clean.
+
+## Addendum 8 — PayMongo strips the return query: pending-invoice sessionStorage (same evening, fixed)
+
+**Symptom:** 3DS return landed on "Checking your payment status…" with the **non-redirect**
+text ("We couldn't confirm this bill's status") even though the webhook had already paid
+the invoice — and the panel never resolved ("no retries").
+
+**Root cause (deduced from the panel text + both redirect flows behaving the same):**
+PayMongo's redirect strips the query string on the way back — the return page lands with
+no `id` and no `from`, so the screen had no invoice to probe and never knew it was a
+redirect return. (The earlier GCash symptom was the same mechanism — it predated the
+query-recovery fixes, which is why they never fully cured it.)
+
+**Fix:** the invoice id now rides **sessionStorage**, not the URL: `writePendingInvoice()`
+before every redirect (`startGcash`, `startCard`), `readPendingInvoice()` consumed by the
+pay page when the URL has no `id` (URL wins when present; cleared after use; StrictMode-
+safe read-then-clear). Also: unconfirmed poll probes `getInvoice` directly (independent
+of the list call — a single failed request can't wedge the retry), and an empty id
+renders not-payable with zero API calls. Tests: pending round trip (api), page recovers
+pending + clears + URL-wins, empty-id no-call guard, writePendingInvoice called on both
+redirects. Frontend 92/92, backend 499/499, build static, lint clean.
+
+## Addendum 9 — Billing-page bell crash + payment-return hardening (same evening, fixed)
+
+**Issue 1 — `BindingResolutionException` after "Run Billing":** the custom bell's
+`notificationClosed` listener had a required `string|array $payload` param. The browser
+forwards Filament's window CustomEvent detail `{id: …}` as a **named** argument; Livewire
+container-autowires on a name mismatch → crash on any toast close/bell X click (the
+"Run Billing dispatched" toast closing). Fix: param renamed to `$id` (Filament's
+contract; array branch kept for Livewire's positional test dispatcher) + reflection
+regression test pinning the name. `AdminDatabaseNotificationsTest` 9/9.
+
+**Billing run verified, not a bug:** run #16 (period 2026-06-30) completed — GW-00004
+billed ₱30 (3 cu.m. reading entered June 3, inside the June window), all other connections
+skipped with correct reasons. The Livewire crash happened AFTER the run finished; the bill
+appeared and was later paid via card.
+
+**Issue 2 — payment-return dead-end hardening:** not-available panel now says "If you just
+completed a payment, it may already be confirmed" on redirect returns and the primary
+action is **Check my bills** (dashboard Past-payments always shows paid invoices) —
+a failed recovery is never a dead end. (The sessionStorage pending-invoice recovery from
+addendum 8 still requires a restarted dev server to be in the tested bundle.)
+
+## Addendum 10 — SSR `window is not defined` on /dashboard/pay + Mailtrap quota (same evening, fixed)
+
+**Symptom:** clicking Pay (router.push to `/dashboard/pay`) blanked the page ("Switched
+to client rendering because the server rendering errored: window is not defined at
+readPendingInvoice") until a manual refresh.
+
+**Root cause:** the pending-invoice recovery reads `window.sessionStorage`/`localStorage`
+inside a `useState` initializer — and the static-export prerender pass renders the pay
+page ON THE SERVER, where `window` doesn't exist. (The earlier version of the initializer
+had a `typeof window` guard; it was lost when the return-recovery rework landed.)
+
+**Fix:** `readPendingInvoice()` now returns `null` when `typeof window === "undefined"`
+(SSR/prerender-safe at the util level, protecting every caller). The `next build` static
+prerender of `/dashboard/pay` is the regression gate (it executes the initializer on the
+server — it crashed before, passes now). Frontend 107/107, backend 512/512, build static,
+lint clean.
+
+**Mailtrap quota:** `backend/.env` — `MAIL_MAILER=log` (smtp commented out with a note)
+so testing emails are written to `storage/logs/laravel.log` instead of burning the free
+50-email/month Mailtrap quota. The email job still "succeeds" (no failure notifications).
+**Restart `php artisan serve` + `php artisan queue:work` after the .env change** (config is
+read at process start). Re-enable by restoring `MAIL_MAILER=smtp` when quota testing is
+needed again.
+
+## Addendum 11 — `/pay` 500: missing Http facade import (same evening, fixed)
+
+**Symptom:** `POST /api/invoices/221/pay` → 500 (three attempts). `laravel.log`:
+`Class "App\Services\Http" not found at PayMongoService.php:563` — the file was reworked
+by the return-recovery session and lost the `use Illuminate\Support\Facades\Http;`
+import; PHP resolved the bare `Http` to `App\Services\Http`, and an `Error` (not
+`RuntimeException`) escapes the controller's 502 catch → 500. Slipped past the last
+suite run because the edit landed after it.
+
+**Fix:** one-line import restored (alphabetical, between `DB` and `Log`). The suite now
+guards it: full backend 512/512 green. Programming errors intentionally stay 500 (not
+masked as "gateway unavailable").
+
 ## Git state
 
 NOT committed (per project rules). HEAD before this session: `c97b919`.

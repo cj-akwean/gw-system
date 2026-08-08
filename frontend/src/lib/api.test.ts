@@ -1,9 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   buildReturnUrl,
+  clearPendingInvoice,
   formatPeso,
   getInvoice,
+  readPendingInvoice,
+  resolveIntentStatus,
   startPayment,
+  writePendingInvoice,
 } from "@/lib/api";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
@@ -132,10 +136,120 @@ describe("getInvoice", () => {
 });
 
 describe("buildReturnUrl", () => {
-  it("points back to the payment screen with the gcash marker", () => {
+  it("points back to the payment screen with the redirect marker", () => {
     expect(buildReturnUrl(7)).toBe(
-      `${window.location.origin}/dashboard/pay?id=7&from=gcash`
+      `${window.location.origin}/dashboard/pay?id=7&from=redirect`
     );
+  });
+});
+
+describe("resolveIntentStatus", () => {
+  beforeEach(() => {
+    seedAuthToken();
+  });
+
+  afterEach(() => {
+    localStorage.removeItem("auth");
+    vi.unstubAllGlobals();
+  });
+
+  it("posts the intent id to the intent-status endpoint", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      jsonResponse({ status: "confirmed", invoice_id: 12 })
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await resolveIntentStatus("pi_abc123");
+
+    expect(result).toEqual({ status: "confirmed", invoice_id: 12 });
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:8000/api/payments/intent-status");
+    expect(init.method).toBe("POST");
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      "Bearer token-1"
+    );
+    expect(JSON.parse(init.body as string)).toEqual({
+      payment_intent_id: "pi_abc123",
+    });
+  });
+
+  it("propagates a 403 from the server", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse({ message: "Forbidden" }, false, 403))
+    );
+
+    await expect(resolveIntentStatus("pi_foreign")).rejects.toMatchObject({
+      message: "Forbidden",
+      status: 403,
+    });
+  });
+});
+
+describe("pending invoice (session + localStorage round trip)", () => {
+  beforeEach(() => {
+    window.sessionStorage.clear();
+    window.localStorage.clear();
+  });
+
+  it("writes, reads, and clears the pending record", () => {
+    expect(readPendingInvoice()).toBeNull();
+
+    writePendingInvoice(12);
+    expect(readPendingInvoice()).toMatchObject({ invoiceId: "12" });
+
+    clearPendingInvoice();
+    expect(readPendingInvoice()).toBeNull();
+    expect(window.sessionStorage.getItem("gw-pending-invoice")).toBeNull();
+    expect(window.localStorage.getItem("gw-pending-invoice")).toBeNull();
+  });
+
+  it("carries the payment intent id and method for server-side resolution", () => {
+    writePendingInvoice(12, {
+      paymentIntentId: "pi_abc123",
+      method: "card",
+    });
+
+    expect(readPendingInvoice()).toEqual({
+      invoiceId: "12",
+      paymentIntentId: "pi_abc123",
+      method: "card",
+      writtenAt: expect.any(Number),
+    });
+  });
+
+  it("reads the localStorage copy when sessionStorage was lost (new-tab return)", () => {
+    window.localStorage.setItem(
+      "gw-pending-invoice",
+      JSON.stringify({
+        invoiceId: "12",
+        paymentIntentId: "pi_abc123",
+        writtenAt: Date.now(),
+      })
+    );
+
+    expect(readPendingInvoice()).toMatchObject({
+      invoiceId: "12",
+      paymentIntentId: "pi_abc123",
+    });
+  });
+
+  it("ignores an expired marker", () => {
+    window.localStorage.setItem(
+      "gw-pending-invoice",
+      JSON.stringify({
+        invoiceId: "12",
+        writtenAt: Date.now() - 61 * 60 * 1000,
+      })
+    );
+
+    expect(readPendingInvoice()).toBeNull();
+  });
+
+  it("ignores a malformed marker", () => {
+    window.localStorage.setItem("gw-pending-invoice", "12");
+
+    expect(readPendingInvoice()).toBeNull();
   });
 });
 

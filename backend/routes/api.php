@@ -36,4 +36,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/invoices/{invoice}/pay', [InvoicePaymentController::class, 'store'])
         ->middleware('throttle:20,1,invoices-pay');
     Route::get('/payments', [PaymentController::class, 'index'])->middleware('throttle:30,1,payments-index');
+    Route::post('/payments/intent-status', [PaymentController::class, 'intentStatus'])
+        ->middleware('throttle:30,1,payments-intent-status');
 });

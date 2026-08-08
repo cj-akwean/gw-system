@@ -12,20 +12,32 @@ import type { PortalInvoice } from "@/lib/api";
 
 const mockGetInvoices = vi.fn();
 const mockGetInvoice = vi.fn();
+const mockResolveIntentStatus = vi.fn();
 const mockStartPayment = vi.fn();
 const mockCreatePaymentMethod = vi.fn();
 const mockAttachPaymentMethod = vi.fn();
+const mockWritePendingInvoice = vi.fn();
+const mockClearPendingInvoice = vi.fn();
 const mockLogout = vi.fn();
 const mockReplace = vi.fn();
 const mockRouter = { replace: mockReplace, push: vi.fn() };
+const mockGetSavedPaymentMethods = vi.fn().mockResolvedValue([]);
+const mockPayWithSaved = vi.fn();
+const mockDeleteSavedPaymentMethod = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   getInvoices: (...args: unknown[]) => mockGetInvoices(...args),
   getInvoice: (...args: unknown[]) => mockGetInvoice(...args),
+  resolveIntentStatus: (...args: unknown[]) => mockResolveIntentStatus(...args),
   startPayment: (...args: unknown[]) => mockStartPayment(...args),
+  writePendingInvoice: (...args: unknown[]) => mockWritePendingInvoice(...args),
+  clearPendingInvoice: (...args: unknown[]) => mockClearPendingInvoice(...args),
+  getSavedPaymentMethods: (...args: unknown[]) => mockGetSavedPaymentMethods(...args),
+  payWithSaved: (...args: unknown[]) => mockPayWithSaved(...args),
+  deleteSavedPaymentMethod: (...args: unknown[]) => mockDeleteSavedPaymentMethod(...args),
   formatPeso: (n: number) => `₱${Number(n).toFixed(2)}`,
   buildReturnUrl: (id: number | string) =>
-    `http://localhost/dashboard/pay?id=${id}&from=gcash`,
+    `http://localhost/dashboard/pay?id=${id}&from=redirect`,
   ApiError: class extends Error {
     status: number;
     constructor(message: string, status: number) {
@@ -46,13 +58,17 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/auth-context", () => ({
   useAuth: () => ({
-    user: { name: "Maria", email: "maria@example.com" },
+    user: { id: 1, name: "Maria", email: "maria@example.com" },
     logout: mockLogout,
   }),
 }));
 
 vi.mock("@/components/portal/dashboard-header", () => ({
   DashboardHeader: () => <div>header</div>,
+}));
+
+vi.mock("@/components/portal/saved-card-selector", () => ({
+  SavedCardSelector: () => <div data-testid="saved-card-selector" />,
 }));
 
 const QR_IMAGE = "data:image/png;base64,iVBORw0KGgo=";
@@ -126,12 +142,17 @@ describe("PaymentMethodScreen", () => {
   beforeEach(() => {
     mockGetInvoices.mockReset();
     mockGetInvoice.mockReset();
+    mockResolveIntentStatus.mockReset();
     mockStartPayment.mockReset();
+    mockWritePendingInvoice.mockReset();
     mockCreatePaymentMethod.mockReset();
     mockAttachPaymentMethod.mockReset();
     mockLogout.mockReset();
     mockReplace.mockReset();
     mockRouter.push.mockReset();
+    mockGetSavedPaymentMethods.mockReset().mockResolvedValue([]);
+    mockPayWithSaved.mockReset();
+    mockDeleteSavedPaymentMethod.mockReset();
     Object.defineProperty(window, "location", {
       writable: true,
       value: {
@@ -157,6 +178,154 @@ describe("PaymentMethodScreen", () => {
     expect(screen.getByRole("status")).toBeInTheDocument();
   });
 
+  it("shows the context-missing state for an empty id without any API calls", async () => {
+    render(<PaymentMethodScreen invoiceId="" />);
+
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("context-missing-panel")).toBeInTheDocument()
+    );
+    expect(screen.queryByText(/isn't available for payment/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId("unconfirmed-panel")).not.toBeInTheDocument();
+    expect(screen.getByTestId("check-my-bills")).toBeInTheDocument();
+    expect(mockGetInvoices).not.toHaveBeenCalled();
+    expect(mockGetInvoice).not.toHaveBeenCalled();
+    expect(mockResolveIntentStatus).not.toHaveBeenCalled();
+  });
+
+  it("shows the success toast when the intent status is paid and auto-returns", async () => {
+    vi.useFakeTimers();
+    mockResolveIntentStatus.mockResolvedValue({ status: "paid", invoice_id: 1 });
+
+    render(<PaymentMethodScreen invoiceId="" paymentIntentId="pi_1" />);
+
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("success-modal")).toBeInTheDocument()
+    );
+    expect(screen.getByText(/Payment received/i)).toBeInTheDocument();
+    expect(screen.getByText(/emailed to maria@example.com/i)).toBeInTheDocument();
+    expect(screen.queryByTestId("paid-panel")).not.toBeInTheDocument();
+
+    // No auto-redirect - the modal waits for the user.
+    act(() => {
+      vi.advanceTimersByTime(4_000);
+    });
+    expect(mockRouter.push).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("success-ok"));
+    expect(mockRouter.push).toHaveBeenCalledWith("/dashboard");
+  });
+
+  it("shows the confirming modal until the webhook credits, then the success modal", async () => {
+    vi.useFakeTimers();
+    mockResolveIntentStatus.mockResolvedValue({ status: "confirmed", invoice_id: 1 });
+    mockGetInvoice.mockResolvedValue(invoice({ id: 1, status: "paid" }));
+
+    render(<PaymentMethodScreen invoiceId="" paymentIntentId="pi_1" />);
+
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("confirming-modal")).toBeInTheDocument()
+    );
+    expect(screen.getByText(/Payment confirmed with your provider/i)).toBeInTheDocument();
+    // No escape that would strand the user before the success confirmation
+    // (a "back" click here lost the modal forever).
+    expect(
+      screen.queryByRole("button", { name: /back to my bills/i })
+    ).not.toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("success-modal")).toBeInTheDocument()
+    );
+    expect(screen.queryByTestId("confirming-modal")).not.toBeInTheDocument();
+    expect(screen.getByText(/emailed to maria@example.com/i)).toBeInTheDocument();
+
+    // No auto-redirect - the modal waits for the user.
+    act(() => {
+      vi.advanceTimersByTime(4_000);
+    });
+    expect(mockRouter.push).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("success-ok"));
+    expect(mockRouter.push).toHaveBeenCalledWith("/dashboard");
+  });
+
+  it("shows the failed panel and lets the user try again on the same bill", async () => {
+    mockResolveIntentStatus.mockResolvedValue({ status: "failed", invoice_id: 1 });
+    mockGetInvoice.mockResolvedValue(invoice({ id: 1 }));
+
+    render(<PaymentMethodScreen invoiceId="" paymentIntentId="pi_1" />);
+
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("failed-panel")).toBeInTheDocument()
+    );
+    expect(screen.queryByText(/isn't available for payment/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("retry-payment"));
+
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("method-card-ewallet")).toBeInTheDocument()
+    );
+    expect(mockGetInvoice).toHaveBeenCalledWith(1);
+  });
+
+  it("keeps checking while the intent is still processing, then resolves to paid", async () => {
+    vi.useFakeTimers();
+    mockResolveIntentStatus
+      .mockResolvedValueOnce({ status: "processing" })
+      .mockResolvedValueOnce({ status: "paid", invoice_id: 1 });
+
+    render(<PaymentMethodScreen invoiceId="" paymentIntentId="pi_1" />);
+
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("unconfirmed-panel")).toBeInTheDocument()
+    );
+    expect(screen.queryByText(/isn't available for payment/i)).not.toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(15_000);
+    });
+
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("success-modal")).toBeInTheDocument()
+    );
+
+    // No auto-redirect - the modal waits for the user.
+    act(() => {
+      vi.advanceTimersByTime(4_000);
+    });
+    expect(mockRouter.push).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("success-ok"));
+    expect(mockRouter.push).toHaveBeenCalledWith("/dashboard");
+  });
+
+  it("never dead-ends when the intent cannot be resolved", async () => {
+    mockResolveIntentStatus.mockResolvedValue({ status: "unknown" });
+
+    render(<PaymentMethodScreen invoiceId="" paymentIntentId="pi_1" />);
+
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("unconfirmed-panel")).toBeInTheDocument()
+    );
+    expect(screen.queryByText(/isn't available for payment/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps checking when the intent-status request fails transiently", async () => {
+    mockResolveIntentStatus.mockRejectedValue(
+      Object.assign(new Error("boom"), { status: 500, message: "boom" })
+    );
+
+    render(<PaymentMethodScreen invoiceId="" paymentIntentId="pi_1" />);
+
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("unconfirmed-panel")).toBeInTheDocument()
+    );
+    expect(screen.queryByText(/isn't available for payment/i)).not.toBeInTheDocument();
+  });
+
   it("shows not-payable when the invoice is not in the unpaid list", async () => {
     mockGetInvoices.mockResolvedValue([invoice({ id: 2 })]);
     mockGetInvoice.mockRejectedValue(
@@ -170,16 +339,110 @@ describe("PaymentMethodScreen", () => {
     );
   });
 
-  it("shows the paid panel when the webhook beat the UI", async () => {
+  it("points a redirect return to the bills list instead of a dead end", async () => {
+    mockGetInvoices.mockResolvedValue([invoice({ id: 2 })]);
+    mockGetInvoice.mockRejectedValue(
+      Object.assign(new Error("Forbidden"), { status: 403 })
+    );
+
+    render(<PaymentMethodScreen invoiceId="1" returnedFromRedirect />);
+
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("check-my-bills")).toBeInTheDocument()
+    );
+    expect(
+      screen.getByText(/If you just completed a payment/i)
+    ).toBeInTheDocument();
+  });
+
+  it("shows the checking state when the status probe fails, then resolves on retry", async () => {
+    mockGetInvoices.mockResolvedValue([invoice({ id: 2 })]);
+    mockGetInvoice
+      .mockRejectedValueOnce(
+        Object.assign(new Error("boom"), { status: 500, message: "boom" })
+      )
+      .mockResolvedValueOnce(invoice({ id: 1, status: "paid" }));
+
+    render(<PaymentMethodScreen invoiceId="1" />);
+
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("unconfirmed-panel")).toBeInTheDocument()
+    );
+    expect(screen.queryByText(/isn't available for payment/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("check-again"));
+
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("success-modal")).toBeInTheDocument()
+    );
+  });
+
+  it("never turns an unrecognized response into not-available", async () => {
+    mockGetInvoices.mockResolvedValue([invoice({ id: 2 })]);
+    mockGetInvoice.mockResolvedValue({} as never);
+
+    render(<PaymentMethodScreen invoiceId="1" />);
+
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("unconfirmed-panel")).toBeInTheDocument()
+    );
+    expect(screen.queryByText(/isn't available for payment/i)).not.toBeInTheDocument();
+  });
+
+  it("resolves the checking state automatically once the webhook reports paid", async () => {
+    vi.useFakeTimers();
+    mockGetInvoices
+      .mockResolvedValueOnce([invoice({ id: 2 })])
+      .mockResolvedValueOnce([]);
+    mockGetInvoice
+      .mockRejectedValueOnce(
+        Object.assign(new Error("boom"), { status: 500, message: "boom" })
+      )
+      .mockResolvedValueOnce(invoice({ id: 1, status: "paid" }));
+
+    render(<PaymentMethodScreen invoiceId="1" />);
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("unconfirmed-panel")).toBeInTheDocument()
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(15_000);
+    });
+
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("success-modal")).toBeInTheDocument()
+    );
+
+    // No auto-redirect - the modal waits for the user.
+    act(() => {
+      vi.advanceTimersByTime(4_000);
+    });
+    expect(mockRouter.push).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("success-ok"));
+    expect(mockRouter.push).toHaveBeenCalledWith("/dashboard");
+  });
+
+  it("shows the success toast when the webhook beat the UI", async () => {
+    vi.useFakeTimers();
     mockGetInvoices.mockResolvedValue([invoice({ id: 2 })]);
     mockGetInvoice.mockResolvedValue(invoice({ id: 1, status: "paid" }));
 
     render(<PaymentMethodScreen invoiceId="1" />);
 
     await vi.waitFor(() =>
-      expect(screen.getByTestId("paid-panel")).toBeInTheDocument()
+      expect(screen.getByTestId("success-modal")).toBeInTheDocument()
     );
     expect(screen.getByText(/Payment received/i)).toBeInTheDocument();
+
+    // No auto-redirect - the modal waits for the user.
+    act(() => {
+      vi.advanceTimersByTime(4_000);
+    });
+    expect(mockRouter.push).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("success-ok"));
+    expect(mockRouter.push).toHaveBeenCalledWith("/dashboard");
   });
 
   it("logs out on a 401 from the invoice status check", async () => {
@@ -238,11 +501,12 @@ describe("PaymentMethodScreen", () => {
     expect(screen.getByTestId("method-card-card")).toBeInTheDocument();
     expect(screen.getByTestId("method-card-digital-wallet")).toBeInTheDocument();
     expect(screen.getByText("Recommended")).toBeInTheDocument();
-    expect(screen.getAllByText("Coming soon")).toHaveLength(2);
+    expect(screen.getByText("Coming soon")).toBeInTheDocument();
+    expect(screen.queryByText("Visa and Mastercard (coming soon)")).not.toBeInTheDocument();
     expect(screen.getByTestId("pay-amount")).toHaveTextContent("₱150.00");
   });
 
-  it("disables e-wallet methods for bills over the ₱100,000 cap", async () => {
+  it("disables e-wallet methods but keeps Card for bills over the ₱100,000 cap", async () => {
     mockGetInvoices.mockResolvedValue([invoice({ total_amount: 100_001 })]);
 
     render(<PaymentMethodScreen invoiceId="1" />);
@@ -253,6 +517,7 @@ describe("PaymentMethodScreen", () => {
     expect(screen.getByTestId("qr-ph-row")).toBeDisabled();
     expect(screen.getByTestId("gcash-row")).toBeDisabled();
     expect(screen.getByText(/over ₱100,000/i)).toBeInTheDocument();
+    expect(screen.getByTestId("method-card-card")).not.toBeDisabled();
   });
 
   it("shows the review step on method selection without auto-attaching", async () => {
@@ -469,21 +734,46 @@ describe("PaymentMethodScreen", () => {
         "https://checkout.paymongo.com/gcash/xyz"
       )
     );
+    expect(mockWritePendingInvoice).toHaveBeenCalledWith("1", {
+      paymentIntentId: "pi_1",
+      method: "gcash",
+    });
     expect(mockCreatePaymentMethod).toHaveBeenCalledWith("gcash");
     expect(mockAttachPaymentMethod).toHaveBeenCalledWith({
       intentId: "pi_1",
       clientKey: "ck_1",
       paymentMethodId: "pm_gcash_1",
-      returnUrl: "http://localhost/dashboard/pay?id=1&from=gcash",
+      returnUrl: "http://localhost/dashboard/pay?id=1&from=redirect",
     });
   });
 
-  it("shows a pending banner when returning from the GCash redirect", async () => {
+  it("shows a pending banner when returning from a redirect (3DS / GCash)", async () => {
     mockGetInvoices.mockResolvedValue([invoice()]);
 
-    render(<PaymentMethodScreen invoiceId="1" returnedFromGcash />);
+    render(<PaymentMethodScreen invoiceId="1" returnedFromRedirect />);
 
     expect(await screen.findByTestId("pending-banner")).toBeInTheDocument();
+  });
+
+  it("hides the pending banner once the payment resolves", async () => {
+    vi.useFakeTimers();
+    mockGetInvoices
+      .mockResolvedValueOnce([invoice()])
+      .mockResolvedValueOnce([]);
+
+    render(<PaymentMethodScreen invoiceId="1" returnedFromRedirect />);
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("pending-banner")).toBeInTheDocument()
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(15_000);
+    });
+
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("success-modal")).toBeInTheDocument()
+    );
+    expect(screen.queryByTestId("pending-banner")).not.toBeInTheDocument();
   });
 
   it("does not show a pending banner on a normal visit", async () => {
@@ -508,8 +798,357 @@ describe("PaymentMethodScreen", () => {
     });
 
     await vi.waitFor(() =>
-      expect(screen.getByTestId("paid-panel")).toBeInTheDocument()
+      expect(screen.getByTestId("success-modal")).toBeInTheDocument()
     );
     expect(screen.getByText(/Payment received/i)).toBeInTheDocument();
+    // The pay screen stays visible under the toast — no white page swap.
+    expect(screen.getByTestId("method-card-ewallet")).toBeInTheDocument();
+
+    // No auto-redirect - the modal waits for the user.
+    act(() => {
+      vi.advanceTimersByTime(4_000);
+    });
+    expect(mockRouter.push).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("success-ok"));
+    expect(mockRouter.push).toHaveBeenCalledWith("/dashboard");
+  });
+
+  it("selecting Card shows the card form on the review step", async () => {
+    await renderReady();
+    fireEvent.click(screen.getByTestId("method-card-card"));
+
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("review-step")).toBeInTheDocument()
+    );
+    expect(screen.getByTestId("card-number")).toBeInTheDocument();
+    expect(screen.getByTestId("card-cvc")).toBeInTheDocument();
+    expect(screen.getByTestId("card-first-name")).toBeInTheDocument();
+    expect(screen.getByTestId("card-address")).toBeInTheDocument();
+    expect(screen.getByTestId("card-zip")).toBeInTheDocument();
+    expect(screen.getByText(/Email on file: maria@example.com/)).toBeInTheDocument();
+    expect(mockStartPayment).not.toHaveBeenCalled();
+  });
+
+  it("blocks Pay with invalid card input and shows inline errors", async () => {
+    await renderReady();
+    fireEvent.click(screen.getByTestId("method-card-card"));
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("review-step")).toBeInTheDocument()
+    );
+
+    fireEvent.change(screen.getByTestId("card-number"), {
+      target: { value: "4343 4343 4343 4344" },
+    });
+    fireEvent.change(screen.getByTestId("card-expiry"), {
+      target: { value: "01/20" },
+    });
+    fireEvent.change(screen.getByTestId("card-cvc"), {
+      target: { value: "12" },
+    });
+    fireEvent.change(screen.getByTestId("card-first-name"), {
+      target: { value: "  " },
+    });
+
+    fireEvent.click(screen.getByTestId("pay-now"));
+
+    await vi.waitFor(() =>
+      expect(screen.getAllByRole("alert").length).toBeGreaterThan(0)
+    );
+    expect(mockStartPayment).not.toHaveBeenCalled();
+    expect(mockCreatePaymentMethod).not.toHaveBeenCalled();
+  });
+
+  it("pays with a valid card client-side and redirects for 3DS", async () => {
+    mockStartPayment.mockResolvedValue(intentInfo);
+    mockCreatePaymentMethod.mockResolvedValue("pm_card_1");
+    mockAttachPaymentMethod.mockResolvedValue({
+      status: "awaiting_next_action",
+      imageUrl: null,
+      redirectUrl: "https://checkout.paymongo.com/3ds/xyz",
+      expiresAt: null,
+      lastPaymentError: null,
+    });
+
+    await renderReady();
+    fireEvent.click(screen.getByTestId("method-card-card"));
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("review-step")).toBeInTheDocument()
+    );
+
+    fireEvent.change(screen.getByTestId("card-number"), {
+      target: { value: "4343 4343 4343 4345" },
+    });
+    fireEvent.change(screen.getByTestId("card-expiry"), {
+      target: { value: "12/29" },
+    });
+    fireEvent.change(screen.getByTestId("card-cvc"), {
+      target: { value: "123" },
+    });
+    fireEvent.change(screen.getByTestId("card-first-name"), {
+      target: { value: "Maria" },
+    });
+    fireEvent.change(screen.getByTestId("card-last-name"), {
+      target: { value: "Santos" },
+    });
+    fireEvent.change(screen.getByTestId("card-address"), {
+      target: { value: "123 Purok 3" },
+    });
+    fireEvent.change(screen.getByTestId("card-city"), {
+      target: { value: "Guinobatan" },
+    });
+    fireEvent.change(screen.getByTestId("card-zip"), {
+      target: { value: "4503" },
+    });
+
+    fireEvent.click(screen.getByTestId("pay-now"));
+
+    await vi.waitFor(() =>
+      expect(assignSpy).toHaveBeenCalledWith(
+        "https://checkout.paymongo.com/3ds/xyz"
+      )
+    );
+    expect(mockWritePendingInvoice).toHaveBeenCalledWith("1", {
+      paymentIntentId: "pi_1",
+      method: "card",
+    });
+    expect(mockCreatePaymentMethod).toHaveBeenCalledWith("card", {
+      details: {
+        card_number: "4343434343434345",
+        exp_month: 12,
+        exp_year: 29,
+        cvc: "123",
+      },
+      billing: {
+        name: "Maria Santos",
+        email: "maria@example.com",
+        address: {
+          line1: "123 Purok 3",
+          city: "Guinobatan",
+          postal_code: "4503",
+          country: "PH",
+        },
+      },
+    });
+    expect(mockAttachPaymentMethod).toHaveBeenCalledWith({
+      intentId: "pi_1",
+      clientKey: "ck_1",
+      paymentMethodId: "pm_card_1",
+      returnUrl: "http://localhost/dashboard/pay?id=1&from=redirect",
+    });
+  });
+
+  it("surfaces a decline from last_payment_error and lets the user retry", async () => {
+    mockStartPayment.mockResolvedValue(intentInfo);
+    mockCreatePaymentMethod.mockResolvedValue("pm_card_1");
+    mockAttachPaymentMethod.mockResolvedValue({
+      status: "awaiting_payment_method",
+      imageUrl: null,
+      redirectUrl: null,
+      expiresAt: null,
+      lastPaymentError: "Card declined: insufficient funds",
+    });
+
+    await renderReady();
+    fireEvent.click(screen.getByTestId("method-card-card"));
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("review-step")).toBeInTheDocument()
+    );
+
+    fireEvent.change(screen.getByTestId("card-number"), {
+      target: { value: "5100 0000 0000 0198" },
+    });
+    fireEvent.change(screen.getByTestId("card-expiry"), {
+      target: { value: "12/29" },
+    });
+    fireEvent.change(screen.getByTestId("card-cvc"), {
+      target: { value: "123" },
+    });
+    fireEvent.change(screen.getByTestId("card-first-name"), {
+      target: { value: "Maria" },
+    });
+    fireEvent.change(screen.getByTestId("card-last-name"), {
+      target: { value: "Santos" },
+    });
+    fireEvent.change(screen.getByTestId("card-address"), {
+      target: { value: "123 Purok 3" },
+    });
+    fireEvent.change(screen.getByTestId("card-city"), {
+      target: { value: "Guinobatan" },
+    });
+    fireEvent.change(screen.getByTestId("card-zip"), {
+      target: { value: "4503" },
+    });
+
+    fireEvent.click(screen.getByTestId("pay-now"));
+
+    expect(
+      await screen.findByText(/Card declined: insufficient funds/i)
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /try again/i }));
+
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("card-number")).toBeInTheDocument()
+    );
+    expect(
+      (screen.getByTestId("card-number") as HTMLInputElement).value
+    ).toBe("5100 0000 0000 0198");
+  });
+
+  it("shows the processing note when the card needs no 3DS", async () => {
+    mockStartPayment.mockResolvedValue(intentInfo);
+    mockCreatePaymentMethod.mockResolvedValue("pm_card_1");
+    mockAttachPaymentMethod.mockResolvedValue({
+      status: "processing",
+      imageUrl: null,
+      redirectUrl: null,
+      expiresAt: null,
+      lastPaymentError: null,
+    });
+
+    await renderReady();
+    fireEvent.click(screen.getByTestId("method-card-card"));
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("review-step")).toBeInTheDocument()
+    );
+
+    fireEvent.change(screen.getByTestId("card-number"), {
+      target: { value: "4343 4343 4343 4345" },
+    });
+    fireEvent.change(screen.getByTestId("card-expiry"), {
+      target: { value: "12/29" },
+    });
+    fireEvent.change(screen.getByTestId("card-cvc"), {
+      target: { value: "123" },
+    });
+    fireEvent.change(screen.getByTestId("card-first-name"), {
+      target: { value: "Maria" },
+    });
+    fireEvent.change(screen.getByTestId("card-last-name"), {
+      target: { value: "Santos" },
+    });
+    fireEvent.change(screen.getByTestId("card-address"), {
+      target: { value: "123 Purok 3" },
+    });
+    fireEvent.change(screen.getByTestId("card-city"), {
+      target: { value: "Guinobatan" },
+    });
+    fireEvent.change(screen.getByTestId("card-zip"), {
+      target: { value: "4503" },
+    });
+
+    fireEvent.click(screen.getByTestId("pay-now"));
+
+    expect(await screen.findByTestId("card-processing")).toBeInTheDocument();
+    expect(assignSpy).not.toHaveBeenCalled();
+    // The processing state locks the flow — no double-pay.
+    expect(screen.getByTestId("pay-now")).toBeDisabled();
+    expect(mockResolveIntentStatus).not.toHaveBeenCalled();
+  });
+
+  it("locks the flow and confirms a frictionless succeeded charge immediately", async () => {
+    mockStartPayment.mockResolvedValue(intentInfo);
+    mockCreatePaymentMethod.mockResolvedValue("pm_card_1");
+    mockAttachPaymentMethod.mockResolvedValue({
+      status: "succeeded",
+      imageUrl: null,
+      redirectUrl: null,
+      expiresAt: null,
+      lastPaymentError: null,
+    });
+    mockResolveIntentStatus.mockResolvedValue({ status: "confirmed", invoice_id: 1 });
+
+    await renderReady();
+    fireEvent.click(screen.getByTestId("method-card-card"));
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("review-step")).toBeInTheDocument()
+    );
+
+    fireEvent.change(screen.getByTestId("card-number"), {
+      target: { value: "4343 4343 4343 4345" },
+    });
+    fireEvent.change(screen.getByTestId("card-expiry"), {
+      target: { value: "12/29" },
+    });
+    fireEvent.change(screen.getByTestId("card-cvc"), {
+      target: { value: "123" },
+    });
+    fireEvent.change(screen.getByTestId("card-first-name"), {
+      target: { value: "Maria" },
+    });
+    fireEvent.change(screen.getByTestId("card-last-name"), {
+      target: { value: "Santos" },
+    });
+    fireEvent.change(screen.getByTestId("card-address"), {
+      target: { value: "123 Purok 3" },
+    });
+    fireEvent.change(screen.getByTestId("card-city"), {
+      target: { value: "Guinobatan" },
+    });
+    fireEvent.change(screen.getByTestId("card-zip"), {
+      target: { value: "4503" },
+    });
+
+    fireEvent.click(screen.getByTestId("pay-now"));
+
+    await vi.waitFor(() =>
+      expect(mockResolveIntentStatus).toHaveBeenCalledWith("pi_1")
+    );
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("confirming-modal")).toBeInTheDocument()
+    );
+    expect(screen.getByTestId("pay-now")).toBeDisabled();
+  });
+
+  it("shows the success modal right away when a frictionless charge is already credited", async () => {
+    mockStartPayment.mockResolvedValue(intentInfo);
+    mockCreatePaymentMethod.mockResolvedValue("pm_card_1");
+    mockAttachPaymentMethod.mockResolvedValue({
+      status: "succeeded",
+      imageUrl: null,
+      redirectUrl: null,
+      expiresAt: null,
+      lastPaymentError: null,
+    });
+    mockResolveIntentStatus.mockResolvedValue({ status: "paid", invoice_id: 1 });
+
+    await renderReady();
+    fireEvent.click(screen.getByTestId("method-card-card"));
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("review-step")).toBeInTheDocument()
+    );
+
+    fireEvent.change(screen.getByTestId("card-number"), {
+      target: { value: "4343 4343 4343 4345" },
+    });
+    fireEvent.change(screen.getByTestId("card-expiry"), {
+      target: { value: "12/29" },
+    });
+    fireEvent.change(screen.getByTestId("card-cvc"), {
+      target: { value: "123" },
+    });
+    fireEvent.change(screen.getByTestId("card-first-name"), {
+      target: { value: "Maria" },
+    });
+    fireEvent.change(screen.getByTestId("card-last-name"), {
+      target: { value: "Santos" },
+    });
+    fireEvent.change(screen.getByTestId("card-address"), {
+      target: { value: "123 Purok 3" },
+    });
+    fireEvent.change(screen.getByTestId("card-city"), {
+      target: { value: "Guinobatan" },
+    });
+    fireEvent.change(screen.getByTestId("card-zip"), {
+      target: { value: "4503" },
+    });
+
+    fireEvent.click(screen.getByTestId("pay-now"));
+
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("success-modal")).toBeInTheDocument()
+    );
+    expect(screen.queryByTestId("card-processing")).not.toBeInTheDocument();
   });
 });

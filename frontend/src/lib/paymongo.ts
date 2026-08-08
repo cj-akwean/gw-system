@@ -5,6 +5,7 @@ export interface PayMongoAttachResult {
   imageUrl: string | null;
   redirectUrl: string | null;
   expiresAt: string | null;
+  lastPaymentError: string | null;
 }
 
 function publicKey(): string {
@@ -27,6 +28,23 @@ async function payMongoError(res: Response): Promise<Error> {
     ? detail
     : `Payment gateway request failed (${res.status}).`;
   return new Error(code ? `${message} (${code})` : message);
+}
+
+/**
+ * Normalizes PayMongo's last_payment_error (declined cards) into a display
+ * string: a plain string, an object with a message, or null when absent.
+ */
+function normalizeLastPaymentError(lastError: unknown): string | null {
+  if (typeof lastError === "string" && lastError.trim() !== "") {
+    return lastError.trim();
+  }
+  if (lastError !== null && typeof lastError === "object") {
+    const message = (lastError as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim() !== "") {
+      return message.trim();
+    }
+  }
+  return null;
 }
 
 async function payMongoFetch(path: string, attributes: Record<string, unknown>): Promise<Response> {
@@ -79,6 +97,7 @@ export async function attachPaymentMethod(opts: {
   const body = await res.json();
   const attrs = body?.data?.attributes;
   const nextAction = attrs?.next_action ?? null;
+  const lastError = attrs?.last_payment_error ?? null;
 
   // PayMongo's QR Ph attach returns next_action.type = "consume_qr" (the docs
   // describe the shape under next_action.code but never document the type
@@ -100,5 +119,6 @@ export async function attachPaymentMethod(opts: {
       typeof nextAction?.code?.expires_at === "string"
         ? nextAction.code.expires_at
         : null,
+    lastPaymentError: normalizeLastPaymentError(lastError),
   };
 }

@@ -5,17 +5,22 @@ import { useRouter } from "next/navigation";
 import {
   ApiError,
   buildReturnUrl,
+  clearPendingInvoice,
   formatPeso,
   getInvoice,
   getInvoices,
+  resolveIntentStatus,
   startPayment,
+  writePendingInvoice,
   type PortalInvoice,
 } from "@/lib/api";
 import { attachPaymentMethod, createPaymentMethod } from "@/lib/paymongo";
+import { CardForm, type CardFormHandle, type CardPayload } from "@/components/portal/card-form";
 import { useCountdown } from "@/hooks/use-countdown";
 import { formatRemaining } from "@/lib/countdown";
 import { useAuth } from "@/lib/auth-context";
 import { DashboardHeader } from "@/components/portal/dashboard-header";
+import { InfoTip } from "@/components/ui/info-tip";
 import { cn } from "@/lib/utils";
 import {
   AlertCircle,
@@ -34,7 +39,11 @@ type Screen =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "not-payable" }
-  | { status: "paid" }
+  | { status: "failed" }
+  | { status: "unconfirmed" }
+  // No id, no intent, no pending record — the return could not be tied to any
+  // payment. Never a definitive negative, and never an endless spinner.
+  | { status: "context-missing" }
   | { status: "ready"; invoice: PortalInvoice };
 
 type QrState =
@@ -47,10 +56,11 @@ type QrState =
       deadline: number | null;
       intentId: string;
     }
-  | { phase: "error"; message: string; flow: "qrph" | "gcash" };
+  | { phase: "error"; message: string; flow: "qrph" | "gcash" | "card" };
 
 const QR_STORAGE_PREFIX = "gw-qr:";
 const POLL_INTERVAL_MS = 15_000;
+const CONFIRMING_POLL_MS = 5_000;
 const E_WALLET_MAX_TOTAL = 100_000;
 
 interface StoredQr {
@@ -112,26 +122,100 @@ function formatDate(iso: string): string {
 
 export function PaymentMethodScreen({
   invoiceId,
-  returnedFromGcash = false,
+  paymentIntentId = null,
+  returnedFromRedirect = false,
 }: {
   invoiceId: string;
-  returnedFromGcash?: boolean;
+  paymentIntentId?: string | null;
+  returnedFromRedirect?: boolean;
 }) {
   const router = useRouter();
   const { user, logout } = useAuth();
-  const [screen, setScreen] = useState<Screen>({ status: "loading" });
+  // An empty visit (no id, no intent) cannot be tied to any payment — show
+  // the context-missing state, never a definitive "not available" or an
+  // endless spinner.
+  const [screen, setScreen] = useState<Screen>(() =>
+    invoiceId === "" && paymentIntentId === null
+      ? { status: "context-missing" }
+      : { status: "loading" }
+  );
   const [qr, setQr] = useState<QrState>({ phase: "idle" });
-  const pendingBanner = returnedFromGcash;
+  const pendingBanner = returnedFromRedirect;
   const [attempt, setAttempt] = useState(0);
+  // Success feedback is an overlay, never a screen swap — the pay screen stays
+  // visible underneath (no white flash). confirming: PayMongo says the payment
+  // succeeded but the webhook has not credited the invoice yet.
+  const [paymentResult, setPaymentResult] = useState<{
+    status: "paid";
+    confirming: boolean;
+  } | null>(null);
   const [step, setStep] = useState<"method" | "review">("method");
-  const [selectedMethod, setSelectedMethod] = useState<"qrph" | "gcash" | null>(null);
+  const [selectedMethod, setSelectedMethod] = useState<"qrph" | "gcash" | "card" | null>(null);
+  const [cardProcessing, setCardProcessing] = useState(false);
+  const cardFormRef = useRef<CardFormHandle>(null);
   const invoiceRef = useRef<PortalInvoice | null>(null);
+  // Invoice id recovered from the payment-intent status response (paid /
+  // confirmed / failed all carry it) — used to poll the confirming state and
+  // to rebuild the pay screen after a failed attempt.
+  const [resolvedInvoiceId, setResolvedInvoiceId] = useState<number | null>(null);
 
   // Load the invoice — it must still be in the unpaid list to be payable.
   // When it's gone, it may have just been paid (webhook beat the UI, e.g.
-  // returning from the GCash redirect) — check the invoice's own status.
+  // returning from the GCash/3DS redirect) — check the invoice's own status.
+  //
+  // A redirect return may carry NO invoice id at all (PayMongo strips the
+  // query). In that case the payment_intent_id in the URL is resolved
+  // server-side; an unresolvable return must never render a definitive
+  // "not available" — only an unknown state that keeps checking.
   useEffect(() => {
     let cancelled = false;
+
+    if (invoiceId === "") {
+      if (paymentIntentId === null) {
+        // No bill selected and no intent to resolve — nothing to fetch. The
+        // screen already renders the checking panel (lazy-initialized); it is
+        // never a definitive "not available".
+        return;
+      }
+
+      resolveIntentStatus(paymentIntentId)
+        .then((res) => {
+          if (cancelled) return;
+          if (res.invoice_id != null) {
+            setResolvedInvoiceId(res.invoice_id);
+          }
+          if (res.status === "paid") {
+            clearPendingInvoice();
+            setPaymentResult({ status: "paid", confirming: false });
+            return;
+          }
+          if (res.status === "confirmed") {
+            // Money moved on PayMongo's side; the webhook credit may lag.
+            setPaymentResult({ status: "paid", confirming: true });
+            return;
+          }
+          if (res.status === "failed") {
+            setScreen({ status: "failed" });
+            return;
+          }
+          // processing / unknown — keep checking, the webhook may still land.
+          setScreen({ status: "unconfirmed" });
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          const apiErr = err as ApiError;
+          if (apiErr.status === 401) {
+            logout().then(() => router.replace("/auth"));
+            return;
+          }
+          // Transient failure or a foreign intent — never a definitive
+          // answer from a guess.
+          setScreen({ status: "unconfirmed" });
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
 
     getInvoices()
       .then((invoices) => {
@@ -149,10 +233,13 @@ export function PaymentMethodScreen({
           .then((inv) => {
             if (cancelled) return;
             if (inv.status === "paid") {
-              setScreen({ status: "paid" });
+              clearPendingInvoice();
+              setPaymentResult({ status: "paid", confirming: false });
               return;
             }
-            setScreen({ status: "not-payable" });
+            // Unrecognized or inconsistent shape (e.g. raced the webhook) —
+            // never a definitive answer from a guess.
+            setScreen({ status: "unconfirmed" });
           })
           .catch((err2) => {
             if (cancelled) return;
@@ -161,7 +248,14 @@ export function PaymentMethodScreen({
               logout().then(() => router.replace("/auth"));
               return;
             }
-            setScreen({ status: "not-payable" });
+            if (apiErr2.status === 403 || apiErr2.status === 404) {
+              // Definitive: not yours, or it doesn't exist.
+              setScreen({ status: "not-payable" });
+              return;
+            }
+            // Transient failure (network / 429 / 5xx) — keep checking, the
+            // webhook may still be landing.
+            setScreen({ status: "unconfirmed" });
           });
       })
       .catch((err) => {
@@ -180,48 +274,134 @@ export function PaymentMethodScreen({
     return () => {
       cancelled = true;
     };
-  }, [invoiceId, attempt, logout, router]);
+  }, [invoiceId, paymentIntentId, attempt, logout, router]);
 
-  // Coming back from the GCash redirect? Drop the marker from the URL once
-  // read so a refresh doesn't re-show the banner.
-  useEffect(() => {
-    if (pendingBanner) {
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-  }, [pendingBanner]);
+  // Coming back from the GCash/3DS redirect? The URL keeps its params —
+  // removing them here destroyed the return context (regression 2026-08-08:
+  // the redirect could land on a bare /dashboard/pay with no way to recover
+  // the payment). The return banner is harmless on refresh.
 
   // Poll for payment completion while the screen is open: once the invoice
-  // leaves the unpaid list, the webhook has confirmed the payment.
+  // leaves the unpaid list, the webhook has confirmed the payment. The
+  // unconfirmed state (post-redirect with a failed probe) keeps polling until
+  // the webhook lands and the invoice reports paid.
+  const confirmingPaid = paymentResult?.status === "paid" && paymentResult.confirming;
+
+  // Success feedback is an explicit modal — nothing auto-navigates; the user
+  // dismisses it with the OK button so they never miss the result.
+
   useEffect(() => {
-    if (screen.status !== "ready") return;
+    if (screen.status === "ready") {
+      const check = () => {
+        getInvoices()
+          .then((invoices) => {
+            const stillUnpaid = invoices.some(
+              (inv) => String(inv.id) === String(invoiceId)
+            );
+            if (!stillUnpaid && invoiceRef.current) {
+              clearStoredQr(String(invoiceId));
+              setPaymentResult({ status: "paid", confirming: false });
+            }
+          })
+          .catch((err) => {
+            const apiErr = err as ApiError;
+            if (apiErr.status === 401) {
+              logout().then(() => router.replace("/auth"));
+            }
+          });
+      };
 
-    const check = () => {
-      getInvoices()
-        .then((invoices) => {
-          const stillUnpaid = invoices.some(
-            (inv) => String(inv.id) === String(invoiceId)
-          );
-          if (!stillUnpaid && invoiceRef.current) {
-            clearStoredQr(String(invoiceId));
-            setScreen({ status: "paid" });
-          }
-        })
-        .catch((err) => {
-          const apiErr = err as ApiError;
-          if (apiErr.status === 401) {
-            logout().then(() => router.replace("/auth"));
-          }
-        });
-    };
+      const id = window.setInterval(check, POLL_INTERVAL_MS);
+      window.addEventListener("focus", check);
 
-    const id = window.setInterval(check, POLL_INTERVAL_MS);
-    window.addEventListener("focus", check);
+      return () => {
+        window.clearInterval(id);
+        window.removeEventListener("focus", check);
+      };
+    }
 
-    return () => {
-      window.clearInterval(id);
-      window.removeEventListener("focus", check);
-    };
-  }, [screen.status, invoiceId, logout, router]);
+    if (screen.status === "unconfirmed") {
+      const check = () => {
+        // With a known invoice, probe it directly; on an intent-only return
+        // re-resolve the intent — independent of the list call, so one
+        // failed request can never wedge the retry.
+        const probe =
+          invoiceId !== ""
+            ? getInvoice(invoiceId).then((inv) => ({ status: inv.status }))
+            : paymentIntentId !== null
+              ? resolveIntentStatus(paymentIntentId)
+              : Promise.resolve({ status: "unknown" as const });
+
+        probe
+          .then((res) => {
+            if (res.status === "paid") {
+              setPaymentResult({ status: "paid", confirming: false });
+              return;
+            }
+            if (
+              (res.status === "unpaid" || res.status === "overdue") &&
+              invoiceId !== ""
+            ) {
+              // It's payable again — reload to rebuild the pay screen.
+              setAttempt((n) => n + 1);
+            }
+          })
+          .catch((err) => {
+            const apiErr = err as ApiError;
+            if (apiErr.status === 401) {
+              logout().then(() => router.replace("/auth"));
+            }
+            // otherwise keep waiting — the webhook is the source of truth
+          });
+      };
+
+      const id = window.setInterval(check, POLL_INTERVAL_MS);
+      window.addEventListener("focus", check);
+
+      return () => {
+        window.clearInterval(id);
+        window.removeEventListener("focus", check);
+      };
+    }
+
+    if (confirmingPaid && resolvedInvoiceId !== null) {
+      // PayMongo confirmed the charge but the webhook hasn't credited the
+      // invoice yet — keep polling until it reports paid, then drop the
+      // confirming note.
+      const check = () => {
+        getInvoice(resolvedInvoiceId)
+          .then((inv) => {
+            if (inv.status === "paid") {
+              setPaymentResult({ status: "paid", confirming: false });
+            }
+          })
+          .catch((err) => {
+            const apiErr = err as ApiError;
+            if (apiErr.status === 401) {
+              logout().then(() => router.replace("/auth"));
+            }
+          });
+      };
+
+      const id = window.setInterval(check, CONFIRMING_POLL_MS);
+      window.addEventListener("focus", check);
+
+      return () => {
+        window.clearInterval(id);
+        window.removeEventListener("focus", check);
+      };
+    }
+
+    return;
+  }, [
+    screen.status,
+    confirmingPaid,
+    resolvedInvoiceId,
+    invoiceId,
+    paymentIntentId,
+    logout,
+    router,
+  ]);
 
   const { remaining, expired } = useCountdown(
     qr.phase === "active" && qr.deadline !== null ? qr.deadline : null
@@ -304,6 +484,10 @@ export function PaymentMethodScreen({
       });
 
       if (attached.redirectUrl) {
+        writePendingInvoice(invoiceId, {
+          paymentIntentId: info.payment_intent_id,
+          method: "gcash",
+        });
         window.location.assign(attached.redirectUrl);
         return;
       }
@@ -343,76 +527,281 @@ export function PaymentMethodScreen({
     }
   }, [invoiceId, logout, router]);
 
+  const startCard = useCallback(
+    async (payload: CardPayload) => {
+      setQr({ phase: "starting" });
+      try {
+        const info = await startPayment(invoiceId);
+        const pm = await createPaymentMethod("card", {
+          details: payload.details,
+          billing: payload.billing,
+        });
+        setQr({ phase: "attaching" });
+
+        const attached = await attachPaymentMethod({
+          intentId: info.payment_intent_id,
+          clientKey: info.client_key,
+          paymentMethodId: pm,
+          returnUrl: buildReturnUrl(invoiceId),
+        });
+
+        if (attached.redirectUrl) {
+          // 3DS — the bank authenticates the cardholder; the webhook confirms
+          // the payment after they return (never mark paid on redirect).
+          writePendingInvoice(invoiceId, {
+            paymentIntentId: info.payment_intent_id,
+            method: "card",
+          });
+          window.location.assign(attached.redirectUrl);
+          return;
+        }
+
+        if (attached.status === "succeeded" || attached.status === "processing") {
+          // Payment is moving (no 3DS needed). The processing state disables
+          // the whole flow (no double-pay) and shows visible feedback; the
+          // 15s poll + webhook take over the outcome. For an already-succeeded
+          // charge, resolve the intent immediately so the confirming/success
+          // modal appears instead of a silent wait.
+          setCardProcessing(true);
+          setQr({ phase: "idle" });
+
+          if (attached.status === "succeeded") {
+            resolveIntentStatus(info.payment_intent_id)
+              .then((res) => {
+                if (res.status === "paid") {
+                  clearPendingInvoice();
+                  setPaymentResult({ status: "paid", confirming: false });
+                  return;
+                }
+                if (res.status === "confirmed") {
+                  if (res.invoice_id != null) {
+                    setResolvedInvoiceId(res.invoice_id);
+                  }
+                  setPaymentResult({ status: "paid", confirming: true });
+                }
+                // failed/processing/unknown — keep the processing note; the
+                // poll resolves the outcome.
+              })
+              .catch(() => {
+                // keep the processing note; the poll resolves the outcome
+              });
+          }
+
+          return;
+        }
+
+        setQr({
+          phase: "error",
+          message:
+            attached.lastPaymentError ??
+            "The card payment wasn't accepted. Please try again.",
+          flow: "card",
+        });
+      } catch (err) {
+        if (isUnauthorized(err)) {
+          logout().then(() => router.replace("/auth"));
+          return;
+        }
+        setQr({
+          phase: "error",
+          message:
+            err instanceof Error
+              ? err.message
+              : "We couldn't start the payment. Please try again.",
+          flow: "card",
+        });
+      }
+    },
+    [invoiceId, logout, router]
+  );
+
+  // Success feedback overlays the current screen — the pay screen underneath
+  // stays visible (no white flash, no page swap). The modals are explicit:
+  // nothing auto-navigates, and the confirming modal has NO escape that would
+  // strand the user before the success confirmation appears (a "back" click
+  // there lost the modal forever — the paid bill has no Pay button to return
+  // to it; a refresh re-resolves instead).
+  const overlay =
+    paymentResult !== null
+      ? paymentResult.confirming
+        ? <ConfirmingModal />
+        : <SuccessModal onOK={() => router.push("/dashboard")} email={user?.email} />
+      : null;
+
   if (screen.status === "loading") {
     return (
-      <div className="relative min-h-screen w-full" style={{ background: "var(--bg)" }}>
-        <div className="relative z-10 mx-auto w-full max-w-md px-6 py-16 md:max-w-4xl lg:max-w-5xl">
-          <div className="mx-auto max-w-sm animate-pulse space-y-3" aria-busy="true" role="status">
-            <div className="h-6 w-2/3 rounded-md bg-muted" />
-            <div className="h-28 rounded-xl border border-border bg-muted/50" />
-            <div className="h-28 rounded-xl border border-border bg-muted/50" />
+      <>
+        <div className="relative min-h-screen w-full" style={{ background: "var(--bg)" }}>
+          <div className="relative z-10 mx-auto w-full max-w-md px-6 py-16 md:max-w-4xl lg:max-w-5xl">
+            <div className="mx-auto max-w-sm animate-pulse space-y-3" aria-busy="true" role="status">
+              <div className="h-6 w-2/3 rounded-md bg-muted" />
+              <div className="h-28 rounded-xl border border-border bg-muted/50" />
+              <div className="h-28 rounded-xl border border-border bg-muted/50" />
+            </div>
           </div>
         </div>
-      </div>
+        {overlay}
+      </>
     );
   }
 
   if (screen.status === "error") {
     return (
-      <PayScreenShell>
-        <Panel>
-          <AlertCircle className="size-8 text-destructive" />
-          <p className="text-base font-semibold">Couldn&apos;t load this bill</p>
-          <p className="text-sm text-muted-foreground">{screen.message}</p>
-          <button
-            type="button"
-            onClick={() => setAttempt((n) => n + 1)}
-            className="rounded-md border border-border bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-          >
-            Try again
-          </button>
-        </Panel>
-      </PayScreenShell>
+      <>
+        <PayScreenShell>
+          <Panel>
+            <AlertCircle className="size-8 text-destructive" />
+            <p className="text-base font-semibold">Couldn&apos;t load this bill</p>
+            <p className="text-sm text-muted-foreground">{screen.message}</p>
+            <button
+              type="button"
+              onClick={() => setAttempt((n) => n + 1)}
+              className="rounded-md border border-border bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              Try again
+            </button>
+          </Panel>
+        </PayScreenShell>
+        {overlay}
+      </>
     );
   }
 
   if (screen.status === "not-payable") {
     return (
-      <PayScreenShell>
-        <Panel>
-          <AlertCircle className="size-8 text-muted-foreground" />
-          <p className="text-base font-semibold">This bill isn&apos;t available for payment right now.</p>
-          <p className="text-sm text-muted-foreground">
-            It may have just been paid, or it&apos;s not on one of your linked accounts.
-          </p>
-          <BackButton onClick={() => router.push("/dashboard")} />
+      <>
+        <PayScreenShell>
+          <Panel>
+            <AlertCircle className="size-8 text-muted-foreground" />
+            <p className="text-base font-semibold">This bill isn&apos;t available for payment right now.</p>
+            <p className="text-sm text-muted-foreground">
+              {returnedFromRedirect
+                ? "If you just completed a payment, it may already be confirmed — your bills list shows it."
+                : "It may have just been paid, or it&apos;s not on one of your linked accounts."}
+            </p>
+            <button
+            type="button"
+            onClick={() => router.push("/dashboard")}
+            data-testid="check-my-bills"
+            className="rounded-md border border-border bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            Check my bills
+          </button>
         </Panel>
       </PayScreenShell>
+        {overlay}
+      </>
     );
   }
 
-  if (screen.status === "paid") {
+  if (screen.status === "failed") {
     return (
-      <PayScreenShell>
-        <Panel data-testid="paid-panel">
-          <CheckCircle2 className="size-10 text-emerald-500" />
-          <p className="text-lg font-bold">Payment received</p>
+      <>
+        <PayScreenShell>
+          <Panel data-testid="failed-panel">
+          <AlertCircle className="size-8 text-destructive" />
+          <p className="text-base font-semibold">Payment didn&apos;t go through</p>
           <p className="text-sm text-muted-foreground">
-            Your confirmation and receipt are emailed to {user?.email ?? "you"}.
+            Your card wasn&apos;t charged. You can try again, or use another
+            payment method.
           </p>
+          <button
+            type="button"
+            onClick={() => {
+              if (resolvedInvoiceId !== null) {
+                getInvoice(resolvedInvoiceId)
+                  .then((inv) => setScreen({ status: "ready", invoice: inv }))
+                  .catch(() => setAttempt((n) => n + 1));
+              } else {
+                setAttempt((n) => n + 1);
+              }
+            }}
+            data-testid="retry-payment"
+            className="rounded-md border border-border bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            Try again
+          </button>
           <BackButton onClick={() => router.push("/dashboard")} />
         </Panel>
       </PayScreenShell>
+        {overlay}
+      </>
     );
+  }
+
+  if (screen.status === "unconfirmed") {
+    return (
+      <>
+        <PayScreenShell>
+          <Panel data-testid="unconfirmed-panel">
+            <Loader2 className="size-8 animate-spin text-muted-foreground" />
+            <p className="text-base font-semibold">Checking your payment status…</p>
+            <p className="text-sm text-muted-foreground">
+              {returnedFromRedirect
+                ? "You're back from the payment provider. If you just paid, your confirmation is on its way — this page updates automatically."
+                : "We couldn't confirm this bill's status. This page updates automatically."}
+            </p>
+            <button
+              type="button"
+              onClick={() => setAttempt((n) => n + 1)}
+              data-testid="check-again"
+              className="rounded-md border border-border bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              Check again
+            </button>
+            <BackButton onClick={() => router.push("/dashboard")} />
+          </Panel>
+        </PayScreenShell>
+        {overlay}
+      </>
+    );
+  }
+
+  if (screen.status === "context-missing") {
+    return (
+      <>
+        <PayScreenShell>
+          <Panel data-testid="context-missing-panel">
+            <AlertCircle className="size-8 text-muted-foreground" />
+            <p className="text-base font-semibold">
+              We couldn&apos;t identify the payment you returned from.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Your bills list shows the latest payment status, including paid
+              bills and recent payments.
+            </p>
+            <button
+              type="button"
+              onClick={() => router.push("/dashboard")}
+              data-testid="check-my-bills"
+              className="rounded-md border border-border bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              Check my bills
+            </button>
+          </Panel>
+        </PayScreenShell>
+        {overlay}
+      </>
+    );
+  }
+
+  if (screen.status !== "ready") {
+    return null;
   }
 
   const invoice = screen.invoice;
   const capExceeded = invoice.total_amount > E_WALLET_MAX_TOTAL;
-  const busy = qr.phase === "starting" || qr.phase === "attaching";
+  // cardProcessing locks the whole flow — the payment already moved, so Pay
+  // and method switching must not be clickable again (double-pay guard).
+  const busy =
+    qr.phase === "starting" ||
+    qr.phase === "attaching" ||
+    cardProcessing;
   const ewalletDisabled = capExceeded || busy;
 
   return (
-    <div className="relative min-h-screen w-full" style={{ background: "var(--bg)" }}>
+    <>
+      <div className="relative min-h-screen w-full" style={{ background: "var(--bg)" }}>
       <div
         className="pointer-events-none fixed inset-0"
         style={{ background: "var(--glow) no-repeat", filter: "blur(80px)" }}
@@ -455,7 +844,9 @@ export function PaymentMethodScreen({
                 </p>
               </div>
 
-              {pendingBanner && (
+              {/* The "Payment in progress" banner must not contradict the
+                  success modal — hide it once the payment resolves. */}
+              {pendingBanner && paymentResult === null && (
                 <div
                   data-testid="pending-banner"
                   className="flex items-start gap-3 rounded-xl border border-border bg-card p-4 text-sm"
@@ -535,26 +926,33 @@ export function PaymentMethodScreen({
                   {capExceeded && (
                     <p className="mt-3 text-xs text-muted-foreground">
                       This bill is over ₱100,000, so e-wallet payments aren&apos;t
-                      available. Card payments are coming soon.
+                      available. Use Card for this bill.
                     </p>
                   )}
                 </div>
 
-                <div
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedMethod("card");
+                    setStep("review");
+                  }}
+                  disabled={busy}
                   data-testid="method-card-card"
-                  className="rounded-xl border border-border bg-card p-4 opacity-60 shadow-sm"
+                  className={cn(
+                    "flex w-full items-start gap-3 rounded-xl border border-border bg-card p-4 text-left shadow-sm transition-colors",
+                    busy ? "opacity-60" : "hover:bg-muted/40"
+                  )}
                 >
-                  <div className="flex items-center gap-3">
-                    <CreditCard className="size-5 shrink-0 text-muted-foreground" />
-                    <p className="text-sm font-semibold text-muted-foreground">Card</p>
-                    <span className="ml-auto shrink-0 rounded-full bg-muted px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Coming soon
+                  <CreditCard className="size-5 shrink-0 text-foreground" />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold">Card</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Visa and Mastercard
                     </span>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Visa and Mastercard (coming soon)
-                  </p>
-                </div>
+                  </span>
+                  <ChevronRight className="ml-auto size-4 shrink-0 text-muted-foreground" />
+                </button>
 
                 <div
                   data-testid="method-card-digital-wallet"
@@ -607,7 +1005,13 @@ export function PaymentMethodScreen({
                     )}
                     {invoice.penalty_amount > 0 && (
                       <div className="flex justify-between gap-3">
-                        <dt className="text-muted-foreground">Penalty</dt>
+                        <dt className="flex items-center gap-1 text-muted-foreground">
+                          Penalty
+                          <InfoTip
+                            content="2% per month interest on the unpaid balance, applied after the due date."
+                            label="What the penalty covers"
+                          />
+                        </dt>
                         <dd className="text-right">
                           {formatPeso(invoice.penalty_amount)}
                         </dd>
@@ -627,7 +1031,11 @@ export function PaymentMethodScreen({
                     <div className="min-w-0">
                       <p className="text-xs text-muted-foreground">Paying with</p>
                       <p className="truncate text-sm font-semibold">
-                        {selectedMethod === "gcash" ? "GCash" : "QR Ph (scan QR)"}
+                        {selectedMethod === "gcash"
+                          ? "GCash"
+                          : selectedMethod === "card"
+                            ? "Card (Visa / Mastercard)"
+                            : "QR Ph (scan QR)"}
                       </p>
                     </div>
                     <button
@@ -640,6 +1048,29 @@ export function PaymentMethodScreen({
                     </button>
                   </div>
 
+                  {selectedMethod === "card" && (
+                    <CardForm
+                      ref={cardFormRef}
+                      userEmail={user?.email}
+                      onSubmit={startCard}
+                    />
+                  )}
+
+                  {/* Hidden once the payment resolves — the modal takes over. */}
+                  {cardProcessing && paymentResult === null && (
+                    <div
+                      data-testid="card-processing"
+                      aria-busy="true"
+                      className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground"
+                    >
+                      <Loader2 className="size-4 shrink-0 animate-spin" />
+                      <p>
+                        Payment processing — we&apos;ll confirm and email your
+                        receipt shortly.
+                      </p>
+                    </div>
+                  )}
+
                   {qr.phase === "active" && (
                     <p className="text-xs text-muted-foreground">
                       Your QR code is ready — scan it to complete the payment.
@@ -648,8 +1079,17 @@ export function PaymentMethodScreen({
 
                   <button
                     type="button"
-                    onClick={selectedMethod === "gcash" ? startGcash : startQrPh}
-                    disabled={busy || ewalletDisabled}
+                    onClick={
+                      selectedMethod === "card"
+                        ? () => cardFormRef.current?.submit()
+                        : selectedMethod === "gcash"
+                          ? startGcash
+                          : startQrPh
+                    }
+                    disabled={
+                      busy ||
+                      ewalletDisabled
+                    }
                     data-testid="pay-now"
                     className="flex w-full items-center justify-center gap-2 rounded-md border border-border bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
                   >
@@ -658,7 +1098,9 @@ export function PaymentMethodScreen({
                         <Loader2 className="size-4 animate-spin" />
                         {qr.phase === "starting"
                           ? "Starting payment…"
-                          : "Generating your QR code…"}
+                          : selectedMethod === "card"
+                            ? "Processing your card…"
+                            : "Generating your QR code…"}
                       </>
                     ) : (
                       <>Pay {formatPeso(invoice.total_amount)}</>
@@ -702,7 +1144,7 @@ export function PaymentMethodScreen({
                 </dl>
               </div>
 
-              {qr.phase === "idle" && (
+              {qr.phase === "idle" && selectedMethod !== "card" && (
                 <div className="flex items-center gap-3 rounded-xl border border-dashed border-border bg-card/60 p-4 text-sm text-muted-foreground">
                   <Clock className="size-4 shrink-0" />
                   <p>
@@ -788,7 +1230,13 @@ export function PaymentMethodScreen({
                   <p className="text-xs text-muted-foreground">{qr.message}</p>
                   <button
                     type="button"
-                    onClick={qr.flow === "gcash" ? startGcash : startQrPh}
+                    onClick={
+                      qr.flow === "card"
+                        ? () => setQr({ phase: "idle" })
+                        : qr.flow === "gcash"
+                          ? startGcash
+                          : startQrPh
+                    }
                     className="rounded-md border border-border bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
                   >
                     Try again
@@ -798,6 +1246,65 @@ export function PaymentMethodScreen({
             </aside>
           </div>
         </main>
+      </div>
+      </div>
+      {overlay}
+    </>
+  );
+}
+
+function SuccessModal({ onOK, email }: { onOK: () => void; email?: string }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div
+        data-testid="success-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Payment received"
+        className="flex w-full max-w-sm flex-col items-center gap-4 rounded-xl border border-border bg-card p-6 text-center shadow-xl animate-in fade-in zoom-in-95 duration-300"
+      >
+        <CheckCircle2 className="size-10 text-emerald-500" />
+        <div>
+          <p className="text-base font-semibold">Payment received</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Your confirmation and receipt are emailed to {email ?? "you"}.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onOK}
+          data-testid="success-ok"
+          autoFocus
+          className="w-full rounded-md border border-border bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+        >
+          OK
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ConfirmingModal() {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div
+        data-testid="confirming-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Payment confirmed"
+        className="flex w-full max-w-sm flex-col items-center gap-4 rounded-xl border border-border bg-card p-6 text-center shadow-xl animate-in fade-in zoom-in-95 duration-300"
+      >
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
+        <div>
+          <p className="text-base font-semibold">Payment confirmed with your provider</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            We&apos;re updating your account — your receipt will be emailed
+            shortly.
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            This usually takes a few seconds.
+          </p>
+        </div>
       </div>
     </div>
   );

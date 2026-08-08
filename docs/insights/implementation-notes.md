@@ -194,9 +194,13 @@ re-attach otherwise), timestamp-based recompute (tab-safe), expired → "Get a n
 `window.location.assign(next_action.redirect.url)`; 4-hr window, no countdown; return →
 pending banner + poll. Payment detection: 15s poll of `GET /api/invoices` while the screen
 is open (invoice leaves the list = webhook confirmed → "Payment received" panel). When the
-invoice is already gone on load (webhook beat the UI, e.g. GCash return),
+invoice is already gone on load (webhook beat the UI, e.g. GCash/3DS return),
 `GET /api/invoices/{id}` (`InvoiceController@show`, ownership-gated, any status)
-disambiguates: `paid` → "Payment received" panel, otherwise → "not available". E-wallet
+disambiguates: `paid` → "Payment received" panel; **403/404** → "not available" (the only
+definitive negatives); anything else — transient probe failures (network/429/5xx) or an
+unrecognized response shape — lands on a "checking your payment status" state that keeps
+polling until the webhook reports paid (a failed probe never renders the definitive
+dead-end; hit 2026-08-07 on the 3DS return). E-wallet
 disabled above ₱100,000 (card needed — coming soon). Card + Digital Wallet cards render
 disabled "Coming soon" (card form + Google Pay capability are later items).
 
@@ -213,6 +217,99 @@ redirect — the webhook is the source of truth** (15s poll + invoice-status fal
 flip to the "Payment received" panel). Refresh mid-review re-fetches (paid → paid panel;
 selection resets to the method step). No backend changes — reuses `/pay`, client-side
 attach, poll, and webhook.
+
+### 4. Card form — client-side PM creation + 3DS *(2026-08-07)*
+Card card enabled on the method step (Digital Wallet keeps "Coming soon"). Selecting Card
+advances to the review step, which renders the inline `CardForm` (Card Info: number
+formatted 4-groups ≤19 digits, expiry MM/YY, CVC 3–4; Billing: first/last name, address,
+address 2 + phone optional, city, ZIP — all required except the optional two — country
+fixed "Philippines", email prefilled read-only from the session). Validation runs on Pay
+press with inline `role=alert` errors (Luhn via `lib/card-utils.ts`, expiry end-of-month
+vs today, CVC length) — zero API calls until clean. `startCard`: `startPayment` →
+`createPaymentMethod("card", {details: {card_number, exp_month, exp_year, cvc}, billing:
+{name, email, phone?, address: {line1, line2?, city, postal_code, country: "PH"}}})` with
+the **public key** — card data never touches the Laravel backend, is never logged, and is
+never persisted (no sessionStorage for PANs; form resets on refresh/method switch by
+design) — then `attach` with `return_url`. Attach outcomes (docs-verified,
+payment-acceptance-cards): `awaiting_next_action` + `next_action.redirect.url` → 3DS
+redirect (`window.location.assign`); `processing`/`succeeded` → "Payment processing" note
++ the 15s poll/webhook resolve it; `awaiting_payment_method` → `last_payment_error`
+surfaced (declined card) with Try again keeping the form values. Return from 3DS uses the
+generic `?from=redirect` marker (legacy `?from=gcash` still accepted) → pending banner;
+**never mark paid on redirect — the webhook is the source of truth** (paid panel flips via
+poll/invoice-status fallback). **Redirect-return reliability (2026-08-07 hardening):**
+PayMongo strips the query string on redirect returns — the return page can land with no
+`id`/`from` — so before any redirect (`window.location.assign`) the flow writes the
+invoice id to `sessionStorage` (`gw-pending-invoice`, written in `startGcash`/`startCard`,
+consumed + cleared by the pay page when the URL has no `id`; URL id wins when present).
+The unconfirmed poll probes `getInvoice` directly (independent of the list call) so a
+single failed request can never wedge the retry, and an empty id renders not-payable
+without any API calls. Billing object also populates the webhook's payer identity
+(`payments.payer_*`). E-wallet cap > ₱100k now makes the bill **Card-only** (E-wallet card
+disabled + note, Card stays enabled). Test cards: `4343…4345` no-3DS success,
+`4120…0007` 3DS required, `4200…0018`/`4300…0017`/`5100…0198` declines. No backend
+changes (intent already allows `card`; 3DS 2.0 default `any`).
+
+**§4 addendum — redirect-return recovery + confirmed-payment feedback (2026-08-08):**
+the sessionStorage-only recovery above was still failing in real 3DS testing: the return
+landed on a **bare `/dashboard/pay`** (verified in the user's browser) with the invoice
+id unrecovered → the screen rendered the definitive "This bill isn't available" panel
+even though the webhook had paid the invoice. Root causes: (1) sessionStorage is
+**per-tab** — the 3DS round trip can end in a new tab/context where it is empty;
+(2) an empty/unidentifiable id rendered a *definitive* dead-end instead of an unknown
+state; (3) the tests mocked only `?id=X&from=redirect` / empty-query returns — never
+the real shapes — so the suite validated a false model of PayMongo's behavior.
+Fix: (a) new backend endpoint `POST /api/payments/intent-status`
+(`PaymentController@intentStatus`, auth + `throttle:30,1`) resolving
+`payment_intent_id` → invoice (ownership-gated; returns `paid` / `confirmed`
+[succeeded on PayMongo but webhook not yet credited, carries `invoice_id`] /
+`failed` / `processing` / `unknown` — an unresolvable intent is **never** 404, only
+`unknown`; 403 only for a foreign invoice; 502 on gateway failure). PayMongo's docs
+("Extract the `payment_intent_id` from the query parameters", quick-start +
+troubleshooting) confirm the intent id rides the return URL when params survive at
+all. (b) `pay/page.tsx` parses `payment_intent_id`/`status`; resolution order:
+numeric `id` → intent-status endpoint → pending marker → checking panel (never
+not-payable). Pending marker now writes **both** sessionStorage and localStorage
+(`{invoiceId, writtenAt}`, 1-h TTL, not cleared on read — StrictMode-remount safe;
+backend ownership guards whatever it recovers). (c) `payment-method.tsx`: empty id →
+checking panel (lazy-initialized); `paid`/`confirmed` → **immediate "Payment
+received"** panel (confirmed shows "confirmed with your payment provider, updating
+your account…" and polls `getInvoice` until the webhook credits, then flips to the
+email text); `failed` → clear "Payment didn't go through" panel with Try again
+(rebuilds the pay screen via the recovered invoice id); `processing`/`unknown`/5xx →
+checking + poll that re-resolves the intent. Not-payable now renders only for a
+definitive 403/404 on a *known* invoice id. Tests: backend
+`PaymentIntentStatusApiTest` (11) + 429-stale pin in `PayMongoServiceTest`; frontend
++16 (real return shapes, localStorage new-tab recovery, TTL, intent resolution
+paths). Backend hardening: `getStoredPaymentIntent` treats **only 404/410** as
+stale → fresh intent; other 4xx (429/401) throw → 502 — a live-but-rate-limited
+intent is never silently replaced (double-charge window). Known tradeoff: no
+per-user validation on the pending marker (a different user on a shared browser
+could recover an invoice they don't own → backend ownership returns 403/404 → the
+safe panels; TTL caps the window at 1 h).
+
+### 5. InfoTip — one consistent ⓘ tooltip/popover pattern *(2026-08-08)*
+Shared `src/components/ui/info-tip.tsx` per `docs/insights/frontend-design.md` (the
+seeded frontend-design doc): a single Radix **Popover** primitive controlled by
+`open`, with the hover path gated on **`pointerType === "mouse"`** — `pointerenter`
+opens after 200 ms (cancelled if the pointer leaves first), `pointerleave` closes
+after a 120 ms grace, and leaving into the portalled content (relatedTarget check)
+keeps it open; touch taps never fire the hover path (touch pointer events have
+pointerType `"touch"`), so Radix's native trigger click toggles, and outside-tap /
+`Escape` close via DismissableLayer — no matchMedia, no device-swap, no SSR/hydration
+branching. Content renders `role="tooltip"` in a `bg-popover` card (max-w-60, fade/zoom
+in-out) referenced from the trigger via `aria-describedby` while open; `onOpen/CloseAutoFocus`
+preventDefault keeps focus on the trigger; `aria-label` defaults "More information";
+empty/null content renders no trigger; timers cleared on unmount. Exposed
+`openDelayMs`/`closeDelayMs` (defaults 200/120) for tests. Wired into three spots as
+proof: CVC "3-digit code on the back of your card" (card form, via a `labelExtra` slot
+on the field helper), Penalty rows (bill card + review step) "2% per month interest on
+the unpaid balance, applied after the due date." Tests: `info-tip.test.tsx` (11:
+hover-open delay + leave-before-delay never opens + trigger→content travel stays open +
+touch toggle/outside/Escape + aria-describedby wiring + ReactNode + empty content +
+unmount timer cleanup). **Testing constraint learned:** vitest fake timers hang with
+React 19 + happy-dom (happy-dom has no `MessageChannel` → React scheduler falls back to
+faked `setTimeout` → `act` never flushes); InfoTip tests use real timers + small delays.
 
 ## Admin Panel (Filament)
 
@@ -346,7 +443,13 @@ renders a stored foreign-host URL) — 2026-08-07.
 The custom bell must extend the panel-aware `Filament\Livewire\DatabaseNotifications`
 (base returns a null trigger → invisible bell, regression hit 2026-08-07); the Hub's
 sidebar item shows an unread-count badge (`getNavigationBadge`) alongside the topbar bell
-— 2026-08-07.
+— 2026-08-07. **Regression fix (2026-08-07):** the `notificationClosed` listener's
+parameter MUST stay named `$id` — the browser forwards the window CustomEvent detail
+`{id: …}` as a NAMED argument, and Livewire container-autowires on a name mismatch
+(a required `array|string $payload` param then threw `BindingResolutionException` on any
+toast close / bell X click, e.g. right after "Run Billing"). The parameter name is now
+pinned by a reflection regression test; the array branch remains for Livewire's test
+dispatcher (positional form).
 
 ### Ops notes (Notifications)
 - Worker-generated notification URLs have no request host and fall back to `APP_URL` —
