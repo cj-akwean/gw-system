@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import {
   ApiError,
   buildReturnUrl,
@@ -140,7 +141,6 @@ export function PaymentMethodScreen({
       : { status: "loading" }
   );
   const [qr, setQr] = useState<QrState>({ phase: "idle" });
-  const pendingBanner = returnedFromRedirect;
   const [attempt, setAttempt] = useState(0);
   // Success feedback is an overlay, never a screen swap — the pay screen stays
   // visible underneath (no white flash). confirming: PayMongo says the payment
@@ -149,9 +149,11 @@ export function PaymentMethodScreen({
     status: "paid";
     confirming: boolean;
   } | null>(null);
+  // Consecutive failed confirming-polls — after 2+, the modal hints that the
+  // connection is having trouble; it never flips the outcome on network errors.
+  const [confirmingNetworkFailures, setConfirmingNetworkFailures] = useState(0);
   const [step, setStep] = useState<"method" | "review">("method");
   const [selectedMethod, setSelectedMethod] = useState<"qrph" | "gcash" | "card" | null>(null);
-  const [cardProcessing, setCardProcessing] = useState(false);
   const cardFormRef = useRef<CardFormHandle>(null);
   const invoiceRef = useRef<PortalInvoice | null>(null);
   // Invoice id recovered from the payment-intent status response (paid /
@@ -163,21 +165,17 @@ export function PaymentMethodScreen({
   // When it's gone, it may have just been paid (webhook beat the UI, e.g.
   // returning from the GCash/3DS redirect) — check the invoice's own status.
   //
-  // A redirect return may carry NO invoice id at all (PayMongo strips the
-  // query). In that case the payment_intent_id in the URL is resolved
-  // server-side; an unresolvable return must never render a definitive
-  // "not available" — only an unknown state that keeps checking.
+  // A redirect return with an intent id is AUTHORITATIVE: resolve it first,
+  // whether or not the invoice is still in the unpaid list (the webhook may
+  // simply not have credited yet). This makes GCash, card 3DS, and the
+  // frictionless card share ONE outcome flow — paid → success modal,
+  // confirmed/processing → confirming modal, failed → failed panel. (An
+  // intent id only ever reaches this component from the return URL or the
+  // pending record — both are return evidence.)
   useEffect(() => {
     let cancelled = false;
 
-    if (invoiceId === "") {
-      if (paymentIntentId === null) {
-        // No bill selected and no intent to resolve — nothing to fetch. The
-        // screen already renders the checking panel (lazy-initialized); it is
-        // never a definitive "not available".
-        return;
-      }
-
+    if (paymentIntentId !== null) {
       resolveIntentStatus(paymentIntentId)
         .then((res) => {
           if (cancelled) return;
@@ -189,7 +187,7 @@ export function PaymentMethodScreen({
             setPaymentResult({ status: "paid", confirming: false });
             return;
           }
-          if (res.status === "confirmed") {
+          if (res.status === "confirmed" || res.status === "processing") {
             // Money moved on PayMongo's side; the webhook credit may lag.
             setPaymentResult({ status: "paid", confirming: true });
             return;
@@ -198,7 +196,7 @@ export function PaymentMethodScreen({
             setScreen({ status: "failed" });
             return;
           }
-          // processing / unknown — keep checking, the webhook may still land.
+          // unknown — keep checking, the webhook may still land.
           setScreen({ status: "unconfirmed" });
         })
         .catch((err) => {
@@ -215,6 +213,13 @@ export function PaymentMethodScreen({
       return () => {
         cancelled = true;
       };
+    }
+
+    if (invoiceId === "") {
+      // No bill selected and no intent to resolve — nothing to fetch. The
+      // screen already renders the context-missing panel (lazy-initialized);
+      // it is never a definitive "not available".
+      return;
     }
 
     getInvoices()
@@ -275,11 +280,6 @@ export function PaymentMethodScreen({
       cancelled = true;
     };
   }, [invoiceId, paymentIntentId, attempt, logout, router]);
-
-  // Coming back from the GCash/3DS redirect? The URL keeps its params —
-  // removing them here destroyed the return context (regression 2026-08-08:
-  // the redirect could land on a bare /dashboard/pay with no way to recover
-  // the payment). The return banner is harmless on refresh.
 
   // Poll for payment completion while the screen is open: once the invoice
   // leaves the unpaid list, the webhook has confirmed the payment. The
@@ -367,10 +367,12 @@ export function PaymentMethodScreen({
     if (confirmingPaid && resolvedInvoiceId !== null) {
       // PayMongo confirmed the charge but the webhook hasn't credited the
       // invoice yet — keep polling until it reports paid, then drop the
-      // confirming note.
+      // confirming note. Network failures never flip the outcome — only a
+      // fresh counter keeps the hint honest.
       const check = () => {
         getInvoice(resolvedInvoiceId)
           .then((inv) => {
+            setConfirmingNetworkFailures(0);
             if (inv.status === "paid") {
               setPaymentResult({ status: "paid", confirming: false });
             }
@@ -379,7 +381,9 @@ export function PaymentMethodScreen({
             const apiErr = err as ApiError;
             if (apiErr.status === 401) {
               logout().then(() => router.replace("/auth"));
+              return;
             }
+            setConfirmingNetworkFailures((n) => n + 1);
           });
       };
 
@@ -403,8 +407,7 @@ export function PaymentMethodScreen({
     router,
   ]);
 
-  const { remaining, expired } = useCountdown(
-    qr.phase === "active" && qr.deadline !== null ? qr.deadline : null
+  const { remaining, expired } = useCountdown(    qr.phase === "active" && qr.deadline !== null ? qr.deadline : null
   );
 
   const qrExpired = qr.phase === "active" && qr.deadline !== null && expired;
@@ -557,35 +560,42 @@ export function PaymentMethodScreen({
         }
 
         if (attached.status === "succeeded" || attached.status === "processing") {
-          // Payment is moving (no 3DS needed). The processing state disables
-          // the whole flow (no double-pay) and shows visible feedback; the
-          // 15s poll + webhook take over the outcome. For an already-succeeded
-          // charge, resolve the intent immediately so the confirming/success
-          // modal appears instead of a silent wait.
-          setCardProcessing(true);
-          setQr({ phase: "idle" });
+          // Payment is moving (no 3DS needed). Persist the intent for refresh
+          // recovery and resolve it immediately — the outcome modal family
+          // (confirming → success) takes over. qr stays "attaching" (busy)
+          // until the outcome lands, so Pay cannot be re-clicked.
+          writePendingInvoice(invoiceId, {
+            paymentIntentId: info.payment_intent_id,
+            method: "card",
+          });
 
-          if (attached.status === "succeeded") {
-            resolveIntentStatus(info.payment_intent_id)
-              .then((res) => {
-                if (res.status === "paid") {
-                  clearPendingInvoice();
-                  setPaymentResult({ status: "paid", confirming: false });
-                  return;
+          resolveIntentStatus(info.payment_intent_id)
+            .then((res) => {
+              setQr({ phase: "idle" });
+              if (res.status === "paid") {
+                clearPendingInvoice();
+                setPaymentResult({ status: "paid", confirming: false });
+                return;
+              }
+              if (res.status === "confirmed" || res.status === "processing") {
+                if (res.invoice_id != null) {
+                  setResolvedInvoiceId(res.invoice_id);
                 }
-                if (res.status === "confirmed") {
-                  if (res.invoice_id != null) {
-                    setResolvedInvoiceId(res.invoice_id);
-                  }
-                  setPaymentResult({ status: "paid", confirming: true });
-                }
-                // failed/processing/unknown — keep the processing note; the
-                // poll resolves the outcome.
-              })
-              .catch(() => {
-                // keep the processing note; the poll resolves the outcome
-              });
-          }
+                setPaymentResult({ status: "paid", confirming: true });
+                return;
+              }
+              if (res.status === "failed") {
+                setScreen({ status: "failed" });
+                return;
+              }
+              // unknown — keep checking, the webhook may still land.
+              setScreen({ status: "unconfirmed" });
+            })
+            .catch(() => {
+              setQr({ phase: "idle" });
+              // Transient — the unconfirmed checking state keeps polling.
+              setScreen({ status: "unconfirmed" });
+            });
 
           return;
         }
@@ -621,10 +631,12 @@ export function PaymentMethodScreen({
   // strand the user before the success confirmation appears (a "back" click
   // there lost the modal forever — the paid bill has no Pay button to return
   // to it; a refresh re-resolves instead).
-  const overlay =
+    const overlay =
     paymentResult !== null
       ? paymentResult.confirming
-        ? <ConfirmingModal />
+        ? <ConfirmingModal
+            connectionTrouble={confirmingNetworkFailures >= 2}
+          />
         : <SuccessModal onOK={() => router.push("/dashboard")} email={user?.email} />
       : null;
 
@@ -791,12 +803,7 @@ export function PaymentMethodScreen({
 
   const invoice = screen.invoice;
   const capExceeded = invoice.total_amount > E_WALLET_MAX_TOTAL;
-  // cardProcessing locks the whole flow — the payment already moved, so Pay
-  // and method switching must not be clickable again (double-pay guard).
-  const busy =
-    qr.phase === "starting" ||
-    qr.phase === "attaching" ||
-    cardProcessing;
+  const busy = qr.phase === "starting" || qr.phase === "attaching";
   const ewalletDisabled = capExceeded || busy;
 
   return (
@@ -843,22 +850,6 @@ export function PaymentMethodScreen({
                   {invoice.service_connection.registered_name}
                 </p>
               </div>
-
-              {/* The "Payment in progress" banner must not contradict the
-                  success modal — hide it once the payment resolves. */}
-              {pendingBanner && paymentResult === null && (
-                <div
-                  data-testid="pending-banner"
-                  className="flex items-start gap-3 rounded-xl border border-border bg-card p-4 text-sm"
-                >
-                  <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin text-muted-foreground" />
-                  <p className="text-muted-foreground">
-                    Payment in progress — we&apos;re checking with the payment
-                    provider. Your receipt will be emailed once it&apos;s
-                    confirmed.
-                  </p>
-                </div>
-              )}
 
               {step === "method" && (
                 <div className="space-y-3">
@@ -1056,21 +1047,6 @@ export function PaymentMethodScreen({
                     />
                   )}
 
-                  {/* Hidden once the payment resolves — the modal takes over. */}
-                  {cardProcessing && paymentResult === null && (
-                    <div
-                      data-testid="card-processing"
-                      aria-busy="true"
-                      className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground"
-                    >
-                      <Loader2 className="size-4 shrink-0 animate-spin" />
-                      <p>
-                        Payment processing — we&apos;ll confirm and email your
-                        receipt shortly.
-                      </p>
-                    </div>
-                  )}
-
                   {qr.phase === "active" && (
                     <p className="text-xs text-muted-foreground">
                       Your QR code is ready — scan it to complete the payment.
@@ -1174,11 +1150,14 @@ export function PaymentMethodScreen({
                   data-testid="qr-panel"
                   className="flex flex-col items-center gap-4 rounded-xl border border-border bg-card p-6 text-center shadow-sm"
                 >
-                  <img
+                  <Image
                     src={qr.imageUrl}
                     alt="QR code to scan and pay"
                     data-testid="qr-image"
                     className="h-56 w-56 rounded-lg"
+                    unoptimized
+                    width={224}
+                    height={224}
                   />
                   <div className="space-y-1">
                     <p className="text-sm font-semibold">Scan to pay</p>
@@ -1284,7 +1263,7 @@ function SuccessModal({ onOK, email }: { onOK: () => void; email?: string }) {
   );
 }
 
-function ConfirmingModal() {
+function ConfirmingModal({ connectionTrouble }: { connectionTrouble?: boolean }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div
@@ -1305,6 +1284,11 @@ function ConfirmingModal() {
             This usually takes a few seconds.
           </p>
         </div>
+        {connectionTrouble && (
+          <p data-testid="connection-trouble" className="text-xs font-medium text-muted-foreground">
+            Having trouble reaching the server — retrying…
+          </p>
+        )}
       </div>
     </div>
   );

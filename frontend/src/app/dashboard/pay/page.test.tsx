@@ -185,6 +185,18 @@ describe("PayPage guard", () => {
     expect(await screen.findByText(/pay-screen 9/)).toBeInTheDocument();
   });
 
+  it("recovers the pending intent id when the url has an id but no intent (frictionless refresh)", async () => {
+    // A frictionless card refresh keeps ?id=9 but the intent id only lives in
+    // the pending record — it must be recovered per-field.
+    pendingMarker("9", 0, "pi_stored_2");
+    mockSearchParams = () => new URLSearchParams("id=9");
+
+    render(<PayPage />);
+
+    expect(await screen.findByText(/pay-screen 9 intent-pi_stored_2/)).toBeInTheDocument();
+    expect(screen.getByText(/redirect-return/)).toBeInTheDocument();
+  });
+
   it("flags a redirect return (3DS / GCash)", async () => {
     mockSearchParams = () => new URLSearchParams("id=7&from=redirect");
 

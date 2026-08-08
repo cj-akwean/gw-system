@@ -92,49 +92,29 @@ cd frontend && npm run dev
 
 ## Workflow Rules
 
-### 1. One step at a time
-- Never implement more than **one** checklist item per work session
-- Before writing code, state the single task and confirm it matches an unchecked item in `ARCHITECTURE.md`'s Implementation Status
-
-### 2. Context / compaction aware
-- If token usage nears the limit, proactively warn and suggest wrapping up + committing
-- After compaction, re-read `AGENTS.md` and the Implementation Status section before continuing
-
-### 3. Verify before and after
+### 1. Verify before and after
 - Before starting: scan actual codebase against the Implementation Status checklist — don't trust checkboxes alone
 - After finishing: update the relevant checkbox in `ARCHITECTURE.md` in the same commit
 - Never introduce a package/pattern not reflected in `ARCHITECTURE.md` without flagging first
 
-### 4. Always guide next step
-After finishing a task, tell the user:
-1. What was changed (plain language)
-2. What to manually check/click/test to confirm it works
-3. The single next recommended step from the unchecked items
-
-### 5. Pre-commit checks
+### 2. Pre-commit checks
 Run before suggesting a commit:
 - **Secret scan**: check staged files for API keys, tokens, passwords. Confirm `.env` is in `.gitignore` and NOT staged
-- **Sanity check**: `php -d memory_limit=512M vendor/phpunit/phpunit/phpunit` (or `php -l` on changed files) + `php artisan route:list` if routes changed. **Why not plain `php artisan test`:** the full suite OOMs at the default 128M `memory_limit` (dompdf font parsing in the email tests → PHPUnit reports "Premature end of PHP process"), and `artisan test` does NOT propagate `-d` to PHPUnit. The direct phpunit binary with the `-d` flag is the reliable invocation (282/282 green).
+- **Sanity check**: `php -d memory_limit=512M vendor/phpunit/phpunit/phpunit` (or `php -l` on changed files) + `php artisan route:list` if routes changed. **Why not plain `php artisan test`:** the full suite OOMs at the default 128M `memory_limit` (dompdf font parsing in the email tests → PHPUnit reports "Premature end of PHP process"), and `artisan test` does NOT propagate `-d` to PHPUnit. The direct phpunit binary with the `-d` flag is the reliable invocation (282/282 green). **Exception**: small tasks — run only the touched test file (`--filter`) instead of the full suite.
 - If no test suite exists for the touched area, say so explicitly
 
-### 6. Commit cadence — NEVER commit without approval, suggestion only at the bottom
-- NEVER run `git commit`/`push`/`amend` unless the user explicitly asks. No exceptions, no "I'll commit this for you", even for small fixes
-- Commit suggestions appear ONLY in the last line/block at the bottom of a response — never mid-task
-- When only small/unverified changes remain → advise WAITING: small bugs stay undetected until a real scenario exercises them; don't rush a commit of code that hasn't been run/verified
-- Suggest a commit only after a **meaningfully complete, working** checklist item
-- Not after every small edit, and not after multiple features bundled together
-
-### 7. Use the knowledge graph, not just grep
+### 3. Use the knowledge graph, not just grep
 - Before editing shared code (models, services, anything with callers), run `graphify query "<term>"` first to see what depends on it — the graph knows relationships grep can't
 - If `graphify query` returns nothing useful, fall back to grep — don't force it
 - After any significant structural change (new models, renamed services, moved files), re-run `graphify . --update` to refresh the graph incrementally — no `--no-viz`, the graph is small enough to render
 - `backend/vendor` and `backend/public/js` are excluded via `.graphifyignore`; the graph covers project code only, so vendor questions go to grep
 - If `--update` ever reports thousands of changed files, the previous run's `graphify-out/manifest.json` baseline is stale — verify it covers the full corpus before re-extracting (don't blindly re-extract vendor churn)
 - Treat `graphify-out/GRAPH_REPORT.md` as a sanity check against `ARCHITECTURE.md` — if they disagree about what exists, flag it
+- **Exception**: small tasks (isolated changes like lint fixes, new buttons, config) — skip graphify
 
-### 8. Documentation workflow (product-decisions.md + session summaries)
+### 4. Documentation workflow (product-decisions.md + session summaries)
 
-This project keeps several kinds of running documentation, in addition to ARCHITECTURE.md's checklist. All are living documents — append to them, don't rewrite history.
+This project keeps several kinds of running documentation, in addition to ARCHITECTURE.md's checklist. All are living documents — append to them, don't rewrite history. **Exception**: small tasks (CLAUDE.md Rule 6) skip the documentation workflow entirely — no session summary, no product-decisions entry. Only significant tasks (≥50 lines, multi-file, money-critical) trigger this rule.
 
 **`docs/insights/implementation-notes.md`** — the detail archive for ARCHITECTURE.md's Implementation Status checklist (same sections, `§N` items). When a checklist item is completed, its full implementation note goes HERE as a new `###` item — ARCHITECTURE.md bullets stay one-liners with `(details: … → §Section-N)` pointers.
 
@@ -147,34 +127,10 @@ Format: mirror the existing structure — **Question asked** → **Answer + reas
 
 **`docs/summary/YYYY-MM-DD-topic.md`** — one file per work session. Write this:
 - At the end of any session that completed real work (not every tiny edit — one meaningful session = one file)
-- Proactively **before** hitting the ~80% context/compaction threshold (Rule #2), so nothing gets lost to summarization
+- Proactively **before** hitting the ~80% context/compaction threshold (CLAUDE.md Rule 8), so nothing gets lost to summarization
 - Must include: goal, files created/modified, bugs found & fixed (with root cause, not just symptom), test results (what was actually verified vs. not), known gaps / next step, git commit hash
 
 **At the start of every session**, read the most recent `docs/summary/*.md` file and skim `docs/insights/product-decisions.md` — not just `ARCHITECTURE.md`/`AGENTS.md` — before continuing work. The summary carries context ARCHITECTURE.md's checklist alone doesn't (what was tried, what broke, what's still unverified).
 
 **Never let these silently go stale.** If a session ends without a summary being written, that's a rule violation worth flagging to the user, not skipping quietly.
 
-### 9. Batch verification — test once, near the end
-- Do NOT run the test suite after every file edit. Implement the whole checklist item
-  first, then run the full suite once, close to the end (right before Rule 5 pre-commit
-  checks), so all breakages surface in a single pass instead of per edit. Per-edit runs
-  cost more time than they save and test half-built code.
-- Applies to both suites: `npm test` (frontend Vitest) and the phpunit invocation in
-  Rule 5 (backend).
-- Exceptions: tests themselves are the task; the user explicitly asks for a
-  mid-implementation check.
-- Finished-but-unverified work mid-session is fine — record it as unverified in the
-  session summary (Rule 8) and let the end-of-implementation batch run catch it.
-
-### 10. Responsive rule — mobile-first, verified at tablet AND desktop
-- All customer-facing frontend work is **mobile-first**: design the phone layout first, then
-  extend it for tablet (≥768px / `md:`) and desktop (≥1024px / `lg:`). A screen is not done
-  until it has been laid out and visually verified at all three widths.
-- Never hard-cap the page at a phone width (`max-w-md` alone) — use fluid containers that
-  widen (`max-w-md md:max-w-4xl lg:max-w-5xl`) and multi-column grids at larger breakpoints
-  (e.g. the bills list is 1-col → 2-col (`sm:`) → 3-col (`lg:`)). The old phone-column-with-
-  dead-space dashboard was the anti-pattern that spawned this rule.
-- Money flows (payment screens) follow the same rule: stacked single column on mobile,
-  two-column (summary + QR/actions) at `lg:`.
-- Every frontend session's manual verification must include a viewport pass: phone (~390px),
-  tablet (~768px), desktop (~1280px), and the result noted in the session summary.

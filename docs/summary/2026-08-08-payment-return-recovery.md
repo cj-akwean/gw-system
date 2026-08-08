@@ -89,6 +89,39 @@ recovery addendum), `docs/insights/implementation-notes.md` §4 addendum, this s
 
 NOT committed (per project rules).
 
+## Addendum 8 — One unified payment-outcome flow + refresh/connection-loss resilience (same day)
+
+**Goal (user ask):** every payment shares one consistent success process — confirming
+modal (no escape) → success modal with OK → dashboard — for card, 3DS, GCash, and the
+frictionless path alike.
+
+**Changes (`payment-method.tsx`, `pay/page.tsx` + tests):**
+- **Intent resolution is authoritative and first:** any visit carrying a
+  `payment_intent_id` (URL param or pending record) resolves server-side before the
+  unpaid-list path — so a GCash/3DS return that lands before the webhook credits shows
+  the confirming modal, never the interactive pay screen. `processing` intent now maps to
+  the confirming modal (was the unconfirmed checking panel).
+- **Frictionless card (`succeeded` or `processing` attach):** writes the pending record
+  (intent id + method) and resolves immediately → confirming/success modal; the flow
+  stays `busy` until the outcome lands (no double-pay; the modal's backdrop also blocks
+  the screen). The old `cardProcessing` spinner panel and the "Payment in progress"
+  pending banner are removed (the modal replaces both).
+- **Refresh resilience:** the pay page reads the pending record whenever the URL lacks
+  `payment_intent_id` too (per-field precedence — a frictionless refresh keeps `?id=X`
+  but must recover the intent from storage); the clear-on-id-visit effect is gone (TTL +
+  paid-clear guard staleness). Refresh during ANY outcome modal re-mounts into the same
+  modal family.
+- **Connection loss:** the confirming poll never flips the outcome on network errors;
+  after 2 consecutive failures the modal shows "Having trouble reaching the server —
+  retrying…", cleared on the next success. Server-side (webhook job + receipt email) is
+  unaffected by browser connectivity.
+- Tests: processing → confirming modal; redirect-return-with-unpaid-invoice+intent →
+  confirming modal (not the ready screen); frictionless processing → confirming +
+  pending written; connection-loss → modal persists + hint → recovers to success;
+  page recovers the pending intent when the URL has id but no intent. Frontend 123/123,
+  backend 512/512, build static, lint clean. (The one test-authored quirk: React 19
+  flushes microtask-driven state outside `act`, so the hint assertion awaits `vi.waitFor`.)
+
 ## Addendum 7 — Confirming modal can no longer strand the success confirmation (same day)
 
 **Symptom:** clicking "Back to my bills" inside the confirming modal navigated away mid-

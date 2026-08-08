@@ -3,7 +3,6 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  clearPendingInvoice,
   readPendingInvoice,
   type PendingInvoice,
 } from "@/lib/api";
@@ -49,20 +48,14 @@ function PayPageContent() {
   // sessionStorage OR localStorage, whichever carries it. Read once at mount
   // (the URL is committed by the time the page renders); the marker expires
   // after an hour and is not cleared on read, so a StrictMode remount cannot
-  // lose the recovery.
+  // lose the recovery. Consulted per-field: whenever the URL lacks id OR
+  // payment_intent_id — a frictionless card refresh keeps id=X in the URL but
+  // must still recover the intent id from storage.
   const [pending] = useState<PendingInvoice | null>(() =>
-    idParam === null && typeof window !== "undefined"
+    (idParam === null || paymentIntentParam === null) && typeof window !== "undefined"
       ? readPendingInvoice()
       : null
   );
-
-  useEffect(() => {
-    if (idParam !== null) {
-      // A visit that carries its own id is not a return — drop any pending
-      // marker left behind by an earlier, interrupted payment.
-      clearPendingInvoice();
-    }
-  }, [idParam]);
 
   const invoiceId = idParam ?? pending?.invoiceId ?? "";
   const paymentIntentId = paymentIntentParam ?? pending?.paymentIntentId ?? null;

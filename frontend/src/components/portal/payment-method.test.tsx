@@ -271,21 +271,20 @@ describe("PaymentMethodScreen", () => {
     expect(mockGetInvoice).toHaveBeenCalledWith(1);
   });
 
-  it("keeps checking while the intent is still processing, then resolves to paid", async () => {
+  it("shows the confirming modal while the intent is processing, then resolves to paid", async () => {
     vi.useFakeTimers();
-    mockResolveIntentStatus
-      .mockResolvedValueOnce({ status: "processing" })
-      .mockResolvedValueOnce({ status: "paid", invoice_id: 1 });
+    mockResolveIntentStatus.mockResolvedValue({ status: "processing", invoice_id: 1 });
+    mockGetInvoice.mockResolvedValue(invoice({ id: 1, status: "paid" }));
 
     render(<PaymentMethodScreen invoiceId="" paymentIntentId="pi_1" />);
 
     await vi.waitFor(() =>
-      expect(screen.getByTestId("unconfirmed-panel")).toBeInTheDocument()
+      expect(screen.getByTestId("confirming-modal")).toBeInTheDocument()
     );
     expect(screen.queryByText(/isn't available for payment/i)).not.toBeInTheDocument();
 
     act(() => {
-      vi.advanceTimersByTime(15_000);
+      vi.advanceTimersByTime(5_000);
     });
 
     await vi.waitFor(() =>
@@ -747,39 +746,76 @@ describe("PaymentMethodScreen", () => {
     });
   });
 
-  it("shows a pending banner when returning from a redirect (3DS / GCash)", async () => {
+  it("shows the confirming modal on a redirect return while the webhook lags", async () => {
+    vi.useFakeTimers();
+    mockResolveIntentStatus.mockResolvedValue({ status: "confirmed", invoice_id: 1 });
+    mockGetInvoice.mockResolvedValue(invoice({ id: 1, status: "paid" }));
+
+    // The invoice is still unpaid in the list (webhook not credited yet) —
+    // the intent resolution must still win and show the confirming modal,
+    // never the interactive pay screen.
     mockGetInvoices.mockResolvedValue([invoice()]);
 
-    render(<PaymentMethodScreen invoiceId="1" returnedFromRedirect />);
-
-    expect(await screen.findByTestId("pending-banner")).toBeInTheDocument();
-  });
-
-  it("hides the pending banner once the payment resolves", async () => {
-    vi.useFakeTimers();
-    mockGetInvoices
-      .mockResolvedValueOnce([invoice()])
-      .mockResolvedValueOnce([]);
-
-    render(<PaymentMethodScreen invoiceId="1" returnedFromRedirect />);
-    await vi.waitFor(() =>
-      expect(screen.getByTestId("pending-banner")).toBeInTheDocument()
+    render(
+      <PaymentMethodScreen
+        invoiceId="1"
+        paymentIntentId="pi_1"
+        returnedFromRedirect
+      />
     );
 
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("confirming-modal")).toBeInTheDocument()
+    );
+    expect(screen.queryByTestId("method-card-ewallet")).not.toBeInTheDocument();
+
     act(() => {
-      vi.advanceTimersByTime(15_000);
+      vi.advanceTimersByTime(5_000);
     });
 
     await vi.waitFor(() =>
       expect(screen.getByTestId("success-modal")).toBeInTheDocument()
     );
-    expect(screen.queryByTestId("pending-banner")).not.toBeInTheDocument();
   });
 
-  it("does not show a pending banner on a normal visit", async () => {
-    await renderReady();
+  it("keeps the confirming modal through connection loss and recovers", async () => {
+    vi.useFakeTimers();
+    mockResolveIntentStatus.mockResolvedValue({ status: "confirmed", invoice_id: 1 });
+    // Reject until overridden — the poll must never flip the outcome on
+    // network errors, and the hint appears after two consecutive failures.
+    mockGetInvoice.mockRejectedValue(
+      Object.assign(new Error("net down"), { status: 0, message: "net down" })
+    );
 
-    expect(screen.queryByTestId("pending-banner")).not.toBeInTheDocument();
+    render(<PaymentMethodScreen invoiceId="" paymentIntentId="pi_1" />);
+
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("confirming-modal")).toBeInTheDocument()
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+
+    // Network errors never flip the outcome — after two failures the modal
+    // hints at the connection problem and keeps waiting.
+    expect(screen.getByTestId("confirming-modal")).toBeInTheDocument();
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("connection-trouble")).toBeInTheDocument()
+    );
+
+    mockGetInvoice.mockResolvedValue(invoice({ id: 1, status: "paid" }));
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("success-modal")).toBeInTheDocument()
+    );
+    expect(screen.queryByTestId("connection-trouble")).not.toBeInTheDocument();
   });
 
   it("shows the paid panel once the invoice leaves the unpaid list", async () => {
@@ -996,7 +1032,7 @@ describe("PaymentMethodScreen", () => {
     ).toBe("5100 0000 0000 0198");
   });
 
-  it("shows the processing note when the card needs no 3DS", async () => {
+  it("shows the confirming modal when a no-3DS charge is still processing", async () => {
     mockStartPayment.mockResolvedValue(intentInfo);
     mockCreatePaymentMethod.mockResolvedValue("pm_card_1");
     mockAttachPaymentMethod.mockResolvedValue({
@@ -1006,6 +1042,7 @@ describe("PaymentMethodScreen", () => {
       expiresAt: null,
       lastPaymentError: null,
     });
+    mockResolveIntentStatus.mockResolvedValue({ status: "processing", invoice_id: 1 });
 
     await renderReady();
     fireEvent.click(screen.getByTestId("method-card-card"));
@@ -1040,11 +1077,19 @@ describe("PaymentMethodScreen", () => {
 
     fireEvent.click(screen.getByTestId("pay-now"));
 
-    expect(await screen.findByTestId("card-processing")).toBeInTheDocument();
+    await vi.waitFor(() =>
+      expect(mockResolveIntentStatus).toHaveBeenCalledWith("pi_1")
+    );
     expect(assignSpy).not.toHaveBeenCalled();
-    // The processing state locks the flow — no double-pay.
-    expect(screen.getByTestId("pay-now")).toBeDisabled();
-    expect(mockResolveIntentStatus).not.toHaveBeenCalled();
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("confirming-modal")).toBeInTheDocument()
+    );
+    expect(screen.queryByTestId("card-processing")).not.toBeInTheDocument();
+    // The pending record carries the intent so a refresh recovers the modal.
+    expect(mockWritePendingInvoice).toHaveBeenCalledWith("1", {
+      paymentIntentId: "pi_1",
+      method: "card",
+    });
   });
 
   it("locks the flow and confirms a frictionless succeeded charge immediately", async () => {
@@ -1098,7 +1143,11 @@ describe("PaymentMethodScreen", () => {
     await vi.waitFor(() =>
       expect(screen.getByTestId("confirming-modal")).toBeInTheDocument()
     );
-    expect(screen.getByTestId("pay-now")).toBeDisabled();
+    // The modal's backdrop covers the pay screen — nothing is clickable.
+    expect(mockWritePendingInvoice).toHaveBeenCalledWith("1", {
+      paymentIntentId: "pi_1",
+      method: "card",
+    });
   });
 
   it("shows the success modal right away when a frictionless charge is already credited", async () => {
