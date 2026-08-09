@@ -126,6 +126,10 @@ export async function createLink(
   return res.json();
 }
 
+export async function unlinkApi(linkId: number | string): Promise<void> {
+  await authFetch(`/api/links/${linkId}`, { method: "DELETE" });
+}
+
 export async function logoutApi(): Promise<void> {
   const token = getToken();
   if (!token) return;

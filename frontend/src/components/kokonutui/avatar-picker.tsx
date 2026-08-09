@@ -13,288 +13,18 @@
 import { Check, ChevronRight, User2 } from "lucide-react";
 import type { Variants } from "motion/react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import type { ReactNode } from "react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { AVATARS, AVATAR_RGB, getAvatar, type Avatar } from "@/lib/avatars";
 import { cn } from "@/lib/utils";
-
-interface Avatar {
-  id: number;
-  svg: ReactNode;
-  alt: string;
-}
-
-// RGB values for the per-avatar color ring on the stage
-const AVATAR_RGB: Record<number, string> = {
-  1: "255, 0, 91",
-  2: "255, 125, 16",
-  3: "255, 0, 91",
-  4: "137, 252, 179",
-};
-
-const avatars: Avatar[] = [
-  {
-    id: 1,
-    svg: (
-      <svg
-        aria-label="Avatar 1"
-        fill="none"
-        height="40"
-        role="img"
-        viewBox="0 0 36 36"
-        width="40"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <title>Avatar 1</title>
-        <mask
-          height="36"
-          id=":r111:"
-          maskUnits="userSpaceOnUse"
-          width="36"
-          x="0"
-          y="0"
-        >
-          <rect fill="#FFFFFF" height="36" rx="72" width="36" />
-        </mask>
-        <g mask="url(#:r111:)">
-          <rect fill="#ff005b" height="36" width="36" />
-          <rect
-            fill="#ffb238"
-            height="36"
-            rx="6"
-            transform="translate(9 -5) rotate(219 18 18) scale(1)"
-            width="36"
-            x="0"
-            y="0"
-          />
-          <g transform="translate(4.5 -4) rotate(9 18 18)">
-            <path
-              d="M15 19c2 1 4 1 6 0"
-              fill="none"
-              stroke="#000000"
-              strokeLinecap="round"
-            />
-            <rect
-              fill="#000000"
-              height="2"
-              rx="1"
-              stroke="none"
-              width="1.5"
-              x="10"
-              y="14"
-            />
-            <rect
-              fill="#000000"
-              height="2"
-              rx="1"
-              stroke="none"
-              width="1.5"
-              x="24"
-              y="14"
-            />
-          </g>
-        </g>
-      </svg>
-    ),
-    alt: "Avatar 1",
-  },
-  {
-    id: 2,
-    svg: (
-      <svg
-        aria-label="Avatar 2"
-        fill="none"
-        height="40"
-        role="img"
-        viewBox="0 0 36 36"
-        width="40"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <title>Avatar 2</title>
-        <mask
-          height="36"
-          id=":R4mrttb:"
-          maskUnits="userSpaceOnUse"
-          width="36"
-          x="0"
-          y="0"
-        >
-          <rect fill="#FFFFFF" height="36" rx="72" width="36" />
-        </mask>
-        <g mask="url(#:R4mrttb:)">
-          <rect fill="#ff7d10" height="36" width="36" />
-          <rect
-            fill="#0a0310"
-            height="36"
-            rx="6"
-            transform="translate(5 -1) rotate(55 18 18) scale(1.1)"
-            width="36"
-            x="0"
-            y="0"
-          />
-          <g transform="translate(7 -6) rotate(-5 18 18)">
-            <path
-              d="M15 20c2 1 4 1 6 0"
-              fill="none"
-              stroke="#FFFFFF"
-              strokeLinecap="round"
-            />
-            <rect
-              fill="#FFFFFF"
-              height="2"
-              rx="1"
-              stroke="none"
-              width="1.5"
-              x="14"
-              y="14"
-            />
-            <rect
-              fill="#FFFFFF"
-              height="2"
-              rx="1"
-              stroke="none"
-              width="1.5"
-              x="20"
-              y="14"
-            />
-          </g>
-        </g>
-      </svg>
-    ),
-    alt: "Avatar 2",
-  },
-  {
-    id: 3,
-    svg: (
-      <svg
-        aria-label="Avatar 3"
-        fill="none"
-        height="40"
-        role="img"
-        viewBox="0 0 36 36"
-        width="40"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <title>Avatar 3</title>
-        <mask
-          height="36"
-          id=":r11c:"
-          maskUnits="userSpaceOnUse"
-          width="36"
-          x="0"
-          y="0"
-        >
-          <rect fill="#FFFFFF" height="36" rx="72" width="36" />
-        </mask>
-        <g mask="url(#:r11c:)">
-          <rect fill="#0a0310" height="36" width="36" />
-          <rect
-            fill="#ff005b"
-            height="36"
-            rx="36"
-            transform="translate(-3 7) rotate(227 18 18) scale(1.2)"
-            width="36"
-            x="0"
-            y="0"
-          />
-          <g transform="translate(-3 3.5) rotate(7 18 18)">
-            <path d="M13,21 a1,0.75 0 0,0 10,0" fill="#FFFFFF" />
-            <rect
-              fill="#FFFFFF"
-              height="2"
-              rx="1"
-              stroke="none"
-              width="1.5"
-              x="12"
-              y="14"
-            />
-            <rect
-              fill="#FFFFFF"
-              height="2"
-              rx="1"
-              stroke="none"
-              width="1.5"
-              x="22"
-              y="14"
-            />
-          </g>
-        </g>
-      </svg>
-    ),
-    alt: "Avatar 3",
-  },
-  {
-    id: 4,
-    svg: (
-      <svg
-        aria-label="Avatar 4"
-        fill="none"
-        height="40"
-        role="img"
-        viewBox="0 0 36 36"
-        width="40"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <title>Avatar 4</title>
-        <mask
-          height="36"
-          id=":r1gg:"
-          maskUnits="userSpaceOnUse"
-          width="36"
-          x="0"
-          y="0"
-        >
-          <rect fill="#FFFFFF" height="36" rx="72" width="36" />
-        </mask>
-        <g mask="url(#:r1gg:)">
-          <rect fill="#d8fcb3" height="36" width="36" />
-          <rect
-            fill="#89fcb3"
-            height="36"
-            rx="6"
-            transform="translate(9 -5) rotate(219 18 18) scale(1)"
-            width="36"
-            x="0"
-            y="0"
-          />
-          <g transform="translate(4.5 -4) rotate(9 18 18)">
-            <path
-              d="M15 19c2 1 4 1 6 0"
-              fill="none"
-              stroke="#000000"
-              strokeLinecap="round"
-            />
-            <rect
-              fill="#000000"
-              height="2"
-              rx="1"
-              stroke="none"
-              width="1.5"
-              x="10"
-              y="14"
-            />
-            <rect
-              fill="#000000"
-              height="2"
-              rx="1"
-              stroke="none"
-              width="1.5"
-              x="24"
-              y="14"
-            />
-          </g>
-        </g>
-      </svg>
-    ),
-    alt: "Avatar 4",
-  },
-];
 
 interface ProfileSetupProps {
   onComplete?: (data: { username: string; avatarId: number }) => void;
   className?: string;
+  initialUsername?: string;
+  initialAvatarId?: number;
 }
 
 const containerVariants: Variants = {
@@ -317,9 +47,13 @@ const thumbnailVariants: Variants = {
 export default function ProfileSetup({
   onComplete,
   className,
+  initialUsername = "",
+  initialAvatarId,
 }: ProfileSetupProps) {
-  const [selectedAvatar, setSelectedAvatar] = useState<Avatar>(avatars[0]);
-  const [username, setUsername] = useState("");
+  const [selectedAvatar, setSelectedAvatar] = useState<Avatar>(
+    initialAvatarId ? getAvatar(initialAvatarId) : AVATARS[0]
+  );
+  const [username, setUsername] = useState(initialUsername);
   const [isFocused, setIsFocused] = useState(false);
   const shouldReduceMotion = useReducedMotion();
 
@@ -432,7 +166,7 @@ export default function ProfileSetup({
               initial="initial"
               variants={containerVariants}
             >
-              {avatars.map((avatar) => {
+              {AVATARS.map((avatar) => {
                 const isSelected = selectedAvatar.id === avatar.id;
                 return (
                   <motion.button

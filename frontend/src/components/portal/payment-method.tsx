@@ -824,9 +824,8 @@ export function PaymentMethodScreen({
 
       <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-md flex-col px-6 pb-12 md:max-w-4xl lg:max-w-5xl">
         <DashboardHeader
-          userName={user?.name}
-          userEmail={user?.email}
-          onLogout={() => logout()}
+          user={user}
+          onLogout={() => logout().then(() => router.push("/"))}
         />
         <main className="flex-1">
           <button

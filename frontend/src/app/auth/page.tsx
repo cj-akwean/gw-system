@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FlippingCard } from "@/components/ui/flipping-card";
 import { AuthPage } from "@/components/auth";
@@ -55,6 +56,14 @@ function AuthContent() {
             }
           />
         )}
+        <div className="mt-6 flex justify-center">
+          <Link
+            href="/"
+            className="text-sm text-muted-foreground underline underline-offset-4 transition-colors hover:text-primary"
+          >
+            ← Back to home
+          </Link>
+        </div>
       </div>
     </div>
   );

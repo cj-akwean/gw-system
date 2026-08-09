@@ -10,6 +10,7 @@ import {
   registerApi,
   resolveIntentStatus,
   startPayment,
+  unlinkApi,
   updateProfileApi,
   writePendingInvoice,
 } from "@/lib/api";
@@ -421,6 +422,19 @@ describe("links api", () => {
     expect(links[0].status).toBe("active");
     const [url] = fetchSpy.mock.calls[0] as [string];
     expect(url).toBe("http://127.0.0.1:8000/api/links");
+  });
+
+  it("unlinks (revokes) a meter link", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      jsonResponse({ message: "Link revoked" })
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await unlinkApi(5);
+
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:8000/api/links/5");
+    expect(init?.method).toBe("DELETE");
   });
 });
 

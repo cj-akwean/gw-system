@@ -6,6 +6,9 @@ import ElasticLine from '@/components/fancy/physics/elastic-line';
 import { WaterCanvas } from '@/components/water-button';
 import { MultiDirectionSlideText } from '@/components/ui/multi-direction-slide-text';
 import { useLoadingComplete } from '@/lib/loading-context';
+import { ProfileDropdown } from '@/components/portal/profile-dropdown';
+import { useAuth } from '@/lib/auth-context';
+import { useRouter } from 'next/navigation';
 import React from 'react';
 
 export interface Hero33Props {
@@ -45,6 +48,14 @@ export default function Hero33({
   backgroundImage = 'https://assets.watermelon.sh/hero-33-bg.avif',
 }: Hero33Props) {
   const loadingComplete = useLoadingComplete();
+  const { isAuthenticated, ready, user, logout } = useAuth();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    await logout();
+    router.push('/');
+  };
+
   const navVariants: Variants = {
     hidden: { opacity: 0, y: -16, filter: 'blur(6px)' },
     visible: {
@@ -124,14 +135,23 @@ export default function Hero33({
                 </a>
               ))}
             </div>
-            <WaterCanvas waterAmount={50}>
-              <a
-                href="/auth"
-                className="inline-block rounded-md border border-amber-500 px-6 py-2.5 text-sm font-medium text-neutral-900 transition-transform hover:bg-black/5 active:scale-[0.96] dark:text-white dark:hover:bg-white/10"
-              >
-                Sign In
-              </a>
-            </WaterCanvas>
+            {!ready ? (
+              <div
+                aria-hidden
+                className="inline-block h-10 w-24 rounded-md border border-amber-500/40"
+              />
+            ) : isAuthenticated ? (
+              <ProfileDropdown user={user} onLogout={handleLogout} />
+            ) : (
+              <WaterCanvas waterAmount={50}>
+                <a
+                  href="/auth"
+                  className="inline-block rounded-md border border-amber-500 px-6 py-2.5 text-sm font-medium text-neutral-900 transition-transform hover:bg-black/5 active:scale-[0.96] dark:text-white dark:hover:bg-white/10"
+                >
+                  Sign In
+                </a>
+              </WaterCanvas>
+            )}
           </motion.nav>
 
           {/* Hero Main Content */}

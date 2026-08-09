@@ -17,7 +17,11 @@ export function useDimensions(
     const updateDimensions = () => {
       if (ref.current) {
         const { width, height } = ref.current.getBoundingClientRect()
-        setDimensions({ width, height })
+        setDimensions((prev) =>
+          prev.width === width && prev.height === height
+            ? prev
+            : { width, height }
+        )
       }
     }
 

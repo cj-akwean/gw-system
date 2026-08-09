@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Loader2, Search } from "lucide-react";
+import { Check } from "lucide-react";
 import ProfileSetup from "@/components/kokonutui/avatar-picker";
 import { OnboardingSteps, type OnboardingStep } from "@/components/onboarding-06";
 import { DashboardHeader } from "@/components/portal/dashboard-header";
+import { LinkMeterForm } from "@/components/portal/link-meter-form";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth-context";
-import { ApiError, createLink, getLinks, type PortalLink } from "@/lib/api";
+import { getLinks, type PortalLink } from "@/lib/api";
 
 const STEP_PROFILE = 1;
 const STEP_LINK = 2;
@@ -36,128 +36,6 @@ function buildSteps(step: number, avatarDone: boolean, linkedDone: boolean): Onb
       description: "Start paying bills from your dashboard",
     },
   ];
-}
-
-function LinkMeterStep({
-  onLinked,
-  onSkip,
-}: {
-  onLinked: (link: PortalLink) => void;
-  onSkip: () => void;
-}) {
-  const [accountNumber, setAccountNumber] = useState("");
-  const [meterNumber, setMeterNumber] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    if (isLoading) return;
-    setIsLoading(true);
-    setError("");
-
-    try {
-      const link = await createLink(accountNumber.trim(), meterNumber.trim());
-      onLinked(link);
-    } catch (err) {
-      if (err instanceof ApiError) {
-        if (err.status === 404) {
-          setError("We couldn't find an active connection with that account and meter number.");
-        } else if (err.status === 409) {
-          setError("This meter is already linked to another account.");
-        } else {
-          setError(err.message);
-        }
-      } else {
-        setError("Something went wrong. Please try again.");
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  return (
-    <div className="space-y-6">
-      <div className="space-y-1">
-        <h2 className="font-semibold text-xl tracking-tight">Link Your Meter</h2>
-        <p className="text-muted-foreground text-sm">
-          Find these on your latest bill. Linking lets us show your bills and
-          usage here.
-        </p>
-      </div>
-
-      <form className="space-y-4" onSubmit={handleSubmit}>
-        <div className="space-y-2">
-          <label className="font-medium text-sm" htmlFor="account-number">
-            Account Number
-          </label>
-          <div className="relative">
-            <Input
-              autoComplete="off"
-              className="h-10 pl-9 text-sm"
-              id="account-number"
-              maxLength={20}
-              name="account_number"
-              onChange={(e) => setAccountNumber(e.target.value)}
-              placeholder="e.g. GW-000123"
-              required
-              value={accountNumber}
-            />
-            <Search
-              aria-hidden="true"
-              className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-            />
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <label className="font-medium text-sm" htmlFor="meter-number">
-            Meter Number
-          </label>
-          <div className="relative">
-            <Input
-              autoComplete="off"
-              className="h-10 pl-9 text-sm"
-              id="meter-number"
-              maxLength={20}
-              name="meter_number"
-              onChange={(e) => setMeterNumber(e.target.value)}
-              placeholder="e.g. MTR-001234"
-              required
-              value={meterNumber}
-            />
-            <Search
-              aria-hidden="true"
-              className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-            />
-          </div>
-        </div>
-
-        {error && <p className="text-destructive text-sm" role="alert">{error}</p>}
-
-        <Button
-          className="h-10 w-full text-sm"
-          disabled={isLoading}
-          type="submit"
-        >
-          {isLoading ? (
-            <Loader2 aria-hidden className="mr-1 h-4 w-4 animate-spin" />
-          ) : null}
-          Link My Meter
-        </Button>
-      </form>
-
-      <div className="text-center">
-        <button
-          type="button"
-          onClick={onSkip}
-          className="text-sm text-muted-foreground underline underline-offset-4 hover:text-primary transition-colors"
-        >
-          I&apos;ll do this later
-        </button>
-      </div>
-    </div>
-  );
 }
 
 function AllSetStep({
@@ -199,6 +77,7 @@ export default function OnboardingPage() {
   const [links, setLinks] = useState<PortalLink[]>([]);
   const [linksLoaded, setLinksLoaded] = useState(false);
   const [profileError, setProfileError] = useState("");
+  const [loggingOut, setLoggingOut] = useState(false);
   const initialStepSet = useRef(false);
 
   useEffect(() => {
@@ -222,10 +101,16 @@ export default function OnboardingPage() {
   }, [ready, isAuthenticated, user?.avatar_id]);
 
   useEffect(() => {
-    if (ready && !isAuthenticated) {
+    if (ready && !isAuthenticated && !loggingOut) {
       router.replace("/auth");
     }
-  }, [ready, isAuthenticated, router]);
+  }, [ready, isAuthenticated, loggingOut, router]);
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    await logout();
+    router.push("/");
+  };
 
   if (!ready || !isAuthenticated) {
     return null;
@@ -254,11 +139,7 @@ export default function OnboardingPage() {
       />
 
       <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-md flex-col px-6 pb-12 md:max-w-2xl lg:max-w-4xl">
-        <DashboardHeader
-          userName={user?.name}
-          userEmail={user?.email}
-          onLogout={() => logout()}
-        />
+        <DashboardHeader user={user} onLogout={handleLogout} />
 
         <main className="flex flex-1 items-center py-10">
           <div className="grid w-full gap-10 lg:grid-cols-[260px_1fr]">
@@ -301,7 +182,7 @@ export default function OnboardingPage() {
 
               {step === STEP_LINK && (
                 <div className="rounded-xl border border-border bg-card p-8">
-                  <LinkMeterStep
+                  <LinkMeterForm
                     onLinked={(link) => {
                       setLinks((prev) => [...prev, link]);
                       setStep(STEP_DONE);

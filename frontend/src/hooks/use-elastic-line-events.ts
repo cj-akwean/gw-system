@@ -8,6 +8,12 @@ interface ElasticLineEvents {
   controlPoint: { x: number; y: number }
 }
 
+/**
+ * State updates here use functional form with same-value bailouts, and the
+ * effect depends only on primitive values — so a re-render never re-runs the
+ * effect with a fresh object (the previous version created a new controlPoint
+ * on every run and fed React's passive-effect update loop).
+ */
 export function useElasticLineEvents(
   containerRef: React.RefObject<SVGSVGElement | null>,
   isVertical: boolean,
@@ -22,48 +28,51 @@ export function useElasticLineEvents(
     y: dimensions.height / 2,
   })
 
+  const { width, height } = dimensions
+  const { x, y } = mousePosition
+
   useEffect(() => {
-    if (containerRef.current) {
-      const { width, height } = dimensions
-      const x = mousePosition.x
-      const y = mousePosition.y
+    if (!containerRef.current) return
 
-      // Check if mouse is outside container bounds
-      const isOutsideBounds = x < 0 || x > width || y < 0 || y > height
+    // Check if mouse is outside container bounds
+    const isOutsideBounds = x < 0 || x > width || y < 0 || y > height
 
-      if (isOutsideBounds) {
-        setIsGrabbed(false)
-        return
+    if (isOutsideBounds) {
+      setIsGrabbed((prev) => (prev ? false : prev))
+      return
+    }
+
+    let distance: number
+    let newControlPoint: { x: number; y: number }
+
+    if (isVertical) {
+      const midX = width / 2
+      distance = Math.abs(x - midX)
+      newControlPoint = {
+        x: midX + 2.2 * (x - midX),
+        y: y,
       }
-
-      let distance: number
-      let newControlPoint: { x: number; y: number }
-
-      if (isVertical) {
-        const midX = width / 2
-        distance = Math.abs(x - midX)
-        newControlPoint = {
-          x: midX + 2.2 * (x - midX),
-          y: y,
-        }
-      } else {
-        const midY = height / 2
-        distance = Math.abs(y - midY)
-        newControlPoint = {
-          x: x,
-          y: midY + 2.2 * (y - midY),
-        }
-      }
-
-      setControlPoint(newControlPoint)
-
-      if (!isGrabbed && distance < grabThreshold) {
-        setIsGrabbed(true)
-      } else if (isGrabbed && distance > releaseThreshold) {
-        setIsGrabbed(false)
+    } else {
+      const midY = height / 2
+      distance = Math.abs(y - midY)
+      newControlPoint = {
+        x: x,
+        y: midY + 2.2 * (y - midY),
       }
     }
-  }, [mousePosition, isVertical, isGrabbed, grabThreshold, releaseThreshold])
+
+    setControlPoint((prev) =>
+      prev.x === newControlPoint.x && prev.y === newControlPoint.y
+        ? prev
+        : newControlPoint
+    )
+
+    setIsGrabbed((prev) => {
+      if (!prev && distance < grabThreshold) return true
+      if (prev && distance > releaseThreshold) return false
+      return prev
+    })
+  }, [x, y, width, height, isVertical, grabThreshold, releaseThreshold])
 
   return { isGrabbed, controlPoint }
 }

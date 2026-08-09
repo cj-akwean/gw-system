@@ -14,15 +14,14 @@ vi.mock("@/lib/auth-context", () => ({
 }));
 
 vi.mock("@/components/portal/dashboard-header", () => ({
-  DashboardHeader: ({ userName, userEmail, onLogout }: {
-    userName?: string;
-    userEmail?: string;
+  DashboardHeader: ({ user, onLogout }: {
+    user: { name: string | null; email: string } | null;
     onLogout: () => void;
   }) => (
     <div>
       <span>header</span>
-      <span>{userName}</span>
-      <span>{userEmail}</span>
+      <span>{user?.name}</span>
+      <span>{user?.email}</span>
       <button onClick={onLogout}>logout-btn</button>
     </div>
   ),

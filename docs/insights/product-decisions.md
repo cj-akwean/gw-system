@@ -1170,3 +1170,36 @@ pattern as the CSV import) so a simultaneous double-claim can't slip through the
 check-then-create window. This makes "link this meter" a claim of that bill identity â€”
 and it's why the 409 message tells the user the meter is *already linked elsewhere*
 instead of silently succeeding.
+
+## 38. Auth-aware hero nav: profile dropdown instead of a static Sign In (2026-08-09)
+
+**Question asked:** the landing page's "Sign In" button never changed after login — the user is signed in but the button still invites them to sign in. Where should the authenticated identity live?
+
+**Answer + reasoning:**
+
+**a) The dropdown shows the local avatar SVGs, not an image URL.** The kokonutui reference dropdown displays a remote avatar URL; this app's avatars are 4 inline SVGs chosen at onboarding (vatar_id 1–4, already stored on the user). Rendering the same SVG set everywhere keeps one visual identity from onboarding ? header ? dropdown, avoids a new image-hosting/storage decision (the project has a no-permanent-file-storage rule), and works offline/static-export. The avatar list now lives in src/lib/avatars.tsx — picker and dropdown import from one place, so a future 5th avatar appears everywhere automatically.
+
+**b) Sign Out goes to the landing page, not /auth.** Logging out is "I'm done, take me home" — a marketing page — not "now log back in". The dashboard/onboarding headers also gained brand links to /dashboard (landing-style wordmark, amber dot) and the pay screen follows, so every portal surface has an explicit route back out. The /auth page itself got a "Back to home" link, because it was a dead end for guests.
+
+**c) Profile item routes to /onboarding, the only profile editor that exists.** The wizard resumes by state (avatar set ? link step), so "Profile" may land on a non-avatar step for complete profiles. Accepted for now; a ?step=profile deep link is the obvious follow-up if it ever matters.
+
+## 39. Mouse-tracking hooks: why the "Maximum update depth" error happened and how it was fixed (2026-08-09)
+
+**Question asked:** 
+ext dev logged "Maximum update depth exceeded" at useMousePosition's setPosition repeatedly on the landing page, only while the mouse moved, and only while the elastic-line hero was mounted.
+
+**Answer + reasoning:** the hook set a fresh {x, y} object on *every* mousemove (120 Hz+), and useElasticLineEvents then ran its effect on every new object identity and unconditionally stored a fresh controlPoint object — so every mouse event churned two renders and, under React 19 dev's passive-effect flushing, tripped the nested-update guard (message text matches eact-dom-client.development.js's passive-effect branch exactly). The fix stops the churn at each stage instead of suppressing the error: useMousePosition rAF-throttles and bails on unchanged coordinates, useDimensions bails on unchanged sizes, and useElasticLineEvents depends on primitives and uses functional updates that return the previous state when nothing changed. Same visual behavior, bounded work per event.
+
+## 40. Revisited: brand = home, context-aware dropdown, Settings as the portal's profile/meter manager (2026-08-09)
+
+**Question asked (revision of §38):** the brand link pointed to the dashboard and the dropdown had a dedicated "Landing Page" item — redundant and noisy. Where should "go home" live, and what does Settings actually contain?
+
+**Answer + reasoning:**
+
+**a) The wordmark is the single "way back to the landing page."** Every portal header (dashboard, onboarding, pay, settings) shows "Guinobatan Waterworks." with the landing page's amber dot; clicking it goes to / — one mental model, matching the marketing convention of logo = home. The explicit "Landing Page" dropdown item was removed as noise. Tradeoff: the header no longer has a one-click "back to dashboard" (the dropdown's Dashboard item covers it when you're not already there).
+
+**b) The Dashboard dropdown item is context-aware.** Showing "Dashboard" while standing on the dashboard is dead weight; usePathname() === /dashboard hides it. Kept visible on the pay screen (/dashboard/pay) and onboarding — those are different pages with their own back affordances, and the item must always be reachable from the landing page (where the dropdown replaces the Sign In button).
+
+**c) Settings is the portal's profile + meter manager.** The # placeholder became a real auth-guarded /settings page: profile editing reuses the onboarding avatar picker (prefilled via new initialUsername/initialAvatarId props — same component, no second picker to drift) and meter management reuses the extracted LinkMeterForm plus unlink. Unlinking needs a two-step inline confirm because a revoked link detaches the user from their bills — accidental self-lockout is a support ticket. The backend revoke endpoint (DELETE /api/links/{id}, ownership-checked 403, revokes instead of hard-deletes so history survives) already existed; only the frontend call was missing.
+
+**d) Dropdown avatar is a square, not a circle.** The onboarding picker's thumbnails are rounded squares (ounded-xl); a circle crop cuts the SVG avatar's face, so the trigger matches the thumbnails (rounded-xl + per-avatar color ring). Same crop as everywhere else in the app.

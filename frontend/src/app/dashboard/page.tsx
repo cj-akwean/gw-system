@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { DashboardHeader } from "@/components/portal/dashboard-header";
@@ -10,12 +10,19 @@ import { LinkMeterPrompt } from "@/components/portal/link-meter-prompt";
 export default function DashboardPage() {
   const router = useRouter();
   const { isAuthenticated, ready, user, logout } = useAuth();
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
-    if (ready && !isAuthenticated) {
+    if (ready && !isAuthenticated && !loggingOut) {
       router.replace("/auth");
     }
-  }, [ready, isAuthenticated, router]);
+  }, [ready, isAuthenticated, loggingOut, router]);
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    await logout();
+    router.push("/");
+  };
 
   if (!ready) {
     return null;
@@ -44,11 +51,7 @@ export default function DashboardPage() {
       />
 
       <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-md flex-col px-6 pb-12 md:max-w-4xl lg:max-w-5xl">
-        <DashboardHeader
-          userName={user?.name}
-          userEmail={user?.email}
-          onLogout={() => logout()}
-        />
+        <DashboardHeader user={user} onLogout={handleLogout} />
         <main className="flex-1">
           <LinkMeterPrompt />
           <BillsList />
