@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { FlippingCard } from "@/components/ui/flipping-card";
 import { AuthPage } from "@/components/auth";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 
 function AuthContent() {
@@ -41,7 +42,11 @@ function AuthContent() {
         <div className="fixed top-6 right-6 z-50">
           <ThemeToggle />
         </div>
-        {!ready ? null : (
+        {!ready ? (
+          <div className="flex h-[520px] w-[400px] max-w-full items-center justify-center">
+            <Loader2 aria-hidden className="size-6 animate-spin text-primary" />
+          </div>
+        ) : (
           <FlippingCard
             isFlipped={isFlipped}
             width={400}

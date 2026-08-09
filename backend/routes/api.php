@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\InvoicePaymentController;
 use App\Http\Controllers\Api\PayMongoWebhookController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ProfileController;
+use App\Http\Controllers\Api\RateController;
 use App\Http\Controllers\Api\SavedPaymentMethodController;
 use App\Http\Controllers\AuthController;
 use Illuminate\Http\Request;
@@ -27,6 +28,9 @@ Route::post('/register', [AuthController::class, 'register'])
     ->name('register');
 Route::post('/logout', [AuthController::class, 'logout'])
     ->middleware(['auth:sanctum', 'throttle:30,1,auth-logout']);
+
+Route::get('/rates', [RateController::class, 'index'])
+    ->middleware('throttle:60,1,rates-index');
 
 Route::get('/user', function (Request $request) {
     return $request->user();

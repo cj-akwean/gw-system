@@ -9,33 +9,28 @@ export function LoadingScreen({ onDone }: { onDone?: () => void }) {
 
   useEffect(() => {
     let cancelled = false;
-    const start = performance.now();
 
     const done = () => {
       if (cancelled) return;
-      const elapsed = performance.now() - start;
-      const remaining = Math.max(0, 800 - elapsed);
+      setFadeOut(true);
       setTimeout(() => {
         if (!cancelled) {
-          setFadeOut(true);
-          setTimeout(() => {
-            setVisible(false);
-            onDone?.();
-          }, 500);
+          setVisible(false);
+          onDone?.();
         }
-      }, remaining);
+      }, 450);
     };
 
-    Promise.all([
-      document.fonts.ready,
-      new Promise<void>((resolve) => {
-        if (document.readyState === "complete") resolve();
-        else window.addEventListener("load", () => resolve(), { once: true });
-      }),
-    ]).then(done);
+    // Fixed splash — no font/network dependency. Waiting on
+    // `document.fonts.ready` froze the animation for ~1s while fonts
+    // (which are discovered late in dev) finished downloading.
+    const timer = setTimeout(done, 650);
 
-    return () => { cancelled = true; };
-  }, []);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [onDone]);
 
   if (!visible) return null;
 
@@ -52,7 +47,7 @@ export function LoadingScreen({ onDone }: { onDone?: () => void }) {
         <DotmSquare17 size={120} dotSize={6} animated colorPreset="grad-ocean" pattern="full" />
       </div>
       <p
-        className="text-sm font-semibold tracking-widest uppercase"
+        className="animate-pulse text-sm font-semibold tracking-widest uppercase"
         style={{ color: "var(--text)", opacity: 0.6 }}
       >
         Loading

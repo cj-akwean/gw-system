@@ -585,3 +585,18 @@ count — bounded, since `DatabaseStore` increments serialize on `FOR UPDATE`; a
 exactly-atomic ceiling needs `RateLimiter::attempt` with a reservation. Webhook
 `header_spelling` diagnostic logging is now `app.debug`-gated so junk floods cannot spam
 the log file.)*
+
+## Landing Page
+
+### 1. Landing rework: nav, CTAs, Rates card, animated backdrop, dashboard date (2026-08-09)
+Public GET /api/rates — `App\Services\RateService::publicPayload()` returns the current schedule (effective_from <= today, effective_to null or >= today, latest first) with tiers ordered by min_cu_m, plus the current PenaltyRule; 404 with a friendly message when no schedule is in effect; route is public but throttled (`throttle:60,1,rates-index`); RateApiTest covers flat + tiered + 404 + expired-schedule cases.
+
+Frontend: hero-33 `navItems` became `{label, href}` objects (anchors: #rates / #how-it-works / #contact); the two dead demo CTAs are now wired — 'Pay My Bill' routes auth-aware (/dashboard vs /auth), 'View Rates' scrolls to the section. The 'View Rates' scroll needed a fix: `scrollIntoView({behavior:'smooth'})` kept getting interrupted by hero motion re-renders and reverted to top; plain `scrollIntoView()` + CSS `scroll-smooth` on the page root behaves exactly like the anchor links (verified 844px/0 alignment).
+
+Rates section = adapted copy of a kokonutui Pricing-style card: left card shows the live flat rate (₱10.00/m³ from the API) with feature list (penalty/grace/disconnection) and a 'Pay My Bill' CTA; right card = three 'How billing works' steps; loading state shows a spinner + skeleton text; any fetch failure falls back to static office-contact text (never blank). Background = vengenceui `liquid-ocean` (three.js): boats/grid/wireframe off, `oceanFragments` 12, opacity 0.35, dpr 1 — decorative only, frameloop pauses off-screen via its built-in IntersectionObserver. Two adaptations were required: (1) React 19 purity lint (eslint-plugin-react-hooks v6) rejects `Math.random` in render — replaced with a small seeded PRNG (mulberry32) so the wave table is deterministic; (2) `RectAreaLightUniformsLib` import dropped — deprecated in three 0.185 with no bundled .d.ts, and the ocean doesn't use rect-light shadows. three also ships no types since r156 — `@types/three@0.185.4` installed.
+
+Polka dots replaced on the landing only by cult-ui `canvas-fractal-grid` (written directly into components/ui after cult-ui 429'd the shadcn CLI). Themed: light mode `multiply` + rgba(0,0,0,1) dots at 0.35 opacity, dark mode `screen` + white dots at 0.2 — a `blendMode` prop was added (registry original hardcoded multiply, invisible on black). enableGradient/enableNoise off, 1.5px dots at 20px spacing ≈ the old CSS look; FPS-based quality degrade kept, but the degrade setState moved out of the effect body into the rAF callback (React-19 lint: no setState synchronously in effects). Portal pages keep the cheap CSS dots.
+
+Dashboard + settings + auth: the `return null` guards are replaced by a `PageLoader` spinner (new `components/portal/page-loader.tsx`) so redirects never show a blank page; dashboard gained a 'Sunday, August 9, 2026' date line (CalendarDays icon, en-PH locale) under the sticky header. Also fixed in this round: hero Sign In links were plain `<a>` (full reload, dev cold-compiles /auth → blank page for seconds) — now `next/link` with prefetch; landing hero CTA buttons had no handlers at all.
+
+Verify: backend 532/532, frontend 172/172, tsc clean, lint clean (2 pre-existing warnings), live-checked at 390/768/1280 light+dark. Caveat: Contact section phone/address are placeholders — real office info needed.

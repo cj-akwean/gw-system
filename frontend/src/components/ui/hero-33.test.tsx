@@ -18,6 +18,21 @@ vi.mock("next/image", () => ({
   ),
 }));
 
+vi.mock("next/link", () => ({
+  default: ({
+    href,
+    children,
+    ...props
+  }: {
+    href: string;
+    children: React.ReactNode;
+  }) => (
+    <a href={href} {...props}>
+      {children}
+    </a>
+  ),
+}));
+
 vi.mock("@/components/fancy/physics/elastic-line", () => ({
   default: () => null,
 }));
@@ -118,7 +133,13 @@ describe("Hero33 nav auth state", () => {
     });
 
     render(
-      <Hero33 logoText="Guinobatan Waterworks" navItems={["Flights", "Pricing"]} />
+      <Hero33
+        logoText="Guinobatan Waterworks"
+        navItems={[
+          { label: "Flights", href: "#flights" },
+          { label: "Pricing", href: "#pricing" },
+        ]}
+      />
     );
 
     expect(screen.getByRole("link", { name: "Sign In" })).toHaveAttribute(

@@ -6,6 +6,7 @@ import { Link2, Loader2 } from "lucide-react";
 import HoldButton from "@/components/kokonutui/hold-button";
 import ProfileSetup from "@/components/kokonutui/avatar-picker";
 import { DashboardHeader } from "@/components/portal/dashboard-header";
+import { PageLoader } from "@/components/portal/page-loader";
 import { LinkMeterForm } from "@/components/portal/link-meter-form";
 import { useAuth } from "@/lib/auth-context";
 import { getLinks, unlinkApi, type PortalLink } from "@/lib/api";
@@ -59,11 +60,11 @@ export default function SettingsPage() {
   };
 
   if (!ready) {
-    return null;
+    return <PageLoader />;
   }
 
   if (!isAuthenticated) {
-    return null;
+    return <PageLoader />;
   }
 
   return (

@@ -48,7 +48,7 @@ describe("DashboardPage guard", () => {
     mockLogout.mockReset();
   });
 
-  it("renders nothing until auth state is ready", () => {
+  it("shows a loader until auth state is ready", () => {
     mockUseAuth = () => ({
       isAuthenticated: true,
       ready: false,
@@ -58,6 +58,9 @@ describe("DashboardPage guard", () => {
 
     render(<DashboardPage />);
 
+    expect(
+      screen.getByRole("status", { name: "Loading" })
+    ).toBeInTheDocument();
     expect(screen.queryByText("bills")).not.toBeInTheDocument();
   });
 

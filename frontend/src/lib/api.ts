@@ -110,6 +110,43 @@ export interface PortalLink {
   };
 }
 
+export interface PortalRates {
+  schedule: {
+    name: string;
+    type: "flat" | "tiered";
+    flat_rate: number | null;
+    effective_from: string;
+    tiers: {
+      min_cu_m: number;
+      max_cu_m: number | null;
+      rate_per_cu_m: number;
+    }[];
+  };
+  penalty: {
+    percent_per_month: number;
+    grace_period_days: number;
+    disconnection_after_days: number;
+  } | null;
+}
+
+export async function getRates(): Promise<PortalRates> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/rates`, {
+      headers: { Accept: "application/json" },
+    });
+  } catch {
+    throw new Error("Unable to reach the server. Please try again.");
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message ?? "Couldn't load rates");
+  }
+
+  return res.json();
+}
+
 export async function getLinks(): Promise<PortalLink[]> {
   const res = await authFetch("/api/links");
   return res.json();

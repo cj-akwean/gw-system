@@ -1,8 +1,9 @@
 'use client';
 
 import { motion, type Variants } from 'motion/react';
-import { Armchair, Menu, Monitor, PlaneTakeoff } from 'lucide-react';
+import { Armchair, Droplets, Menu, Monitor } from 'lucide-react';
 import Image from 'next/image';
+import Link from 'next/link';
 import ElasticLine from '@/components/fancy/physics/elastic-line';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { WaterCanvas } from '@/components/water-button';
@@ -20,15 +21,20 @@ import { useAuth } from '@/lib/auth-context';
 import { useRouter } from 'next/navigation';
 import React from 'react';
 
+export interface HeroNavItem {
+  label: string;
+  href: string;
+}
+
 export interface Hero33Props {
     logoText?: string;
-    navItems?: string[];
+    navItems?: HeroNavItem[];
     primaryActionText?: string;
     secondaryActionText?: string;
     titleLines?: string[];
     description?: string;
     features?: {
-        icon: React.ElementType;
+        icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
         title: string;
         description: string;
     }[];
@@ -37,9 +43,13 @@ export interface Hero33Props {
 
 export default function Hero33({
   logoText = 'Watermelon',
-  navItems = ['Flights', 'Destinations', 'Pricing', 'Contact'],
-  primaryActionText = 'Explore Flights',
-  secondaryActionText = 'Learn More',
+  navItems = [
+    { label: 'Rates', href: '#rates' },
+    { label: 'How It Works', href: '#how-it-works' },
+    { label: 'Contact', href: '#contact' },
+  ],
+  primaryActionText = 'Pay My Bill',
+  secondaryActionText = 'View Rates',
   titleLines = ['Peak Moments,', 'Unforgettable', 'Journeys.'],
   description = '',
   features = [
@@ -63,6 +73,14 @@ export default function Hero33({
   const handleLogout = async () => {
     await logout();
     router.push('/');
+  };
+
+  const handlePrimaryAction = () => {
+    router.push(ready && isAuthenticated ? '/dashboard' : '/auth');
+  };
+
+  const handleSecondaryAction = () => {
+    document.getElementById('rates')?.scrollIntoView();
   };
 
   const navVariants: Variants = {
@@ -118,12 +136,13 @@ export default function Hero33({
   };
 
   const signInLink = (
-    <a
+    <Link
       href="/auth"
+      prefetch
       className="hidden rounded-md border border-amber-500 px-6 py-2.5 text-sm font-medium text-neutral-900 transition-transform hover:bg-black/5 active:scale-[0.96] lg:inline-block dark:text-white dark:hover:bg-white/10"
     >
       Sign In
-    </a>
+    </Link>
   );
 
   return (
@@ -145,11 +164,11 @@ export default function Hero33({
             <div className="hidden items-center gap-10 lg:flex">
               {navItems.map((item) => (
                 <a
-                  key={item}
-                  href="#"
+                  key={item.label}
+                  href={item.href}
                   className="text-sm font-medium text-neutral-700/90 transition-colors hover:text-neutral-900 dark:text-white/90 dark:hover:text-white"
                 >
-                  {item}
+                  {item.label}
                 </a>
               ))}
             </div>
@@ -181,20 +200,21 @@ export default function Hero33({
                     >
                       <div className="space-y-1">
                         {navItems.map((item) => (
-                          <DropdownMenuItem asChild key={item}>
-                            <a href="#">{item}</a>
+                          <DropdownMenuItem asChild key={item.label}>
+                            <a href={item.href}>{item.label}</a>
                           </DropdownMenuItem>
                         ))}
                       </div>
                       <DropdownMenuSeparator className="my-2 bg-gradient-to-r from-transparent via-border to-transparent" />
                       <div className="flex justify-center p-1">
                         <WaterCanvas rounded={6} waterAmount={50}>
-                          <a
+                          <Link
                             href="/auth"
+                            prefetch
                             className="flex items-center justify-center rounded-md border border-amber-500 px-6 py-2.5 text-sm font-medium text-neutral-900 transition-transform hover:bg-black/5 active:scale-[0.96] dark:text-white dark:hover:bg-white/10"
                           >
                             Sign In
-                          </a>
+                          </Link>
                         </WaterCanvas>
                       </div>
                       <div className="flex items-center justify-between px-2 py-1.5">
@@ -267,13 +287,15 @@ export default function Hero33({
                 className="mt-10 flex items-center gap-4"
               >
                 <motion.button
+                  onClick={handlePrimaryAction}
                   variants={ctaItemVariants}
                   className="flex h-14 items-center gap-2 rounded-md bg-white pr-6 pl-8 text-base font-semibold text-black transition-transform hover:bg-white/90 active:scale-[0.96]"
                 >
                   {primaryActionText}
-                  <PlaneTakeoff className="h-5 w-5" />
+                  <Droplets className="h-5 w-5" />
                 </motion.button>
                 <motion.button
+                  onClick={handleSecondaryAction}
                   variants={ctaItemVariants}
                   className="flex h-14 items-center rounded-md border border-amber-500 px-10 text-base font-medium text-neutral-900 transition-transform hover:bg-black/5 active:scale-[0.96] dark:text-white dark:hover:bg-white/10"
                 >
