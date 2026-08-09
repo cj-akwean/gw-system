@@ -11,11 +11,11 @@ interface DashboardHeaderProps {
 
 export function DashboardHeader({ user, onLogout }: DashboardHeaderProps) {
   return (
-    <header className="sticky top-0 z-20 -mx-6 border-b border-border/60 bg-background/70 px-6 py-4 backdrop-blur-sm">
-      <div className="flex items-center justify-between gap-3">
+    <header className="sticky top-0 z-20 pt-3">
+      <div className="flex items-center justify-between gap-3 rounded-2xl border border-border/70 bg-background/75 px-4 py-3 shadow-lg shadow-black/5 backdrop-blur-md">
         <Link
           href="/"
-          className="min-w-0 truncate text-lg font-bold tracking-tight transition-colors hover:text-foreground/80"
+          className="min-w-0 truncate text-base font-bold tracking-tight transition-colors hover:text-foreground/80 md:text-lg"
         >
           Guinobatan Waterworks<span className="text-amber-500">.</span>
         </Link>

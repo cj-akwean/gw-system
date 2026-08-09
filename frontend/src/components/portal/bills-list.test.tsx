@@ -78,7 +78,7 @@ describe("BillsList", () => {
     expect(await screen.findByTestId("invoice-1")).toBeInTheDocument();
     expect(screen.getByTestId("invoice-2")).toBeInTheDocument();
     expect(screen.getByText(/2 unpaid bills/i)).toBeInTheDocument();
-    expect(screen.getByText(/₱400.00 total/i)).toBeInTheDocument();
+    expect(screen.getByText(/₱400.00/i)).toBeInTheDocument();
     expect(screen.getByText("overdue")).toBeInTheDocument();
   });
 

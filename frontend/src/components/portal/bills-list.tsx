@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Droplets } from "lucide-react";
 import { formatPeso, getInvoices, ApiError, type PortalInvoice } from "@/lib/api";
 import { BillCard } from "@/components/portal/bill-card";
 import { PastPayments } from "@/components/portal/past-payments";
@@ -102,15 +103,22 @@ export function BillsList() {
 
   return (
     <section className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">My Bills</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {invoices.length === 0
-            ? "You have no unpaid bills."
-            : `${invoices.length} unpaid ${
-                invoices.length === 1 ? "bill" : "bills"
-              } · ${formatPeso(total)} total`}
-        </p>
+      <div className="flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-2xl font-bold tracking-tight">My Bills</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {invoices.length === 0
+              ? "You have no unpaid bills."
+              : `${invoices.length} unpaid ${
+                  invoices.length === 1 ? "bill" : "bills"
+                }`}
+          </p>
+        </div>
+        {invoices.length > 0 && (
+          <p className="shrink-0 text-xl font-bold tracking-tight tabular-nums">
+            {formatPeso(total)}
+          </p>
+        )}
       </div>
 
       {invoices.length === 0 ? (
@@ -124,14 +132,19 @@ export function BillsList() {
         <div className="space-y-6">
           {groups.map((group) => (
             <div key={group.key} data-testid={`connection-${group.key}`} className="space-y-3">
-              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 border-b border-border pb-2">
-                <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                  {group.connection.account_number} · {group.connection.meter_number}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {group.connection.registered_name}
-                  {group.connection.barangay ? ` · ${group.connection.barangay}` : ""}
-                </p>
+              <div className="flex items-center gap-3 rounded-xl border border-border/70 bg-card/60 px-4 py-3">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                  <Droplets aria-hidden className="size-4 text-primary" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">
+                    {group.connection.account_number} · {group.connection.meter_number}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {group.connection.registered_name}
+                    {group.connection.barangay ? ` · ${group.connection.barangay}` : ""}
+                  </p>
+                </div>
               </div>
               <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {group.invoices.map((invoice) => (
