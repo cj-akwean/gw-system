@@ -45,6 +45,8 @@ interface CanvasFractalGridProps {
   enableGradient?: boolean;
   /** Canvas blend mode — multiply for light backgrounds, screen for dark */
   blendMode?: "multiply" | "screen" | "normal";
+  /** Maximum animation frames per second (mobile can cap at 30) */
+  maxFps?: number;
 }
 
 const NoiseSVG = React.memo(() => (
@@ -181,6 +183,7 @@ const DotCanvas: React.FC<{
   performance: "low" | "medium" | "high";
   mousePos: { x: number; y: number };
   blendMode: "multiply" | "screen" | "normal";
+  maxFps: number;
 }> = React.memo(
   ({
     dotSize,
@@ -193,6 +196,7 @@ const DotCanvas: React.FC<{
     performance,
     mousePos,
     blendMode,
+    maxFps,
   }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const animationRef = useRef<number | null>(null);
@@ -296,8 +300,9 @@ const DotCanvas: React.FC<{
       window.addEventListener("resize", resizeCanvas);
 
       let lastTime = 0;
+      const frameInterval = 1000 / Math.max(1, maxFps);
       const animate = (time: number) => {
-        if (time - lastTime > 16) {
+        if (!document.hidden && time - lastTime > frameInterval) {
           drawDots(ctx, time);
           lastTime = time;
         }
@@ -312,7 +317,7 @@ const DotCanvas: React.FC<{
           cancelAnimationFrame(animationRef.current);
         }
       };
-    }, [drawDots]);
+    }, [drawDots, maxFps]);
 
     return (
       <canvas
@@ -410,32 +415,46 @@ export function CanvasFractalGrid({
   initialPerformance = "medium",
   enableGradient = false,
   blendMode = "multiply",
+  maxFps = 60,
 }: CanvasFractalGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { isMobile, isTablet } = useResponsive();
   const { performance } = usePerformance(initialPerformance);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
-  const handleMouseMove = useCallback((event: MouseEvent) => {
-    const { clientX, clientY } = event;
-    const { left, top, width, height } =
-      containerRef.current?.getBoundingClientRect() ?? {
-        left: 0,
-        top: 0,
-        width: 0,
-        height: 0,
-      };
-    const x = (clientX - left) / width;
-    const y = (clientY - top) / height;
+  const handlePointer = useCallback((clientX: number, clientY: number) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    const width = rect?.width ?? 0;
+    const height = rect?.height ?? 0;
+    const x = width ? (clientX - (rect?.left ?? 0)) / width : 0.5;
+    const y = height ? (clientY - (rect?.top ?? 0)) / height : 0.5;
     setMousePos({ x, y });
   }, []);
+
+  const handleMouseMove = useCallback((event: MouseEvent) => {
+    handlePointer(event.clientX, event.clientY);
+  }, [handlePointer]);
+
+  const handleTouchMove = useCallback(
+    (event: TouchEvent) => {
+      const touch = event.touches[0];
+      if (touch) handlePointer(touch.clientX, touch.clientY);
+    },
+    [handlePointer]
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     window.addEventListener("mousemove", handleMouseMove);
-    return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, [handleMouseMove]);
+    window.addEventListener("touchstart", handleTouchMove, { passive: true });
+    window.addEventListener("touchmove", handleTouchMove, { passive: true });
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("touchstart", handleTouchMove);
+      window.removeEventListener("touchmove", handleTouchMove);
+    };
+  }, [handleMouseMove, handleTouchMove]);
 
   const responsiveDotSize = useMemo(() => {
     if (isMobile) return dotSize * 0.75;
@@ -491,6 +510,7 @@ export function CanvasFractalGrid({
           performance={performance}
           mousePos={mousePos}
           blendMode={blendMode}
+          maxFps={maxFps}
         />
         {enableNoise && <NoiseOverlay opacity={noiseOpacity} />}
         {enableMouseGlow && (

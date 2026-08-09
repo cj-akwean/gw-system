@@ -86,3 +86,25 @@ must work in dark mode; date under the sticky header.
   once (re-login fine) — likely manual sign-out from an earlier round, not a bug.
 
 Next step: real office contact info for the Contact section, then commit.
+
+
+## Addendum — round 2 (same day): theme-sync, touch dots, boats, full-height ocean, flowing line
+
+Follow-up fixes after the user tested on phone (Samsung A51 412px) + desktop:
+
+1. **Theme-switch bug** — useTheme was per-instance useState; toggling dark left the fractal grid on multiply (invisible on black) and the ocean on the light bg until a reload. Rewrote lib/theme.ts as a module store + useSyncExternalStore (same API). Verified live: dropdown toggle flips grid blend screen↔multiply and the ocean pixel color instantly, no reload.
+2. **Fractal grid 'not used' on mobile** — component was mousemove-only. Added passive touchstart/touchmove handlers; verified a synthetic touch moves the glow (53.6%→25.6%).
+3. **Nothing floating on the ocean** — boats existed but were disabled AND effectively invisible: fov 20 + fog (5,20) shows only ~±1.8 units of the 30-unit plane; boat spread ±7 put everything off-screen/fogged. Enabled showBoats, boatCount=5, boatSpread=3, bumped boat scale (sX 0.8–2.2 / sY 1–3.5), fov→26, fog→(6,22), pointLight 1→2. Pixel-verified accent-blue clusters in the mid band.
+4. **Rates section short vs hero** — min-h-[100svh] + flex items-center; 833px at 1280×800 (was 833 anyway, now guaranteed ≥ viewport on tall screens).
+5. **Flowing water line** — new components/landing/flow-line.tsx: skiper19 scroll-drawn ribbon, motion/react pathLength 0→1, #38bdf8 10px, opacity 0.5 + glow, full-page z-[2] behind content; verified dasharray 0→0.4 at scrollY 1200.
+
+Verify: frontend 172/172, tsc clean, lint 1 pre-existing warning (ocean gridColor). All changes uncommitted after this round.
+
+
+## Addendum - round 3 (same day): wow water ribbons, responsive ocean, mobile-light grid
+
+1. **FlowLine v2** - old line used the pasted squiggle with preserveAspectRatio='meet' - on phones it covered only ~21% of the page height (verified: 811px of 3844px). Rewrote as a full-page design: viewBox 1440x5760 + preserveAspectRatio='none' (100% coverage at 390 AND 1280). Two interleaved hand-authored organic river paths with 4 layers each: blurred under-glow, gradient bed (sky-cyan-deep blue), bright flowing current segment (scroll-driven dashoffset, ribbons staggered), and 6 twinkling droplets per ribbon riding offset-path with scroll-linked offsetDistance - the 'wow' (droplets stream down the rivers as you scroll). Verified: full coverage, flow offset advances -450 per 1500px scroll, 12 droplets present. **Revised after user feedback ('ugly, static, doesn't progress')**: the dasharray current segment made the bed look fully drawn/static with a tiny moving bead - replaced with progressive `pathLength` draw on ALL layers (ribbon B trails 0.06) + droplets that fade in as the draw passes their position. Verified: dasharray 0 at top → 0.68 at scrollY 2000.
+2. **Ocean responsive** - fixed camera cropped the scene on portrait mobile. rates-section now switches fov 45 + oceanSize 20 on <=767px (26/30 desktop). Pixel map at 390 shows a proper wave/boat band filling the frame instead of a flat gradient crop.
+3. **Fractal grid mobile-light** - added maxFps prop (30 on mobile, 60 desktop) + draw pause when document.hidden; mobile also gets initialPerformance 'medium' (fewer dots on slow devices).
+
+Verify: frontend 172/172, tsc clean, lint clean. Uncommitted.

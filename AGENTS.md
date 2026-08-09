@@ -134,5 +134,19 @@ Format: mirror the existing structure — **Question asked** → **Answer + reas
 
 **Never let these silently go stale.** If a session ends without a summary being written, that's a rule violation worth flagging to the user, not skipping quietly.
 
+### 5. Performance testing environment settings
+
+When testing performance or loading behavior, simulate real user environments with the DevTools device toolbar:
+
+- **CPU throttling:** 4× slowdown (`cpuThrottlingRate: 4`)
+- **Network:** Fast 4G
+- **Network cache:** disabled (disable cache / cache-busting reload) — uncached loads are the best benchmark for how the site loads for real users on first visit
+
+Use this profile for:
+- Any landing-page / portal performance work (LCP, INP, CLS, long tasks)
+- Verifying lazy-loaded chunks stay lazy under slow network
+- Checking heavy canvas/WebGL effects (fractal grid, liquid ocean) degrade gracefully at 4× CPU
+
+
 
 

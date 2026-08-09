@@ -175,8 +175,8 @@ function BoatGroup({ count, spreadRange, color }: { count: number; spreadRange: 
         for (let i = 0; i < count; i++) {
             const x = -rand() * spreadRange + rand() * spreadRange;
             const z = -rand() * spreadRange + rand() * spreadRange;
-            const sX = rand();
-            const sY = 0.5 + rand() * 2;
+            const sX = 0.8 + rand() * 1.4;
+            const sY = 1 + rand() * 2.5;
 
             items.push({
                 position: [x, 0, z],
@@ -241,7 +241,7 @@ function SceneContent({
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/immutability -- imperative three.js scene setup
-        scene.fog = new THREE.Fog(backgroundColor, 5, 20);
+        scene.fog = new THREE.Fog(backgroundColor, 6, 22);
         scene.background = new THREE.Color(backgroundColor);
     }, [scene, backgroundColor]);
 
@@ -259,7 +259,7 @@ function SceneContent({
         <>
             {/* Lighting - Original setup */}
             <hemisphereLight args={[0xFFD3D3, accentColor, 2]} />
-            <pointLight args={[accentColor, 1]} position={[-5, -20, -20]} />
+            <pointLight args={[accentColor, 2]} position={[-5, -20, -20]} />
             <rectAreaLight
                 ref={rectLightRef}
                 args={[accentColor, 20, 3, 3]}

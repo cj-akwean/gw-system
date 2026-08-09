@@ -18,6 +18,16 @@ export default function DashboardPage() {
   const router = useRouter();
   const { isAuthenticated, ready, user, logout } = useAuth();
   const [loggingOut, setLoggingOut] = useState(false);
+  const [calendarDays, setCalendarDays] = useState(7);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const mq = window.matchMedia("(max-width: 639px)");
+    const apply = () => setCalendarDays(mq.matches ? 6 : 7);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
 
   useEffect(() => {
     if (ready && !isAuthenticated && !loggingOut) {
@@ -58,16 +68,20 @@ export default function DashboardPage() {
         <div className="pt-6 md:pt-8">
           <MiniCalendar
             defaultValue={new Date()}
-            days={7}
-            className="w-full justify-center rounded-xl border-border bg-card px-3 py-2.5"
+            days={calendarDays}
+            className="w-full justify-center gap-1 rounded-xl border-border bg-card p-1.5"
           >
-            <MiniCalendarNavigation direction="prev" />
-            <MiniCalendarDays>
+            <MiniCalendarNavigation direction="prev" className="size-8" />
+            <MiniCalendarDays className="gap-0.5">
               {(date) => (
-                <MiniCalendarDay date={date} key={date.toISOString()} />
+                <MiniCalendarDay
+                  date={date}
+                  key={date.toISOString()}
+                  className="min-w-10 p-1.5 sm:min-w-12"
+                />
               )}
             </MiniCalendarDays>
-            <MiniCalendarNavigation direction="next" />
+            <MiniCalendarNavigation direction="next" className="size-8" />
           </MiniCalendar>
         </div>
         <main className="flex-1 space-y-8 pt-6 md:pt-8">

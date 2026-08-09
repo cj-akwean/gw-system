@@ -38,6 +38,16 @@ export function RatesSection() {
   const { isAuthenticated, ready } = useAuth();
   const { dark } = useTheme();
   const [state, setState] = useState<State>({ status: "loading" });
+  const [narrow, setNarrow] = useState(false);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const mq = window.matchMedia("(max-width: 767px)");
+    const apply = () => setNarrow(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,18 +95,19 @@ export function RatesSection() {
   return (
     <section
       aria-label="Water rates"
-      className="relative overflow-hidden py-20 md:py-28"
+      className="relative flex min-h-[100svh] items-center overflow-hidden py-20 md:py-28"
       id="rates"
     >
       <LiquidOcean
         accentColor={0x7dd3fc}
         backgroundColor={dark ? 0x1a4a66 : 0x0d2b3e}
-        boatCount={0}
-        fov={20}
+        boatCount={5}
+        boatSpread={3}
+        fov={narrow ? 45 : 26}
         oceanFragments={18}
-        oceanOpacity={0.6}
-        oceanSize={30}
-        showBoats={false}
+        oceanOpacity={0.65}
+        oceanSize={narrow ? 20 : 30}
+        showBoats
         showGrid={false}
         showWireframe
         waveAmplitude={0.2}

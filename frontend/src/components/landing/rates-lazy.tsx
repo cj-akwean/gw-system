@@ -27,7 +27,11 @@ export function RatesLazy() {
           io.disconnect();
         }
       },
-      { rootMargin: "600px" }
+      // Load only after the section is 20% into the viewport. The rates
+      // section starts exactly at the first viewport fold, so zero/positive
+      // margins fire at page load — pulling the ~860KB three.js chunk into the
+      // critical path on mobile AND desktop.
+      { rootMargin: "0px 0px -20% 0px" }
     );
     io.observe(el);
     return () => io.disconnect();
