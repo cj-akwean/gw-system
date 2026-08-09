@@ -134,24 +134,5 @@ Format: mirror the existing structure — **Question asked** → **Answer + reas
 
 **Never let these silently go stale.** If a session ends without a summary being written, that's a rule violation worth flagging to the user, not skipping quietly.
 
-### 5. Verify in a real browser with Chrome DevTools MCP (Antigravity-style)
 
-The `chrome-devtools` MCP server (installed globally in `~/.config/opencode/opencode.jsonc`) gives a live Chrome instance with clicks, console, network, and performance tools. Use it instead of guessing when:
-
-- **UI work**: any change to the Next.js portal, Filament admin, or customer-facing pages — drive the real flow and confirm it renders (DOM snapshot is sufficient; no screenshot requirement)
-- **Responsive checks**: `emulate`/`resize_page` at ~390 / 768 / 1280px (Rule: mobile-first)
-- **Payments**: run the PayMongo checkout flow with the test portal user; inspect `list_network_requests` + `list_console_messages` for failures (network failures → check Laravel log for `cURL error 60` first, per Development notes)
-- **JS errors**: `list_console_messages` on every page you touch — don't report UI "working" without checking the console
-
-How to run it:
-
-- Dev servers: `php artisan serve` (backend, `http://127.0.0.1:8000`) and `npm run dev` (frontend, `http://localhost:3000`) — start them first, then use `navigate_page`
-- Login with seeded test creds (see Admin Credentials above): `test@example.com` / `password` (portal), `admin@gwsystem.com` / `admin123` (admin)
-- The MCP launches its own Chrome profile — logins are NOT remembered between sessions; expect to log in each time
-- **Exception**: small tasks that don't touch UI (config, lint, pure backend logic with tests) — skip the browser
-
-### 6. Reporting findings
-
-- Always report what was verified in the browser (flows clicked through, console/network clean) vs. what was only reasoned about
-- If a UI task ends without browser verification, say why
 

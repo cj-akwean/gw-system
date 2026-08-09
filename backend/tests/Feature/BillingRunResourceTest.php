@@ -158,6 +158,30 @@ class BillingRunResourceTest extends TestCase
         Queue::assertPushed(RunBillingJob::class, fn (RunBillingJob $job) => $job->periodEnd === '2026-06-30' && $job->billingRunId === $fresh->id);
     }
 
+    public function test_list_polls_for_status_updates(): void
+    {
+        Livewire::actingAs($this->admin(), 'admin')
+            ->test(ListBillingRuns::class)
+            ->assertSeeHtml('wire:poll.5s');
+    }
+
+    public function test_list_refresh_picks_up_new_status(): void
+    {
+        $run = $this->billingRun(['status' => 'running', 'report' => null, 'finished_at' => null]);
+
+        Livewire::actingAs($this->admin(), 'admin')
+            ->test(ListBillingRuns::class)
+            ->assertSee('Running');
+
+        $run->forceFill(['status' => 'completed', 'report' => [], 'finished_at' => now()])->save();
+
+        Livewire::actingAs($this->admin(), 'admin')
+            ->test(ListBillingRuns::class)
+            ->call('$refresh')
+            ->assertSee('Completed')
+            ->assertDontSee('Running');
+    }
+
     public function test_view_run_shows_summary_and_report_rows(): void
     {
         $run = $this->billingRun();
@@ -170,7 +194,9 @@ class BillingRunResourceTest extends TestCase
             ->assertSee('ACCT-2')
             ->assertSee('No reading in the billing period')
             ->assertSee('Completed')
-            ->assertSee('Invoices billed');
+            ->assertSee('Invoices billed')
+            ->assertSee('Per-connection report (2 rows)')
+            ->assertSeeHtml('wire:poll.5s');
     }
 
     public function test_view_run_shows_error_for_failed_run(): void

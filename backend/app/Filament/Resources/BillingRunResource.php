@@ -33,6 +33,7 @@ class BillingRunResource extends Resource
         return $schema
             ->components([
                 Section::make('Run Summary')
+                    ->poll('5s')
                     ->schema([
                         Grid::make(3)
                             ->schema([
@@ -73,7 +74,10 @@ class BillingRunResource extends Resource
                             ->visible(fn (BillingRun $record): bool => filled($record->error)),
                     ]),
 
-                Section::make('Per-connection report')
+                Section::make(fn (BillingRun $record): string => 'Per-connection report ('.count($record->report ?? []).' rows)')
+                    ->poll('5s')
+                    ->collapsible()
+                    ->collapsed()
                     ->schema([
                         RepeatableEntry::make('report')
                             ->schema([
@@ -151,6 +155,7 @@ class BillingRunResource extends Resource
             ])
             ->filters([])
             ->defaultSort('id', 'desc')
+            ->poll('5s')
             ->actions([
                 ViewAction::make(),
             ])
