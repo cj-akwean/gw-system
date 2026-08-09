@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FlippingCard } from "@/components/ui/flipping-card";
 import { AuthPage } from "@/components/auth";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { useAuth } from "@/lib/auth-context";
 
 function AuthContent() {
@@ -26,7 +27,7 @@ function AuthContent() {
     >
       <div
         className="pointer-events-none fixed inset-0"
-        style={{ background: "var(--glow) no-repeat", filter: "blur(80px)" }}
+        style={{ background: "var(--glow) no-repeat", filter: "blur(var(--glow-blur))" }}
       />
       <div
         className="pointer-events-none fixed inset-0"
@@ -37,6 +38,9 @@ function AuthContent() {
         }}
       />
       <div className="relative z-10">
+        <div className="fixed top-6 right-6 z-50">
+          <ThemeToggle />
+        </div>
         {!ready ? null : (
           <FlippingCard
             isFlipped={isFlipped}
