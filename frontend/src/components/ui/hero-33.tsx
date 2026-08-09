@@ -1,12 +1,21 @@
 'use client';
 
 import { motion, type Variants } from 'motion/react';
-import { Armchair, Monitor, PlaneTakeoff } from 'lucide-react';
+import { Armchair, Menu, Monitor, PlaneTakeoff } from 'lucide-react';
+import Image from 'next/image';
 import ElasticLine from '@/components/fancy/physics/elastic-line';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { WaterCanvas } from '@/components/water-button';
 import { MultiDirectionSlideText } from '@/components/ui/multi-direction-slide-text';
 import { useLoadingComplete } from '@/lib/loading-context';
 import { ProfileDropdown } from '@/components/portal/profile-dropdown';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/lib/auth-context';
 import { useRouter } from 'next/navigation';
 import React from 'react';
@@ -108,6 +117,15 @@ export default function Hero33({
     },
   };
 
+  const signInLink = (
+    <a
+      href="/auth"
+      className="hidden rounded-md border border-amber-500 px-6 py-2.5 text-sm font-medium text-neutral-900 transition-transform hover:bg-black/5 active:scale-[0.96] lg:inline-block dark:text-white dark:hover:bg-white/10"
+    >
+      Sign In
+    </a>
+  );
+
   return (
     <div className="relative min-h-screen w-full overflow-hidden font-sans antialiased selection:bg-black/10 dark:selection:bg-white/20">
       {/* Content Container */}
@@ -124,7 +142,7 @@ export default function Hero33({
               {logoText}
               <span className="text-amber-500">.</span>
             </div>
-            <div className="hidden items-center gap-10 md:flex">
+            <div className="hidden items-center gap-10 lg:flex">
               {navItems.map((item) => (
                 <a
                   key={item}
@@ -143,14 +161,51 @@ export default function Hero33({
             ) : isAuthenticated ? (
               <ProfileDropdown user={user} onLogout={handleLogout} />
             ) : (
-              <WaterCanvas waterAmount={50}>
-                <a
-                  href="/auth"
-                  className="inline-block rounded-md border border-amber-500 px-6 py-2.5 text-sm font-medium text-neutral-900 transition-transform hover:bg-black/5 active:scale-[0.96] dark:text-white dark:hover:bg-white/10"
-                >
-                  Sign In
-                </a>
-              </WaterCanvas>
+              <div className="flex items-center gap-3">
+                <ThemeToggle className="hidden lg:inline-flex" />
+                <div className="lg:hidden">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        aria-label="Open menu"
+                        type="button"
+                        className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-full border border-amber-500/60 text-neutral-900 transition-transform hover:bg-black/5 active:scale-[0.96] dark:text-white dark:hover:bg-white/10"
+                      >
+                        <Menu className="h-5 w-5" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="end"
+                      sideOffset={8}
+                      className="w-56 origin-top-right rounded-2xl border-border bg-background/95 p-2 shadow-xl backdrop-blur-sm"
+                    >
+                      <div className="space-y-1">
+                        {navItems.map((item) => (
+                          <DropdownMenuItem asChild key={item}>
+                            <a href="#">{item}</a>
+                          </DropdownMenuItem>
+                        ))}
+                      </div>
+                      <DropdownMenuSeparator className="my-2 bg-gradient-to-r from-transparent via-border to-transparent" />
+                      <div className="flex justify-center p-1">
+                        <WaterCanvas rounded={6} waterAmount={50}>
+                          <a
+                            href="/auth"
+                            className="flex items-center justify-center rounded-md border border-amber-500 px-6 py-2.5 text-sm font-medium text-neutral-900 transition-transform hover:bg-black/5 active:scale-[0.96] dark:text-white dark:hover:bg-white/10"
+                          >
+                            Sign In
+                          </a>
+                        </WaterCanvas>
+                      </div>
+                      <div className="flex items-center justify-between px-2 py-1.5">
+                        <span className="text-sm text-muted-foreground">Theme</span>
+                        <ThemeToggle className="h-9 w-9" />
+                      </div>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                <WaterCanvas waterAmount={50} frozen={!loadingComplete}>{signInLink}</WaterCanvas>
+              </div>
             )}
           </motion.nav>
 
@@ -167,27 +222,29 @@ export default function Hero33({
                 />
               </div>
 
-              {/* Elastic line — zero-height wrapper so it sits between h1 and description without taking space */}
-              <div className="relative w-full overflow-visible" style={{ height: 0 }}>
-                <div className="pointer-events-none absolute left-0 z-0 w-[380px] -translate-y-1/2 text-neutral-500 dark:text-neutral-400" style={{ height: 60 }}>
-                  <ElasticLine
-                    grabThreshold={20}
-                    releaseThreshold={50}
-                    strokeWidth={1}
-                    transition={{
-                      type: "spring",
-                      stiffness: 400,
-                      damping: 5,
-                    }}
-                    animateInTransition={{
-                      type: "spring",
-                      stiffness: 300,
-                      damping: 30,
-                      delay: 0.15,
-                    }}
-                  />
+              {/* Elastic line — zero-height wrapper so it sits between h1 and description without taking space; mounts only after the loader finishes so startup rAF loops don't compete on phones */}
+              {loadingComplete && (
+                <div className="relative w-full overflow-visible" style={{ height: 0 }}>
+                  <div className="pointer-events-none absolute left-0 z-0 w-[380px] -translate-y-1/2 text-neutral-500 dark:text-neutral-400" style={{ height: 60 }}>
+                    <ElasticLine
+                      grabThreshold={20}
+                      releaseThreshold={50}
+                      strokeWidth={1}
+                      transition={{
+                        type: "spring",
+                        stiffness: 400,
+                        damping: 5,
+                      }}
+                      animateInTransition={{
+                        type: "spring",
+                        stiffness: 300,
+                        damping: 30,
+                        delay: 0.15,
+                      }}
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               {description && (
                 <motion.p
@@ -232,9 +289,12 @@ export default function Hero33({
               transition={{ type: 'spring', stiffness: 100, damping: 20, delay: 1.2 }}
               className="order-1 z-10 mt-10 flex items-center justify-center lg:order-none lg:mt-0"
             >
-              <img
-                src="/images/water-orb.png"
+              <Image
+                src="/images/water-orb.webp"
                 alt="Water orb"
+                width={1058}
+                height={908}
+                priority
                 className="w-[490px] sm:w-96 sm:h-96 lg:w-[40rem] lg:h-[40rem] object-contain"
               />
             </motion.div>

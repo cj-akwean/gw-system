@@ -181,6 +181,7 @@ interface WaterCanvasProps {
     rounded?: number;
     children: React.ReactNode;
     className?: string;
+    frozen?: boolean;
 }
 
 export function WaterCanvas({
@@ -189,11 +190,13 @@ export function WaterCanvas({
     rounded = 8,
     children,
     className,
+    frozen = false,
 }: WaterCanvasProps) {
     const rootRef = useRef<HTMLDivElement | null>(null);
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
     useEffect(() => {
+        if (frozen) return;
         const rootEl = rootRef.current;
         const canvasEl = canvasRef.current;
         if (!rootEl || !canvasEl) return;
@@ -524,19 +527,12 @@ export function WaterCanvas({
         }, { threshold: 0 });
         visibilityObserver.observe(root);
 
-        const probe = window.setInterval(() => {
-            if (!alive) return;
-            if (Math.abs(pixelScale() - pixScale) < 0.02) return;
-            raster(); draw();
-        }, 300);
-
         build(); draw();
         raf = requestAnimationFrame(loop);
 
         return () => {
             alive = false;
             cancelAnimationFrame(raf);
-            clearInterval(probe);
             root.removeEventListener("mouseenter", onEnter);
             root.removeEventListener("mousemove", onMove);
             root.removeEventListener("mouseleave", onLeave);
@@ -547,7 +543,7 @@ export function WaterCanvas({
             resizeObserver.disconnect();
             visibilityObserver.disconnect();
         };
-    }, [waterAmount, waterColor, rounded]);
+    }, [waterAmount, waterColor, rounded, frozen]);
 
     return (
         <div ref={rootRef} className={className} style={{ position: "relative", display: "inline-flex", touchAction: "manipulation" }}>
@@ -909,19 +905,12 @@ export default function MetallicButton(props: MetallicButtonProps) {
         }, { threshold: 0 });
         visibilityObserver.observe(root);
 
-        const probe = window.setInterval(() => {
-            if (!alive) return;
-            if (Math.abs(pixelScale() - pixScale) < 0.02) return;
-            raster(); draw();
-        }, 300);
-
         build(); draw();
         raf = requestAnimationFrame(loop);
 
         return () => {
             alive = false;
             cancelAnimationFrame(raf);
-            clearInterval(probe);
             root.removeEventListener("mouseenter", onEnter);
             root.removeEventListener("mousemove", onMove);
             root.removeEventListener("mouseleave", onLeave);

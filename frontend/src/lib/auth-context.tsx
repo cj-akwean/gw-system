@@ -6,6 +6,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useMemo,
   type ReactNode,
 } from "react";
 import { loginApi, logoutApi, registerApi, updateProfileApi, type PortalUser } from "./api";
@@ -79,10 +80,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
+  const value = useMemo(
+    () => ({ user, token, isAuthenticated: !!token, ready, login, signup, updateProfile, logout }),
+    [user, token, ready, login, signup, updateProfile, logout],
+  );
+
   return (
-    <AuthContext.Provider
-      value={{ user, token, isAuthenticated: !!token, ready, login, signup, updateProfile, logout }}
-    >
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

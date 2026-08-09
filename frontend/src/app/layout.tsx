@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import Script from "next/script";
 import "./globals.css";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { OpeningAnimation } from "@/components/opening-animation";
 import { Space_Grotesk, Montserrat } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { Providers } from "@/lib/providers";
@@ -29,12 +27,7 @@ export default function RootLayout({
         </Script>
       </head>
       <body>
-        <Providers>
-          <OpeningAnimation>
-            {children}
-            <ThemeToggle />
-          </OpeningAnimation>
-        </Providers>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

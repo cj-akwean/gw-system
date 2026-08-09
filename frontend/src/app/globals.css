@@ -12,6 +12,7 @@
   --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
   --dot: rgba(0, 0, 0, 0.35);
   --glow: radial-gradient(circle at top center, rgba(70, 130, 180, 0.5), transparent 70%);
+  --glow-blur: 32px;
   --toggle-bg: rgba(255, 255, 255, 0.6);
   --toggle-border: rgba(0, 0, 0, 0.1);
   --toggle-hover-bg: rgba(255, 255, 255, 0.9);
@@ -69,6 +70,12 @@ html.dark {
 
 body {
   margin: 0;
+}
+
+@media (min-width: 768px) {
+  :root {
+    --glow-blur: 80px;
+  }
 }
 
 ::view-transition-old(root),

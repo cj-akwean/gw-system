@@ -127,7 +127,7 @@ export default function OnboardingPage() {
     >
       <div
         className="pointer-events-none fixed inset-0"
-        style={{ background: "var(--glow) no-repeat", filter: "blur(80px)" }}
+        style={{ background: "var(--glow) no-repeat", filter: "blur(var(--glow-blur))" }}
       />
       <div
         className="pointer-events-none fixed inset-0"
