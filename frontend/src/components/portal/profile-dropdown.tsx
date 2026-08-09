@@ -1,10 +1,11 @@
 "use client";
 
-import { LayoutDashboard, LogOut, Settings, User } from "lucide-react";
+import { LayoutDashboard, LogOut, Moon, Settings, Sun, User } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { PortalUser } from "@/lib/api";
 import { AVATAR_RGB, getAvatar } from "@/lib/avatars";
+import { useTheme } from "@/lib/theme";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,6 +22,7 @@ interface ProfileDropdownProps {
 
 export function ProfileDropdown({ user, onLogout }: ProfileDropdownProps) {
   const pathname = usePathname();
+  const { dark, mounted, toggle } = useTheme();
   const avatar = user?.avatar_id ? getAvatar(user.avatar_id) : null;
   const rgb = user?.avatar_id ? AVATAR_RGB[user.avatar_id] : null;
   const displayName = user?.name || "My Account";
@@ -48,14 +50,14 @@ export function ProfileDropdown({ user, onLogout }: ProfileDropdownProps) {
             {rgb && (
               <div
                 aria-hidden="true"
-                className="pointer-events-none absolute inset-0 rounded-xl"
+                className="pointer-events-none absolute inset-0 rounded-full"
                 style={{ boxShadow: `0 0 0 2px rgba(${rgb}, 0.55)` }}
               />
             )}
-            <div className="relative h-full w-full overflow-hidden rounded-xl bg-muted">
+            <div className="relative h-full w-full overflow-hidden rounded-full bg-muted">
               {avatar ? (
                 <div className="flex h-full w-full items-center justify-center">
-                  <div className="scale-[4] transform">{avatar.svg}</div>
+                  {avatar.svg}
                 </div>
               ) : (
                 <div className="flex h-full w-full items-center justify-center">
@@ -73,12 +75,6 @@ export function ProfileDropdown({ user, onLogout }: ProfileDropdownProps) {
         sideOffset={4}
       >
         <div className="space-y-1">
-          <DropdownMenuItem asChild>
-            <Link href="/onboarding">
-              <User className="h-4 w-4" />
-              Profile
-            </Link>
-          </DropdownMenuItem>
           {!onDashboard && (
             <DropdownMenuItem asChild>
               <Link href="/dashboard">
@@ -92,6 +88,21 @@ export function ProfileDropdown({ user, onLogout }: ProfileDropdownProps) {
               <Settings className="h-4 w-4" />
               Settings
             </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <button
+              data-testid="theme-toggle-item"
+              type="button"
+              onClick={(e) => toggle(e.currentTarget)}
+              disabled={!mounted}
+            >
+              {dark ? (
+                <Sun className="h-4 w-4" />
+              ) : (
+                <Moon className="h-4 w-4" />
+              )}
+              {dark ? "Light mode" : "Dark mode"}
+            </button>
           </DropdownMenuItem>
         </div>
 

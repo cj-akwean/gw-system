@@ -71,6 +71,22 @@ vi.mock("@/components/portal/saved-card-selector", () => ({
   SavedCardSelector: () => <div data-testid="saved-card-selector" />,
 }));
 
+vi.mock("@/components/ui/swipe-button", () => ({
+  SwipeButton: ({
+    onSwipeComplete,
+    text,
+    ...props
+  }: {
+    onSwipeComplete?: () => void;
+    text?: string;
+    "data-testid"?: string;
+  }) => (
+    <button type="button" {...props} onClick={onSwipeComplete}>
+      {text}
+    </button>
+  ),
+}));
+
 const QR_IMAGE = "data:image/png;base64,iVBORw0KGgo=";
 
 const invoice = (overrides: Partial<PortalInvoice> = {}): PortalInvoice => ({

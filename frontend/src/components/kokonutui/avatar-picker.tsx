@@ -25,6 +25,8 @@ interface ProfileSetupProps {
   className?: string;
   initialUsername?: string;
   initialAvatarId?: number;
+  heading?: string;
+  subtitle?: string;
 }
 
 const containerVariants: Variants = {
@@ -49,6 +51,8 @@ export default function ProfileSetup({
   className,
   initialUsername = "",
   initialAvatarId,
+  heading = "Pick Your Avatar",
+  subtitle = "Choose one to get started",
 }: ProfileSetupProps) {
   const [selectedAvatar, setSelectedAvatar] = useState<Avatar>(
     initialAvatarId ? getAvatar(initialAvatarId) : AVATARS[0]
@@ -87,10 +91,10 @@ export default function ProfileSetup({
           {/* Header */}
           <div className="space-y-1 text-center">
             <h2 className="font-semibold text-xl tracking-tight">
-              Pick Your Avatar
+              {heading}
             </h2>
             <p className="text-muted-foreground text-sm">
-              Choose one to get started
+              {subtitle}
             </p>
           </div>
 

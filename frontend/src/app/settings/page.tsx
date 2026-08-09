@@ -3,10 +3,10 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Link2, Loader2 } from "lucide-react";
+import HoldButton from "@/components/kokonutui/hold-button";
 import ProfileSetup from "@/components/kokonutui/avatar-picker";
 import { DashboardHeader } from "@/components/portal/dashboard-header";
 import { LinkMeterForm } from "@/components/portal/link-meter-form";
-import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
 import { getLinks, unlinkApi, type PortalLink } from "@/lib/api";
 
@@ -20,7 +20,6 @@ export default function SettingsPage() {
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileError, setProfileError] = useState("");
   const [unlinkError, setUnlinkError] = useState("");
-  const [confirmUnlinkId, setConfirmUnlinkId] = useState<number | null>(null);
   const [unlinkingId, setUnlinkingId] = useState<number | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -52,7 +51,6 @@ export default function SettingsPage() {
     try {
       await unlinkApi(linkId);
       setLinks((prev) => prev.filter((link) => link.id !== linkId));
-      setConfirmUnlinkId(null);
     } catch (err) {
       setUnlinkError(err instanceof Error ? err.message : "Couldn't unlink the meter.");
     } finally {
@@ -72,7 +70,7 @@ export default function SettingsPage() {
     <div className="relative min-h-screen w-full" style={{ background: "var(--bg)" }}>
       <div
         className="pointer-events-none fixed inset-0"
-        style={{ background: "var(--glow) no-repeat", filter: "blur(80px)" }}
+        style={{ background: "var(--glow) no-repeat", filter: "blur(var(--glow-blur))" }}
       />
       <div
         className="pointer-events-none fixed inset-0"
@@ -98,6 +96,8 @@ export default function SettingsPage() {
               Profile
             </h2>
             <ProfileSetup
+              heading="Edit your profile"
+              subtitle="Update your avatar and display name."
               initialAvatarId={user?.avatar_id ?? undefined}
               initialUsername={user?.name ?? ""}
               onComplete={async ({ username, avatarId }) => {
@@ -168,35 +168,17 @@ export default function SettingsPage() {
                           : ""}
                       </p>
                     </div>
-                    {confirmUnlinkId === link.id ? (
-                      <div className="flex shrink-0 items-center gap-2">
-                        <Button
-                          className="h-8 text-xs"
-                          disabled={unlinkingId === link.id}
-                          size="sm"
-                          type="button"
-                          variant="destructive"
-                          onClick={() => handleUnlink(link.id)}
-                        >
-                          {unlinkingId === link.id ? "Unlinking…" : "Confirm unlink?"}
-                        </Button>
-                        <button
-                          type="button"
-                          onClick={() => setConfirmUnlinkId(null)}
-                          className="text-xs text-muted-foreground underline underline-offset-4 hover:text-primary"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setConfirmUnlinkId(link.id)}
-                        className="shrink-0 text-xs font-semibold text-destructive underline underline-offset-4 transition-colors hover:text-destructive/80"
-                      >
-                        Unlink
-                      </button>
-                    )}
+                    <HoldButton
+                      aria-label={`Unlink ${link.service_connection.account_number}`}
+                      className="h-9 shrink-0 rounded-lg px-4 text-xs"
+                      disabled={unlinkingId === link.id}
+                      holdDuration={1500}
+                      label={unlinkingId === link.id ? "Unlinking…" : "Hold to unlink"}
+                      holdingLabel="Release to unlink"
+                      type="button"
+                      variant="red"
+                      onClick={() => handleUnlink(link.id)}
+                    />
                   </li>
                 ))}
               </ul>

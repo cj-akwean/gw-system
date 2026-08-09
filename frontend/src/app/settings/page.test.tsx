@@ -144,16 +144,18 @@ describe("SettingsPage", () => {
     expect(screen.getByTestId("profile-setup")).toBeInTheDocument();
   });
 
-  it("unlinks a meter after confirming", async () => {
+  it("unlinks a meter after holding the hold button", async () => {
     seedFetch([linkPayload]);
     mockUseAuth = () => authedUser();
 
     render(<SettingsPage />);
 
-    const unlinkButton = await screen.findByText("Unlink");
-    fireEvent.click(unlinkButton);
-
-    fireEvent.click(screen.getByText("Confirm unlink?"));
+    const holdButton = await screen.findByRole("button", {
+      name: "Unlink GW-0001",
+    });
+    fireEvent.mouseDown(holdButton);
+    await new Promise((resolve) => setTimeout(resolve, 1700));
+    fireEvent.mouseUp(holdButton);
 
     await waitFor(() => {
       expect(screen.queryByText("GW-0001 · MTR-0001")).not.toBeInTheDocument();
@@ -162,6 +164,26 @@ describe("SettingsPage", () => {
       ([, init]) => init?.method === "DELETE"
     ) as [string, RequestInit];
     expect(deleteCall[0]).toBe("http://127.0.0.1:8000/api/links/5");
+  });
+
+  it("does not unlink when the hold is released early", async () => {
+    seedFetch([linkPayload]);
+    mockUseAuth = () => authedUser();
+
+    render(<SettingsPage />);
+
+    const holdButton = await screen.findByRole("button", {
+      name: "Unlink GW-0001",
+    });
+    fireEvent.mouseDown(holdButton);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    fireEvent.mouseUp(holdButton);
+
+    expect(screen.getByText("GW-0001 · MTR-0001")).toBeInTheDocument();
+    const deleteCall = fetchSpy.mock.calls.find(
+      ([, init]) => init?.method === "DELETE"
+    );
+    expect(deleteCall).toBeUndefined();
   });
 
   it("shows a confirmation when saving the profile", async () => {

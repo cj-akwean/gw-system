@@ -19,9 +19,14 @@ vi.mock("next/link", () => ({
 }));
 
 let mockPathname = "/";
+const mockToggle = vi.fn();
 
 vi.mock("next/navigation", () => ({
   usePathname: () => mockPathname,
+}));
+
+vi.mock("@/lib/theme", () => ({
+  useTheme: () => ({ dark: false, mounted: true, toggle: mockToggle }),
 }));
 
 const mockLogout = vi.fn();
@@ -36,6 +41,7 @@ const user = {
 describe("ProfileDropdown", () => {
   beforeEach(() => {
     mockLogout.mockReset();
+    mockToggle.mockReset();
     mockPathname = "/";
   });
 
@@ -54,11 +60,11 @@ describe("ProfileDropdown", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Open profile menu" }));
 
-    expect(screen.getByText("Profile")).toBeInTheDocument();
     expect(screen.getByText("Dashboard")).toBeInTheDocument();
     expect(screen.getByText("Settings")).toBeInTheDocument();
+    expect(screen.getByText("Dark mode")).toBeInTheDocument();
     expect(screen.getByText("Sign Out")).toBeInTheDocument();
-    expect(screen.queryByText("Landing Page")).not.toBeInTheDocument();
+    expect(screen.queryByText("Profile")).not.toBeInTheDocument();
   });
 
   it("links Settings to the settings page", async () => {
@@ -80,6 +86,15 @@ describe("ProfileDropdown", () => {
 
     expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
     expect(screen.getByText("Settings")).toBeInTheDocument();
+  });
+
+  it("toggles the theme from the menu", async () => {
+    render(<ProfileDropdown user={user} onLogout={mockLogout} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Open profile menu" }));
+    await userEvent.click(screen.getByTestId("theme-toggle-item"));
+
+    expect(mockToggle).toHaveBeenCalledTimes(1);
   });
 
   it("calls onLogout when Sign Out is clicked", async () => {

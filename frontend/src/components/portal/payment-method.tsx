@@ -22,6 +22,7 @@ import { formatRemaining } from "@/lib/countdown";
 import { useAuth } from "@/lib/auth-context";
 import { DashboardHeader } from "@/components/portal/dashboard-header";
 import { InfoTip } from "@/components/ui/info-tip";
+import { SwipeButton } from "@/components/ui/swipe-button";
 import { cn } from "@/lib/utils";
 import {
   AlertCircle,
@@ -811,7 +812,7 @@ export function PaymentMethodScreen({
       <div className="relative min-h-screen w-full" style={{ background: "var(--bg)" }}>
       <div
         className="pointer-events-none fixed inset-0"
-        style={{ background: "var(--glow) no-repeat", filter: "blur(80px)" }}
+        style={{ background: "var(--glow) no-repeat", filter: "blur(var(--glow-blur))" }}
       />
       <div
         className="pointer-events-none fixed inset-0"
@@ -1052,35 +1053,41 @@ export function PaymentMethodScreen({
                     </p>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={
-                      selectedMethod === "card"
-                        ? () => cardFormRef.current?.submit()
-                        : selectedMethod === "gcash"
-                          ? startGcash
-                          : startQrPh
-                    }
-                    disabled={
-                      busy ||
-                      ewalletDisabled
-                    }
-                    data-testid="pay-now"
-                    className="flex w-full items-center justify-center gap-2 rounded-md border border-border bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {busy ? (
-                      <>
-                        <Loader2 className="size-4 animate-spin" />
-                        {qr.phase === "starting"
-                          ? "Starting payment…"
-                          : selectedMethod === "card"
-                            ? "Processing your card…"
-                            : "Generating your QR code…"}
-                      </>
-                    ) : (
-                      <>Pay {formatPeso(invoice.total_amount)}</>
-                    )}
-                  </button>
+                  {busy || ewalletDisabled ? (
+                    <button
+                      type="button"
+                      disabled
+                      data-testid="pay-now"
+                      className="flex w-full items-center justify-center gap-2 rounded-md border border-border bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {busy ? (
+                        <>
+                          <Loader2 className="size-4 animate-spin" />
+                          {qr.phase === "starting"
+                            ? "Starting payment…"
+                            : selectedMethod === "card"
+                              ? "Processing your card…"
+                              : "Generating your QR code…"}
+                        </>
+                      ) : (
+                        <>Pay {formatPeso(invoice.total_amount)}</>
+                      )}
+                    </button>
+                  ) : (
+                    <SwipeButton
+                      data-testid="pay-now"
+                      text={`Swipe to pay ${formatPeso(invoice.total_amount)}`}
+                      onSwipeComplete={() => {
+                        if (selectedMethod === "card") {
+                          cardFormRef.current?.submit();
+                        } else if (selectedMethod === "gcash") {
+                          startGcash();
+                        } else {
+                          startQrPh();
+                        }
+                      }}
+                    />
+                  )}
                 </div>
               )}
             </section>
