@@ -1203,3 +1203,104 @@ ext dev logged "Maximum update depth exceeded" at useMousePosition's setPosition
 **c) Settings is the portal's profile + meter manager.** The # placeholder became a real auth-guarded /settings page: profile editing reuses the onboarding avatar picker (prefilled via new initialUsername/initialAvatarId props — same component, no second picker to drift) and meter management reuses the extracted LinkMeterForm plus unlink. Unlinking needs a two-step inline confirm because a revoked link detaches the user from their bills — accidental self-lockout is a support ticket. The backend revoke endpoint (DELETE /api/links/{id}, ownership-checked 403, revokes instead of hard-deletes so history survives) already existed; only the frontend call was missing.
 
 **d) Dropdown avatar is a square, not a circle.** The onboarding picker's thumbnails are rounded squares (ounded-xl); a circle crop cuts the SVG avatar's face, so the trigger matches the thumbnails (rounded-xl + per-avatar color ring). Same crop as everywhere else in the app.
+
+## 41. Revisited: dropdown avatar crop, hold-to-unlink, swipe-to-pay, theme toggle home, mobile nav (2026-08-09)
+
+**Question asked (follow-ups on §38/§40):** the dropdown avatar was invisible; unlink and the pay button wanted gesture patterns (hold / swipe); the theme toggle overlapped the nav on tablet/phone; guests needed a hamburger below desktop.
+
+**Answer + reasoning:**
+
+**a) The invisible avatar was a scale bug, not a styling choice.** The 40px avatar SVG was rendered with scale-[4] inside a 40px crop — a 160px art blown into a 40px window shows only a corner of the face. The onboarding stage uses scale-[4] because its circle is exactly 160px. The dropdown renders the SVG at natural size in a circle; the SVG carries its own circular mask, so it matches the picker look exactly. Lesson: scaling tricks only work when the target box matches the scaled footprint.
+
+**b) Unlink is a hold-to-confirm gesture, enforced.** The kokonutui HoldButton as-shipped fires onClick on any release — the fill is purely cosmetic, so an accidental tap would still unlink. Adapted: the action fires only after the hold completes (onComplete on the fill animation), and a "Release to unlink" label signals readiness. This keeps a one-gesture destructive action honest on touch.
+
+**c) Pay is a swipe, and the swipe is only the trigger.** badtz-ui's SwipeButton replaced the review-step Pay button: "Swipe to pay ?X". The heavy states (starting/processing/QR-generating) stay a disabled button — the swipe never misrepresents an in-flight payment. Registry quirks: its dependencies field was malformed ("clsx tailwind-merge" as one package — npm rejects it), so deps installed manually; the confetti dep it declares is unused by the component code, so it was dropped (no-unused-deps rule); the shimmer text animation class has no keyframes in this project, so it renders as plain text.
+
+**d) The theme toggle is placement-aware, never fixed-overlay.** The old toggle was ixed top-6 right-6 for every page — on tablet/phone it collided with the hero's Sign In and the portal header's dropdown. Now it lives where the current surface expects it: inside the profile dropdown (signed in), in the hero nav row (guest, desktop), inside the guest hamburger (guest, mobile), floating only on /auth where nothing else occupies that corner. Extracted useTheme() so the dropdown item and the standalone toggle share the same dark-class/localStorage/view-transition logic.
+
+**e) Hamburger for guests below desktop.** Below lg the guest nav (items + Sign In + theme) collapses into a lightweight dropdown panel built on the existing Radix DropdownMenu — zero new deps (navigation-5's sheet/accordion stack would add three UI primitives for four placeholder links). Signed-in users keep the avatar trigger in the top bar (avatar-only on mobile).
+
+## 42. The ripple + loading screen are landing-page-only, and the glow blur scales down on phones (2026-08-09)
+
+**Question asked:** the wave effect plays on every refresh of every page — is that excessive for login and the dashboard? And the site feels heavy on phones generally.
+
+**Answer + reasoning:**
+
+**a) The page-capture ripple is a showcase effect, not chrome.** The WebGL ripple re-captures the page's HTML into a canvas on every paint — the most expensive thing the frontend does per frame. It existed in the layout, so login, dashboard, onboarding, and settings all paid that cost for an effect nobody looks at while paying bills. It moved to the landing page — the only surface that consumes LoadingContext (the hero's entrance animations) and the only place the splash means something. Portal pages now render instantly with no loading screen and no per-frame WebGL capture, and they stop downloading the sim code entirely. Keep-full-waves-on-phones was the user's call: the landing page keeps the full effect everywhere.
+
+**b) The blur budget: lur(80px) full-viewport was the second phone GPU killer.** A viewport-sized Gaussian blur is re-rasterized constantly on mobile. The --glow gradient already fades to transparent, so the blur only softens the transition — --glow-blur (32px mobile, 80px desktop) keeps the look while halving the mobile cost; the filter can be dropped entirely later without touching the six pages that use it.
+
+**c) A deleted image is a 404 until someone greps.** The 1.5MB water-orb.png was replaced by a 129KB WebP but the hero still referenced the old name — silent 404, no build error, no console warning. The webp reference now carries real width/height (1058×908 read from the VP8X header) so layout doesn't shift.
+
+**d) Don't start three animations at once on a phone.** The loader's dot-matrix, the elastic line, and the water sim all mounted at startup. The elastic line and the nav's water canvas now mount only after the loader finishes — the entrance animation plays alone, then the interactive toys start. Same visible behavior, gentler boot.
+
+## 43. The 14s LCP was process thrash, not the page — and what we changed anyway (2026-08-09)
+
+**Question asked:** LCP came back at 14.24s on the landing page and the site felt more laggy after the performance pass. What's wrong?
+
+**Answer + reasoning:**
+
+**a) First measure the machine, then the page.** The LCP was measured while 7 orphaned 
+ode.exe processes (~1.8GB idle, spiking to 5GB during hot reloads) were running — several came from earlier dev-server smoke tests that killed the cmd.exe wrapper without killing the node children (Windows: killing the parent doesn't kill the tree). A 14s LCP on localhost with a 129KB image is a starving machine, not a page weight problem. Lesson: dev-server kills must use 	askkill /T; a Stop-Process on the wrapper is not a kill. Cleanup returned the machine to 4 node processes (one normal dev tree).
+
+**b) The ripple's page-capture is the only real landing-page LCP lever, and it can move.** The WebGL ripple re-captures the page HTML into a canvas on paints; on the landing it ran from the first frame, through the entire loader window. The splash only matters when the loader finishes — so the ripple now mounts at that exact moment (pending-splash ref: loader completion stores the splash params, onRippleReady fires them instantly). Visually identical; zero capture cost during the loader and the LCP window. This is the same principle as the deferred ElasticLine/WaterCanvas mounts: **nothing heavy should run while the first paint is trying to happen.**
+
+**c) Help the browser know what's important.** The LCP element (the water-orb webp) now gets etchpriority="high" and a <link rel="preload" as="image"> in the root head — the fetch starts at parse time, not when the img is reached. Cheap, standard, cached.
+
+**d) A full-width water button in a dropdown menu is a shape bug.** The hamburger's Sign In was w-full + WaterCanvas w-full inside the menu, so the absolute-positioned water canvas covered the whole menu width instead of the button. The water effect must be sized by its button, never by its container — the desktop pill has always done this by being w-fit; the hamburger version now matches.
+
+## 44. The double-load flash was a mount/unmount DOM restructure — fix by keeping children stable (2026-08-09)
+
+**Question asked:** Content appears ? disappears ? reappears on the landing page. What's wrong?
+
+**Answer + reasoning:**
+
+**a) Children must never change DOM parents during a visible transition.** The double-load had three causes, all the same principle: (1) OpeningAnimation conditionally rendered children inside <Ripple> or bare — when ippleMounted flipped true, children moved from a fragment to a canvas-wrapper div, then if WebGL failed, moved again to a div-wrapper = two layout shifts. (2) hero-33.tsx conditionally rendered the Sign In link inside <WaterCanvas> or bare — when loadingComplete flipped, the link moved into a wrapper div + canvas overlay = another layout shift. Fix: the Ripple wrapper **always renders** (with an ctive prop that starts the WebGL effect), and WaterCanvas **always renders** (with a rozen prop that keeps the water still). Children stay in the same DOM position throughout. The loader ? content transition is purely a CSS opacity change, not a DOM restructure.
+
+**b) Pre-detect capabilities before mounting components that branch on them.** The old Ripple detected supportsHtmlInCanvas() inside its own render — first render said "native" ? mounted the canvas structure ? effect ran ? WebGL failed ? setFailed(true) ? re-render said "not native" ? remounted as plain div. Fix: OpeningAnimation runs supportsHtmlInCanvas() once in a useEffect and stores the result. The Ripple always renders the same structure for a given 
+ative value — no internal branching.
+
+**c) On-demand page capture eliminates per-frame cost.** The Ripple's drawElementImage serialized the entire DOM on every paint frame when htmlInCanvas=true — O(DOM size) × frame rate. Fix: capture explicitly when splashing (user interaction), not automatically on every resize or paint. The render loop requests a fresh capture before drawing active ripples, but not when idle.
+
+**d) Remove polling intervals when observers already exist.** WaterCanvas and MetallicButton had 300ms setInterval probing pixelScale() for DPR changes. A ResizeObserver already handles size changes; DPR changes are rare (user zooms) and the ResizeObserver fires on zoom too. Removing the interval eliminates a perpetual timer per WaterCanvas instance.
+
+## 45. The 3–7GB dev server was a Turbopack leak, not our code — switch dev to webpack (2026-08-09)
+
+**Question asked:** Why does 
+pm run dev hit 3GB of RAM (7GB once) minutes after starting?
+
+**Answer + reasoning:**
+
+**a) Check upstream before blaming your app.** The leak is a known Next.js bug class: #95899 ("next dev renderer leaks ~5MB/s at idle — react-server-dom promise tracking × Turbopack HMR churn — until V8 OOM") and #96857 (turbopack GC root anchoring, still Draft). Our codebase is small; the 3GB-at-startup number was Turbopack memory-mapping its own bloated dev graph (.next/dev had grown to 662MB from every HMR version our edit-heavy sessions appended), and 7GB was the 5MB/s idle leak compounding with HMR churn.
+
+**b) If a fast-mode dev server leaks, the stable mode wins.** We already build with webpack (
+ext build --webpack); switching dev to 
+ext dev --webpack eliminated the leak class entirely (measured: 208MB startup, flat 760MB idle vs 3–7GB turbo). Turbo's speed advantage is irrelevant if the machine thrashes. Revisit turbo only when Vercel ships the GC fix — not on a bet.
+
+**c) 
+ext/image + static export throws in dev.** "Image Optimization using the default loader is not compatible with { output: 'export' }" — the static export has no optimizer API. For a pre-optimized 129KB webp, the right config is images: { unoptimized: true }: keep 
+ext/image's width/height/priority/preload benefits, skip the optimizer. The old plain <img> was fine too, but next/image gives the LCP plumbing for free.
+
+**d) MCP servers can be installed globally.** ~/.config/opencode/opencode.jsonc now hosts the chrome-devtools MCP — available in every project, loaded at session start. The project AGENTS.md §5 referenced a project-local file that didn't exist; global is the better home for a general-purpose browser tool.
+
+**e) Windows kills dev servers only with /T.** Killing the cmd.exe wrapper leaves the node tree alive (the original 7GB incident). Every dev-server kill in this project must be 	askkill /PID <wrapper> /T /F.
+
+## 46. Effects are user assets: ripple removed by decision, theme animation was never wired into the dropdown (2026-08-09)
+
+**Question asked:** "I asked you to fix or optimize, not remove. The ripple, the dark mode switch animation, and the elastic line are not working."
+
+**Answer + reasoning:**
+
+**a) The ripple died from my own round-6 "optimization".** I gated the whole Ripple behind supportsHtmlInCanvas() (an experimental API no shipping browser has) to kill a rare double-flash — which removed the splash from every real browser. The user chose to **remove the ripple entirely** rather than restore it. Lesson: when an optimization regresses a user-added effect, the effect's fate is the user's call, and perf changes must be browser-verified against every effect before done. Also: effect code can't be treated as disposable — deleting Ripple.tsx was explicit user approval, git-recoverable.
+
+**b) The dark-mode animation "break" was a wiring gap, not a regression.** The circular reveal (startViewTransition + clipPath) lived only inside ThemeToggle — the hero/auth component. The dropdown theme item (what a logged-in portal user clicks) called 	oggle() directly and never animated. Fix: the animation now lives in useTheme().toggle(origin?) and both call sites pass their button. One source of truth; both paths animate. Verified in-browser: clipPath animation running for the full 750ms.
+
+**c) Perf micro-opts that touch interactive effects must be proven, not assumed.** The elastic-line early-return survived code review but only became trustworthy after an in-browser grab test (pointer 18px from center ? path control point follows). If it had failed, the one-line revert was the plan. Effects the user notices are part of the product spec.
+
+**Correction to §46c (same day):** the elastic-line early-return DID break the
+effect — it froze the spring bounce-back on release (the bounce is the
+per-frame spring rendering; skipping frames while not grabbed = no bounce).
+Reverted and verified in-browser (control-point series after release:
+56.4 ? 50.8 ? 22.8 ? 11.6 ? 18.1 ? 36.9 ? 42.4 ? … ? settles at rest).
+The rule stands, sharpened: verify interactive effects across the FULL
+lifecycle (grab ? hold ? release ? settle), not one phase.
