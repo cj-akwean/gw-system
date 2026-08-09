@@ -27,6 +27,7 @@ interface ProfileSetupProps {
   initialAvatarId?: number;
   heading?: string;
   subtitle?: string;
+  submitLabel?: string;
 }
 
 const containerVariants: Variants = {
@@ -53,6 +54,7 @@ export default function ProfileSetup({
   initialAvatarId,
   heading = "Pick Your Avatar",
   subtitle = "Choose one to get started",
+  submitLabel = "Get Started",
 }: ProfileSetupProps) {
   const [selectedAvatar, setSelectedAvatar] = useState<Avatar>(
     initialAvatarId ? getAvatar(initialAvatarId) : AVATARS[0]
@@ -275,7 +277,7 @@ export default function ProfileSetup({
               onClick={handleSubmit}
               type="button"
             >
-              Get Started
+              {submitLabel}
               <ChevronRight
                 aria-hidden="true"
                 className="ml-1 h-4 w-4 transition-transform duration-200 ease-out group-hover:translate-x-0.5"

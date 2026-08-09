@@ -35,23 +35,23 @@ export function LinkMeterPrompt() {
   return (
     <section
       aria-label="Link your meter"
-      className="mb-6 rounded-xl border border-dashed border-border bg-card/60 p-5"
+      className="rounded-2xl border border-dashed border-border bg-card/70 p-6 shadow-sm sm:p-5"
     >
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-start gap-3">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-            <Link2Icon aria-hidden className="size-4 text-primary" />
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="flex items-start gap-4">
+          <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+            <Link2Icon aria-hidden className="size-5 text-primary" />
           </div>
           <div>
-            <p className="font-medium text-sm">Link your meter</p>
-            <p className="mt-0.5 text-muted-foreground text-sm leading-6">
+            <p className="font-semibold text-base">Link your meter</p>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
               Connect your account and meter number to see your bills and usage
               here.
             </p>
           </div>
         </div>
         <Button
-          className="h-9 shrink-0 text-sm"
+          className="h-10 w-full shrink-0 text-sm sm:w-auto sm:self-center"
           onClick={() => router.push("/onboarding")}
           type="button"
         >

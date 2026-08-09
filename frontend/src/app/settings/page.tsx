@@ -98,6 +98,7 @@ export default function SettingsPage() {
             <ProfileSetup
               heading="Edit your profile"
               subtitle="Update your avatar and display name."
+              submitLabel="Save"
               initialAvatarId={user?.avatar_id ?? undefined}
               initialUsername={user?.name ?? ""}
               onComplete={async ({ username, avatarId }) => {

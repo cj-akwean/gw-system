@@ -32,7 +32,7 @@ export function BillCard({ invoice, onPay }: BillCardProps) {
     <li
       data-testid={`invoice-${invoice.id}`}
       className={cn(
-        "rounded-xl border bg-card p-5 shadow-sm transition-colors",
+        "rounded-2xl border bg-card p-6 shadow-sm transition-colors sm:rounded-xl sm:p-5",
         overdue ? "border-destructive/40" : "border-border"
       )}
     >
@@ -42,7 +42,7 @@ export function BillCard({ invoice, onPay }: BillCardProps) {
             {invoice.service_connection.account_number} ·{" "}
             {invoice.service_connection.registered_name}
           </p>
-          <h3 className="mt-0.5 truncate text-sm font-semibold">
+          <h3 className="mt-1 truncate text-base font-semibold sm:text-sm">
             {invoice.invoice_number}
           </h3>
         </div>
@@ -59,7 +59,7 @@ export function BillCard({ invoice, onPay }: BillCardProps) {
         </span>
       </div>
 
-      <dl className="mt-4 space-y-1.5 text-sm">
+      <dl className="mt-5 space-y-2 text-sm sm:mt-4 sm:space-y-1.5">
         <div className="flex justify-between gap-3">
           <dt className="text-muted-foreground">Billing period</dt>
           <dd className="text-right">{formatPeriod(invoice)}</dd>
@@ -88,7 +88,7 @@ export function BillCard({ invoice, onPay }: BillCardProps) {
         )}
       </dl>
 
-      <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-3">
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-border pt-4 sm:mt-4 sm:pt-3">
         <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
           Total due
         </span>
@@ -98,14 +98,14 @@ export function BillCard({ invoice, onPay }: BillCardProps) {
               type="button"
               onClick={onPay}
               data-testid={`pay-${invoice.id}`}
-              className="rounded-md border border-border bg-primary px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-primary-foreground transition-colors hover:bg-primary/90"
+              className="rounded-lg border border-border bg-primary px-5 py-2.5 text-sm font-semibold uppercase tracking-wider text-primary-foreground transition-colors hover:bg-primary/90 sm:rounded-md sm:px-4 sm:py-1.5 sm:text-xs"
             >
               Pay now
             </button>
           )}
           <span
             className={cn(
-              "text-lg font-bold",
+              "text-2xl font-bold tracking-tight sm:text-lg",
               overdue ? "text-destructive" : "text-foreground"
             )}
           >

@@ -52,7 +52,7 @@ export default function DashboardPage() {
 
       <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-md flex-col px-6 pb-12 md:max-w-4xl lg:max-w-5xl">
         <DashboardHeader user={user} onLogout={handleLogout} />
-        <main className="flex-1">
+        <main className="flex-1 space-y-8 pt-6 md:pt-10">
           <LinkMeterPrompt />
           <BillsList />
         </main>
