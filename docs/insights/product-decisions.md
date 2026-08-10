@@ -1304,3 +1304,35 @@ Reverted and verified in-browser (control-point series after release:
 56.4 ? 50.8 ? 22.8 ? 11.6 ? 18.1 ? 36.9 ? 42.4 ? � ? settles at rest).
 The rule stands, sharpened: verify interactive effects across the FULL
 lifecycle (grab ? hold ? release ? settle), not one phase.
+
+---
+
+## Windows dev setup: why winget automation instead of Docker
+
+**Question asked:** "Docker has a lot of conditions, especially for lower-hardware laptops. Why don't we just use an automator, like a .bat file, for easy setup?"
+
+**Answer:** Because the machine is a low-spec laptop, the setup was already
+winget-native, and Docker Desktop adds a large resident footprint (2GB+ install,
+permanent background VM via WSL2) that the project doesn't need. The real pain was
+never "installing" — it was the 8-step manual *configuration* between installs:
+php.ini does not exist after winget installs PHP (no active ini, no extensions, no
+memory limit), Windows ships no CA bundle (cURL error 60 kills every HTTPS call),
+Postgres bin is not on PATH, and the DBs must be created by hand.
+
+So the trade-off is: Docker gives reproducible environments at the cost of a heavy,
+always-on dependency; a setup.ps1 script automates the *existing* native installs
+with zero resident overhead. The script detects what's already installed and skips
+it (idempotent), finds every path at runtime via Get-Command/glob instead of
+hardcoding, and a companion erify.ps1 prints [OK]/[MISSING] per prerequisite —
+so a fresh machine can be proven ready before the app is launched.
+
+**Trade-off accepted:** native setup is only reproducible where winget exists
+(Windows 10/11 + App Installer), and the Postgres winget package can still pop a
+GUI during install — the script detects that and asks the user to finish + re-run.
+That's a small, honest compromise versus Docker's per-project resource cost.
+
+**Learned the hard way (script authoring on Windows):** PowerShell 5.1 parses .ps1
+files as ANSI when they have no BOM, so any non-ASCII character (em-dash, smart
+quote) can break parsing — scripts that must run on stock PowerShell 5.1 should be
+pure ASCII. And never round-trip UTF-8 markdown through PS 5.1 Get-Content /
+Set-Content (default encoding mangles it); use the editor tools instead.
