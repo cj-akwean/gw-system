@@ -136,21 +136,19 @@ Format: mirror the existing structure — **Question asked** → **Answer + reas
 
 ### 5. Performance testing environment settings
 
-When testing performance or loading behavior, simulate real user environments with the DevTools device toolbar:
+For performance/loading work, use Chrome DevTools MCP with the production build (`npm run build` → serve `out/`), never dev mode.
 
-- **Mobile (primary):** Samsung A51/71 — viewport **412×914**, mobile + touch
-- **Mobile (spot-check):** 390×844 (iPhone-class)
-- **Desktop:** 1280×800
-- **CPU throttling:** 4× slowdown (`cpuThrottlingRate: 4`)
-- **Network:** Fast 4G
-- **Network cache:** disabled (disable cache / cache-busting reload) — uncached loads are the best benchmark for how the site loads for real users on first visit
+Primary stress profile:
+- Mobile: 390×844
+- CPU: 6× slowdown
+- Network: Slow 4G
+- Cache: disabled
 
-**Benchmark the production export** (`npm run build` → serve `out/`), never dev mode — dev bundles are unminified and give misleadingly bad numbers (LCP 11s+ vs ~4-6s prod at 4× CPU).
+Baseline/spot-check:
+- Mobile: 412×914, 4× CPU, Fast 4G
+- Desktop: 1280×800, 4× CPU, Fast 4G
 
-Use this profile for:
-- Any landing-page / portal performance work (LCP, INP, CLS, long tasks)
-- Verifying lazy-loaded chunks stay lazy under slow network
-- Checking heavy canvas/WebGL effects (fractal grid, liquid ocean) degrade gracefully at 4× CPU
+Use these profiles when evaluating LCP, INP, CLS, long tasks, lazy-loaded chunks, and heavy Canvas/WebGL effects. Verify performance with DevTools measurements rather than subjective judgment, and use identical conditions when comparing before/after changes.
 
 
 
