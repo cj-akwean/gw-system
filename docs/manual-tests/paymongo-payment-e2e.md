@@ -38,6 +38,32 @@ php artisan paymongo:simulate-payment 4 --source=qrph    # QR Ph channel (same p
   `pi_sim_…` id on an unpaid invoice shows as `UNCHECKED` in `paymongo:reconcile`
   (harmless — clear it with the tinker one-liner below if it ever bothers you).
 
+## Online QR Ph round (real QR + real signed webhook)
+
+> Added 2026-08-10. Unlike `--source=qrph` (which fabricates the payload and skips
+> PayMongo entirely), this round exercises the REAL chain: test-mode intent → real
+> QR generated → PayMongo's test page simulates the customer's e-wallet scan →
+> PayMongo fires the genuine `payment.paid` webhook (signed, delivered via ngrok)
+> → controller verifies → invoice marked paid. Requires the four prereqs above
+> (migrate + serve + queue:work + ngrok with the dashboard URL current).
+
+1. Log into the portal (`test@example.com` / `password`), open an unpaid bill
+   (`/dashboard/pay?id=<n>`), choose **Scan QR · QR Ph**, swipe to pay.
+2. The QR appears with its countdown. In test mode the QR panel shows a
+   **"Simulate payment (test)"** link — that's PayMongo's `next_action.code.test_url`
+   (never present in live mode). Open it in a new tab.
+3. On the PayMongo test page, select **Authorize** (or Fail to test the declined path —
+   the invoice stays unpaid and the QR expires).
+4. Backend receives the real webhook: `paymongo.log` should show the signed chain —
+   `webhook received` → `acknowledged: known event type` → `PayMongo webhook processed:
+   invoice marked paid`. The portal flips to the success modal on its own poll.
+5. Verify with the tinker one-liner from the Verify section: invoice `paid`, one
+   `Payment` row with `paymongo_source: qrph`.
+
+> Gotcha: scanning the QR with a real e-wallet app in test mode is NOT simulated —
+> PayMongo's docs warn it can process a real transaction. Always use the
+> "Simulate payment (test)" link.
+
 ## Prereqs (all four, or the test silently fails)
 
 1. `php artisan migrate` — **the `processed_webhook_events` table must exist** (this was missed

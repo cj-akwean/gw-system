@@ -120,6 +120,7 @@ const qrAttachResult = () => ({
   imageUrl: QR_IMAGE,
   redirectUrl: null,
   expiresAt: new Date(Date.now() + 600_000).toISOString(),
+  testUrl: "https://checkout.paymongo.com/test/qr/xyz",
 });
 
 const assignSpy = vi.fn();
@@ -180,10 +181,12 @@ describe("PaymentMethodScreen", () => {
     });
     assignSpy.mockReset();
     window.sessionStorage.clear();
+    vi.stubGlobal("open", vi.fn());
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("shows a loading state while fetching the invoice", () => {
@@ -606,6 +609,76 @@ describe("PaymentMethodScreen", () => {
       vi.advanceTimersByTime(1_000);
     });
     expect(screen.getByTestId("countdown")).toHaveTextContent("09:59");
+  });
+
+  it("shows the test-mode simulate button when PayMongo returns a test_url", async () => {
+    mockStartPayment.mockResolvedValue(intentInfo);
+    mockCreatePaymentMethod.mockResolvedValue("pm_qr_1");
+    mockAttachPaymentMethod.mockImplementation(() => Promise.resolve(qrAttachResult()));
+
+    await goToReview();
+    clickPay();
+    await flushAsync();
+
+    const btn = screen.getByTestId("qr-test-simulate");
+    expect(btn).toBeInTheDocument();
+    expect(btn.tagName).toBe("BUTTON");
+    expect(btn).toHaveTextContent(/simulate payment/i);
+
+    fireEvent.click(btn);
+    expect(window.open).toHaveBeenCalledWith(
+      "https://checkout.paymongo.com/test/qr/xyz",
+      "paymongo_test"
+    );
+  });
+
+  it("hides the simulate link when the attach returns no test_url", async () => {
+    mockStartPayment.mockResolvedValue(intentInfo);
+    mockCreatePaymentMethod.mockResolvedValue("pm_qr_1");
+    mockAttachPaymentMethod.mockImplementation(() =>
+      Promise.resolve({
+        ...qrAttachResult(),
+        testUrl: null,
+      })
+    );
+
+    await goToReview();
+    clickPay();
+    await flushAsync();
+
+    expect(screen.getByTestId("qr-image")).toBeInTheDocument();
+    expect(screen.queryByTestId("qr-test-simulate")).not.toBeInTheDocument();
+  });
+
+  it("fast-polls after clicking the test simulate button and shows success", async () => {
+    vi.useFakeTimers();
+    mockStartPayment.mockResolvedValue(intentInfo);
+    mockCreatePaymentMethod.mockResolvedValue("pm_qr_1");
+    mockAttachPaymentMethod.mockImplementation(() => Promise.resolve(qrAttachResult()));
+
+    await goToReview();
+    clickPay();
+    await flushAsync();
+
+    // QR is active with the simulate button
+    const btn = screen.getByTestId("qr-test-simulate");
+    expect(btn).toBeInTheDocument();
+
+    // First poll at 15 s (normal) still shows the invoice
+    mockGetInvoices.mockResolvedValue([invoice()]);
+    act(() => { vi.advanceTimersByTime(15_000); });
+    await flushAsync();
+    expect(screen.queryByTestId("success-modal")).not.toBeInTheDocument();
+
+    // Click simulate → sets testPaymentPending, polls every 2 s
+    fireEvent.click(btn);
+    expect(window.open).toHaveBeenCalled();
+
+    // Invoice disappears from unpaid list after 2 s → success modal
+    mockGetInvoices.mockResolvedValue([]);
+    act(() => { vi.advanceTimersByTime(2_000); });
+    await flushAsync();
+    expect(screen.getByTestId("success-modal")).toBeInTheDocument();
   });
 
   it("shows the expired state at zero and lets the user get a new QR", async () => {

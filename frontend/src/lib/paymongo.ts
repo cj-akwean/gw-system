@@ -5,6 +5,7 @@ export interface PayMongoAttachResult {
   imageUrl: string | null;
   redirectUrl: string | null;
   expiresAt: string | null;
+  testUrl: string | null;
   lastPaymentError: string | null;
 }
 
@@ -118,6 +119,13 @@ export async function attachPaymentMethod(opts: {
     expiresAt:
       typeof nextAction?.code?.expires_at === "string"
         ? nextAction.code.expires_at
+        : null,
+    // Test-mode only: PayMongo's QR Ph attach returns a simulator page
+    // (Authorize/Fail) in next_action.code.test_url — never present in live
+    // mode, so exposing it never leaks a production affordance.
+    testUrl:
+      hasCode && typeof nextAction.code?.test_url === "string"
+        ? nextAction.code.test_url
         : null,
     lastPaymentError: normalizeLastPaymentError(lastError),
   };

@@ -57,6 +57,7 @@ type QrState =
       imageUrl: string;
       deadline: number | null;
       intentId: string;
+      testUrl: string | null;
     }
   | { phase: "error"; message: string; flow: "qrph" | "gcash" | "card" };
 
@@ -69,6 +70,7 @@ interface StoredQr {
   intentId: string;
   imageUrl: string;
   deadline: number | null;
+  testUrl: string | null;
 }
 
 function readStoredQr(intentId: string): StoredQr | null {
@@ -83,7 +85,12 @@ function readStoredQr(intentId: string): StoredQr | null {
     ) {
       return null;
     }
-    return parsed;
+    return {
+      intentId: parsed.intentId,
+      imageUrl: parsed.imageUrl,
+      deadline: parsed.deadline,
+      testUrl: typeof parsed.testUrl === "string" ? parsed.testUrl : null,
+    };
   } catch {
     return null;
   }
@@ -155,6 +162,10 @@ export function PaymentMethodScreen({
   const [confirmingNetworkFailures, setConfirmingNetworkFailures] = useState(0);
   const [step, setStep] = useState<"method" | "review">("method");
   const [selectedMethod, setSelectedMethod] = useState<"qrph" | "gcash" | "card" | null>(null);
+  // When the user clicks "Simulate payment (test)" on a QR Ph code, we open
+  // PayMongo's test URL in a new tab and poll aggressively (2s) until the
+  // webhook credits the invoice — matching the instant feedback Card/GCash get.
+  const [testPaymentPending, setTestPaymentPending] = useState(false);
   const cardFormRef = useRef<CardFormHandle>(null);
   const invoiceRef = useRef<PortalInvoice | null>(null);
   // Invoice id recovered from the payment-intent status response (paid /
@@ -301,6 +312,7 @@ export function PaymentMethodScreen({
             );
             if (!stillUnpaid && invoiceRef.current) {
               clearStoredQr(String(invoiceId));
+              setTestPaymentPending(false);
               setPaymentResult({ status: "paid", confirming: false });
             }
           })
@@ -312,7 +324,11 @@ export function PaymentMethodScreen({
           });
       };
 
-      const id = window.setInterval(check, POLL_INTERVAL_MS);
+      // When the user clicks "Simulate payment (test)", poll at 2 s so the
+      // success modal appears almost immediately after the webhook fires.
+      // Normal idle polling stays at POLL_INTERVAL_MS (15 s).
+      const interval = testPaymentPending ? 2_000 : POLL_INTERVAL_MS;
+      const id = window.setInterval(check, interval);
       window.addEventListener("focus", check);
 
       return () => {
@@ -404,6 +420,7 @@ export function PaymentMethodScreen({
     resolvedInvoiceId,
     invoiceId,
     paymentIntentId,
+    testPaymentPending,
     logout,
     router,
   ]);
@@ -447,6 +464,7 @@ export function PaymentMethodScreen({
           deadline: Number.isFinite(expiresMs)
             ? expiresMs
             : Date.now() + info.expiry_seconds * 1000,
+          testUrl: attached.testUrl,
         };
         writeStoredQr(next);
         setQr({ phase: "active", ...next });
@@ -504,6 +522,7 @@ export function PaymentMethodScreen({
           intentId: info.payment_intent_id,
           imageUrl: attached.imageUrl,
           deadline: Number.isFinite(expiresMs) ? expiresMs : null,
+          testUrl: attached.testUrl,
         };
         writeStoredQr(next);
         setQr({ phase: "active", ...next });
@@ -1192,6 +1211,19 @@ export function PaymentMethodScreen({
                       </span>
                       <span className="text-xs text-muted-foreground">remaining</span>
                     </div>
+                  )}
+                  {qr.phase === "active" && qr.testUrl !== null && (
+                    <button
+                      type="button"
+                      data-testid="qr-test-simulate"
+                      onClick={() => {
+                        window.open(qr.testUrl!, "paymongo_test");
+                        setTestPaymentPending(true);
+                      }}
+                      className="rounded-md border border-border bg-muted/40 px-4 py-2 text-xs font-semibold text-foreground transition-colors hover:bg-muted/70"
+                    >
+                      Simulate payment (test)
+                    </button>
                   )}
                 </div>
               )}
