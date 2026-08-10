@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { CanvasFractalGrid } from "@/components/ui/canvas-fractal-grid";
 import { useTheme } from "@/lib/theme";
 import { useLoadingComplete } from "@/lib/loading-context";
@@ -8,16 +7,6 @@ import { useLoadingComplete } from "@/lib/loading-context";
 export function LandingBackdrop() {
   const { dark, mounted } = useTheme();
   const loadingComplete = useLoadingComplete();
-  const [narrow, setNarrow] = useState(false);
-
-  useEffect(() => {
-    if (typeof window.matchMedia !== "function") return;
-    const mq = window.matchMedia("(max-width: 767px)");
-    const apply = () => setNarrow(mq.matches);
-    apply();
-    mq.addEventListener("change", apply);
-    return () => mq.removeEventListener("change", apply);
-  }, []);
 
   if (!mounted || !loadingComplete) return null;
 
@@ -30,13 +19,14 @@ export function LandingBackdrop() {
         dotSize={2}
         dotSpacing={18}
         enableGradient={false}
-        enableMouseGlow
+        enableMouseGlow={false}
         enableNoise={false}
         glowColor={dark ? "rgba(125, 211, 252, 1)" : "rgba(70, 130, 180, 1)"}
-        initialPerformance={narrow ? "medium" : "high"}
-        maxFps={narrow ? 30 : 60}
+        initialPerformance="low"
+        maxFps={30}
         waveIntensity={18}
         waveRadius={220}
+        static
       />
     </div>
   );

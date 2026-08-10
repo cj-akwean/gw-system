@@ -6,7 +6,6 @@ import Image from 'next/image';
 import Link from 'next/link';
 import ElasticLine from '@/components/fancy/physics/elastic-line';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { WaterCanvas } from '@/components/water-button';
 import { MultiDirectionSlideText } from '@/components/ui/multi-direction-slide-text';
 import { useLoadingComplete } from '@/lib/loading-context';
 import { ProfileDropdown } from '@/components/portal/profile-dropdown';
@@ -31,14 +30,13 @@ export interface Hero33Props {
     navItems?: HeroNavItem[];
     primaryActionText?: string;
     secondaryActionText?: string;
-    titleLines?: string[];
-    description?: string;
-    features?: {
-        icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
-        title: string;
-        description: string;
-    }[];
-    backgroundImage?: string;
+  titleLines?: string[];
+  description?: string;
+  features?: {
+    icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
+    title: string;
+    description: string;
+  }[];
 }
 
 export default function Hero33({
@@ -64,7 +62,6 @@ export default function Hero33({
       description: 'Marvel at the world from\nnew heights',
     },
   ],
-  backgroundImage = 'https://assets.watermelon.sh/hero-33-bg.avif',
 }: Hero33Props) {
   const loadingComplete = useLoadingComplete();
   const { isAuthenticated, ready, user, logout } = useAuth();
@@ -207,10 +204,6 @@ export default function Hero33({
                       </div>
                       <DropdownMenuSeparator className="my-2 bg-gradient-to-r from-transparent via-border to-transparent" />
                       <div className="flex justify-center p-1">
-                        {/* Static pill — the WaterCanvas sim used to mount here
-                            (canvas + rAF loop) every time the menu opened, which
-                            ate CPU exactly while the user interacted with the
-                            menu on mobile. */}
                         <Link
                           href="/auth"
                           prefetch
@@ -226,7 +219,7 @@ export default function Hero33({
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-                <WaterCanvas waterAmount={50} frozen={!loadingComplete}>{signInLink}</WaterCanvas>
+                {signInLink}
               </div>
             )}
           </motion.nav>

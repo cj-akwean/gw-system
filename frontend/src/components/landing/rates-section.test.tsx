@@ -27,10 +27,6 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-vi.mock("@/components/ui/liquid-ocean", () => ({
-  LiquidOcean: () => <div data-testid="liquid-ocean" />,
-}));
-
 let mockUseAuth: () => { isAuthenticated: boolean; ready: boolean };
 
 const ratesPayload = {

@@ -37,12 +37,6 @@ vi.mock("@/components/fancy/physics/elastic-line", () => ({
   default: () => null,
 }));
 
-vi.mock("@/components/water-button", () => ({
-  WaterCanvas: ({ children }: { children: React.ReactNode }) => (
-    <>{children}</>
-  ),
-}));
-
 vi.mock("@/components/ui/multi-direction-slide-text", () => ({
   MultiDirectionSlideText: () => <div />,
 }));

@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Check, Droplets, Loader2 } from "lucide-react";
-import { OceanBackground } from "@/components/landing/ocean-background";
 import { Button } from "@/components/ui/button";
 import { getRates, type PortalRates } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -88,7 +87,6 @@ export function RatesSection() {
       className="relative flex min-h-[100svh] items-center overflow-hidden py-20 md:py-28"
       id="rates"
     >
-      <OceanBackground />
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
