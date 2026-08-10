@@ -120,8 +120,22 @@ already-paid invoice → `409` · invoice of an unlinked connection → `403`.
 # From Phase 1 step 5, grab client_key + payment_intent_id, then:
 # open http://127.0.0.1:8000/pay-checkout.html
 # paste PUBLIC_KEY (pk_test_… from .env), CLIENT_KEY, INTENT_ID → Pay
-# test card: 4343 4343 4343 4345, any future expiry, any CVC
+# any future expiry, any 3-digit CVC
 ```
+
+**Test cards** (official PayMongo test-mode cards — `docs.paymongo.com/docs/payment-acceptance-testing`):
+
+| Card number | Network | 3DS / OTP | What happens |
+|---|---|---|---|
+| `4343 4343 4343 4345` | Visa | **No 3DS** | Instant success — the default demo card |
+| `4571 7360 0000 0075` | Visa | **No 3DS** | Instant success |
+| `5123 0000 0000 0002` | Mastercard | **No 3DS** | Instant success |
+| `4120 0000 0000 0007` | Visa | **Triggers 3DS** | Bank-challenge prompt appears — select **Authorize** (simulates the bank's SMS/OTP verification step; your app doesn't send real SMS yet, so the portal just shows the pending state until the prompt is approved) |
+| `5123 0000 0000 0001` | Mastercard | **3DS supported but optional** | Choose Authorize or skip |
+
+> Decline cards if you want the failure path: `4200 0000 0000 0018` (expired) ·
+> `4300 0000 0000 0017` (invalid CVC) · `5100 0000 0000 0198` (insufficient funds) ·
+> `4111 1111 1111 1111` (generic decline).
 
 `INTENT STATUS: succeeded` → webhook fires → invoice marked paid.
 
@@ -235,7 +249,7 @@ npm run build     # static export, TS clean
 | Laravel API | `http://127.0.0.1:8000` |
 | Filament Admin | `http://127.0.0.1:8000/admin` — `admin@gwsystem.com` / `admin123` |
 | Next.js portal | `http://localhost:3000` — `test@example.com` / `password` |
-| Card test page | `http://127.0.0.1:8000/pay-checkout.html` (test card `4343 4343 4343 4345`) |
+| Card test page | `http://127.0.0.1:8000/pay-checkout.html` — test cards in Phase 3B (no-3DS `4343 4343 4343 4345` / 3DS `4120 0000 0000 0007`) |
 | Seeded connection | `GW-00001` / `MTR-00001` (linked to `test@example.com`) |
 | Postgres | `postgres` / `postgres`, db `gw_system` |
 
