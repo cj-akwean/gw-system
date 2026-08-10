@@ -147,6 +147,20 @@ a toggleable Payer column + view placeholder. The emailed PDF attachment shows t
 payer row (`PdfService::generate($invoice, $payment)`, '—' when no payment/payer).
 Rationale: product-decisions §26.
 
+**Email + PDF redesign (2026-08-10):** both customer-facing mailables left the default
+markdown theme for custom water-themed light HTML templates
+(`emails/payment-confirmation-html|-text`, `emails/connection-identifiers-changed-html|-text`)
+— brand header (GW monogram badge + wordmark with amber dot, matching the frontend),
+white rounded cards (amount hero + detail rows / itemized breakdown), muted contact
+footer (mail-from address + office phone placeholder, same values as the landing page).
+`PaymentConfirmation::content()` passes `paymentMethodLabel` (via
+`PaymentResource::methodLabel`, same canonical source the exports use). The invoice PDF
+was restyled to match: deep-blue brand band + amber rule + status badge, and a green
+PAID block (date · method · reference) with a green "Amount Paid" row when a payment is
+attached (`buildViewData` gains `paymentMethod`/`paidAt`/`paymentReference`/`amountPaid`;
+the old markdown view files were deleted). Attachment unchanged (`invoice-<number>.pdf`,
+in-memory); no hosted "Download" links by design — no permanent PDF storage.
+
 ## Customer Portal (Next.js)
 
 > Detailed flow spec: `docs/prompts/payments-customer-portal-flow.md` (frontstage spec).

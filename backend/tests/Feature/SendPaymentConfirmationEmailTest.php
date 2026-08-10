@@ -145,7 +145,7 @@ class SendPaymentConfirmationEmailTest extends TestCase
         $this->assertStringContainsString('%PDF', $pdf);
     }
 
-    public function test_the_markdown_body_renders_with_invoice_and_amount(): void
+    public function test_the_html_body_renders_with_invoice_and_amount(): void
     {
         $invoice = Invoice::factory()->create([
             'status' => 'paid',
@@ -160,7 +160,7 @@ class SendPaymentConfirmationEmailTest extends TestCase
         $this->assertStringContainsString('40.00', $html);
     }
 
-    public function test_the_markdown_body_shows_the_paymongo_reference_when_reference_is_null(): void
+    public function test_the_html_body_shows_the_paymongo_reference_when_reference_is_null(): void
     {
         $invoice = Invoice::factory()->create([
             'status' => 'paid',
@@ -179,7 +179,7 @@ class SendPaymentConfirmationEmailTest extends TestCase
         $this->assertStringContainsString('pay_reference_email_1', $html);
     }
 
-    public function test_the_markdown_body_shows_customer_account_meter_and_payer_rows(): void
+    public function test_the_html_body_shows_customer_account_meter_and_payer_rows(): void
     {
         $connection = ServiceConnection::factory()->create([
             'registered_name' => 'Maria Santos',
@@ -209,7 +209,7 @@ class SendPaymentConfirmationEmailTest extends TestCase
         $this->assertStringContainsString('juan@example.com', $html);
     }
 
-    public function test_the_markdown_body_shows_a_dash_payer_row_when_no_payer_is_captured(): void
+    public function test_the_html_body_shows_a_dash_payer_row_when_no_payer_is_captured(): void
     {
         $invoice = Invoice::factory()->create([
             'status' => 'paid',
@@ -228,6 +228,31 @@ class SendPaymentConfirmationEmailTest extends TestCase
 
         $this->assertStringContainsString('Payer', $html);
         $this->assertStringContainsString('—', $html);
+    }
+
+    public function test_the_html_body_renders_branding_and_payment_details(): void
+    {
+        $invoice = Invoice::factory()->create([
+            'status' => 'paid',
+            'invoice_number' => 'GW-2026-67894',
+            'base_amount' => 30.00,
+            'previous_balance' => 5.00,
+            'penalty_amount' => 1.00,
+            'total_amount' => 36.00,
+        ]);
+        $payment = Payment::factory()->create([
+            'invoice_id' => $invoice->id,
+            'amount' => $invoice->total_amount,
+            'method' => 'paymongo',
+            'paymongo_source' => 'gcash',
+        ]);
+
+        $html = (new PaymentConfirmation($invoice, $payment))->render();
+
+        $this->assertStringContainsString('Guinobatan Waterworks', $html);
+        $this->assertStringContainsString('GCash', $html);
+        $this->assertStringContainsString('Current charges', $html);
+        $this->assertStringContainsString('Amount paid', $html);
     }
 
     public function test_active_link_with_unlinked_at_set_is_excluded(): void

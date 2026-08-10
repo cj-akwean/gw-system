@@ -2,6 +2,7 @@
 
 namespace App\Mail;
 
+use App\Filament\Resources\PaymentResource;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Services\PdfService;
@@ -36,7 +37,11 @@ class PaymentConfirmation extends Mailable
     public function content(): Content
     {
         return new Content(
-            markdown: 'emails.payment-confirmation',
+            html: 'emails.payment-confirmation-html',
+            text: 'emails.payment-confirmation-text',
+            with: [
+                'paymentMethodLabel' => PaymentResource::methodLabel($this->payment->method, $this->payment->paymongo_source),
+            ],
         );
     }
 

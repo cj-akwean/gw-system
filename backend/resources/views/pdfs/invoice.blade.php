@@ -3,32 +3,47 @@
 <head>
 <meta charset="utf-8">
 <style>
-    @page { margin: 1.5cm; }
-    body { font-family: 'DejaVu Sans', sans-serif; font-size: 11px; color: #111; }
-    .header { text-align: center; margin-bottom: 14px; }
-    .header h1 { font-size: 16px; font-weight: bold; margin: 0; letter-spacing: .5px; }
-    .header p { font-size: 10px; margin: 2px 0 0; color: #444; }
+    @page { margin: 1.4cm; }
+    body { font-family: 'DejaVu Sans', sans-serif; font-size: 10.5px; color: #1a2b40; }
+    .brand-band { width: 100%; background-color: #0f4c81; color: #ffffff; padding: 10px 12px; }
+    .brand-band h1 { font-size: 17px; font-weight: bold; margin: 0; letter-spacing: 1px; }
+    .brand-band .sub { font-size: 9px; margin: 2px 0 0; color: #cfe0f2; }
+    .brand-band .doc { font-size: 10px; margin: 0; color: #ffffff; text-align: right; }
+    .brand-band .status { font-size: 9px; font-weight: bold; margin: 4px 0 0; text-align: right; padding: 3px 8px; border-radius: 3px; display: inline-block; }
+    .status.paid { background-color: #0a7d4d; color: #ffffff; }
+    .status.unpaid { background-color: #b45309; color: #ffffff; }
+    .status.other { background-color: #64748b; color: #ffffff; }
+    .accent-rule { height: 3px; background-color: #f59e0b; margin-bottom: 12px; }
     .grid { display: inline-block; width: 49%; vertical-align: top; box-sizing: border-box; }
     .grid.left { float: left; }
     .grid.right { float: right; }
-    .panel { border: 1px solid #ccc; padding: 6px 8px; margin-bottom: 12px; }
-    .badge { border: 1px solid #2563eb; padding: 6px 8px; margin-top: 8px; }
-    .badge span { color: #2563eb; font-weight: bold; font-size: 10px; }
+    .panel { border: 1px solid #d7e1ec; padding: 6px 8px; margin-bottom: 12px; border-radius: 4px; }
     table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
-    th, td { border: 1px solid #ccc; padding: 4px 6px; font-size: 10px; }
-    th { background: #f0f4ff; }
+    th, td { border: 1px solid #d7e1ec; padding: 4px 6px; font-size: 10px; }
+    th { background: #e8f1fa; color: #0f4c81; text-align: left; }
     .right-cell { text-align: right; }
-    .total-row td { font-weight: bold; }
-    .note { font-size: 9px; color: #555; margin-top: 8px; }
+    .total-row td { font-weight: bold; background: #f2f7fc; }
+    .paid-row td { font-weight: bold; color: #0a7d4d; background: #eaf6f0; }
+    .note { font-size: 9px; color: #5a6b7d; margin-top: 8px; }
+    .amount-paid { border: 1px solid #b9dcc9; background-color: #eaf6f0; padding: 6px 8px; margin-bottom: 12px; border-radius: 4px; }
+    .amount-paid span { color: #0a7d4d; font-weight: bold; }
 </style>
 </head>
 <body>
 
-<div class="header">
-    <h1>GUINOBATAN WATERWORKS</h1>
-    <p>Guinobatan, Albay</p>
-    <p>Official Statement of Account</p>
-</div>
+<table class="brand-band" cellpadding="0" cellspacing="0">
+    <tr>
+        <td>
+            <h1>GUINOBATAN WATERWORKS</h1>
+            <p class="sub">Guinobatan, Albay · Official Statement of Account</p>
+        </td>
+        <td align="right">
+            <p class="doc">Invoice No. {{ $invoiceNumber }}</p>
+            <span class="status {{ strtolower($status) === 'paid' ? 'paid' : (strtolower($status) === 'unpaid' ? 'unpaid' : 'other') }}">{{ $status }}</span>
+        </td>
+    </tr>
+</table>
+<div class="accent-rule"></div>
 
 <div>
     <div class="grid left">
@@ -46,8 +61,6 @@
             <tr><th>Consumption</th><td>{{ $cuMUsed }} cu.m.</td></tr>
             <tr><th>Rate</th><td>{{ $rateDisplay }}</td></tr>
         </table>
-
-        <div class="badge"><span>Status:</span> {{ $status }}</div>
     </div>
 
     <div class="grid right">
@@ -60,6 +73,12 @@
     </div>
     <div style="clear:both;"></div>
 </div>
+
+@if ($paymentMethod !== null)
+<div class="amount-paid">
+    <span>PAID</span> on {{ $paidAt }} via {{ $paymentMethod }}@if ($paymentReference !== null && $paymentReference !== '') · Reference: {{ $paymentReference }}@endif
+</div>
+@endif
 
 <table>
     <thead>
@@ -85,6 +104,12 @@
             <td>Total Amount Due</td>
             <td class="right-cell">{{ number_format($total, 2) }}</td>
         </tr>
+        @if ($paymentMethod !== null)
+        <tr class="paid-row">
+            <td>Amount Paid</td>
+            <td class="right-cell">{{ number_format($amountPaid, 2) }}</td>
+        </tr>
+        @endif
     </tbody>
 </table>
 

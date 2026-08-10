@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Filament\Resources\PaymentResource;
 use App\Models\Invoice;
 use App\Models\Payment;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -60,6 +61,14 @@ class PdfService
             'customerName' => $connection->registered_name ?? '—',
             'addressLine' => $addressLine,
             'payer' => $payer ?? '—',
+            'paymentMethod' => $payment === null
+                ? null
+                : PaymentResource::methodLabel($payment->method, $payment->paymongo_source),
+            'paidAt' => $payment?->paid_at === null ? null : $formatDate($payment->paid_at),
+            'paymentReference' => $payment === null
+                ? null
+                : ($payment->reference ?? $payment->paymongo_reference),
+            'amountPaid' => $payment === null ? null : (float) $payment->amount,
             'presentReading' => $reading?->present_reading ?? '—',
             'previousReading' => $reading?->previous_reading ?? '—',
             'cuMUsed' => $reading?->cu_m_used ?? '—',

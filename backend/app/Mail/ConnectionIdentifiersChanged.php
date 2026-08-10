@@ -36,7 +36,8 @@ class ConnectionIdentifiersChanged extends Mailable
     public function content(): Content
     {
         return new Content(
-            markdown: 'emails.connection-identifiers-changed',
+            html: 'emails.connection-identifiers-changed-html',
+            text: 'emails.connection-identifiers-changed-text',
         );
     }
 }

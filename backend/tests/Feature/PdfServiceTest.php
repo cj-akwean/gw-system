@@ -169,6 +169,34 @@ class PdfServiceTest extends TestCase
         $this->assertStringContainsString('juan@example.com', $html);
     }
 
+    public function test_view_renders_the_payment_block_when_a_payment_is_attached(): void
+    {
+        $invoice = $this->makeInvoice();
+
+        $payment = Payment::factory()->create([
+            'invoice_id' => $invoice->id,
+            'amount' => 1153.00,
+            'method' => 'paymongo',
+            'paymongo_source' => 'gcash',
+            'paid_at' => '2026-08-07 10:00:00',
+            'paymongo_reference' => 'pay_ref_123',
+        ]);
+
+        $data = app(PdfService::class)->buildViewData($invoice, $payment);
+
+        $this->assertSame('PayMongo · GCash', $data['paymentMethod']);
+        $this->assertSame('Aug 07, 2026', $data['paidAt']);
+        $this->assertSame('pay_ref_123', $data['paymentReference']);
+        $this->assertSame(1153.00, $data['amountPaid']);
+
+        $html = view('pdfs.invoice', $data)->render();
+
+        $this->assertStringContainsString('PAID', $html);
+        $this->assertStringContainsString('PayMongo · GCash', $html);
+        $this->assertStringContainsString('Amount Paid', $html);
+        $this->assertStringContainsString('1,153.00', $html);
+    }
+
     public function test_command_writes_a_pdf_file_to_storage(): void
     {
         Storage::fake('local');
