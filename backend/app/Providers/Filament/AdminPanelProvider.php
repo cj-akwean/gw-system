@@ -30,6 +30,13 @@ class AdminPanelProvider extends PanelProvider
             ->path('admin')
             ->login(Login::class)
             ->authGuard('admin')
+            ->spa()
+            // FileUpload pages race Alpine's entangle under SPA swaps (Livewire
+            // Entangle Error on data.csvFile) — keep them as plain reloads.
+            ->spaUrlExceptions([
+                '*/admin/meter-readings/import*',
+                '*/admin/service-connections/import*',
+            ])
             ->colors([
                 'primary' => Color::Amber,
             ])
