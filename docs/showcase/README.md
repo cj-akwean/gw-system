@@ -2,7 +2,7 @@
 
 > Presentation-ready demo of the Guinobatan Waterworks System: customer portal (frontend),
 > JSON API + admin panel (backend), and the full PayMongo payment chain. Every phase lists
-> the exact command and what you should see. Verified 2026-08-10.
+> the exact command and what you should see. Verified 2026-08-10. Updated 2026-08-10 — ngrok/webhook setup added.
 
 ## What the demo proves
 
@@ -31,6 +31,7 @@
 2. **PayMongo test keys** in `backend/.env` (`PAYMONGO_SECRET_KEY`, `PAYMONGO_PUBLIC_KEY` = `pk_test_…` / `sk_test_…`)
 3. **Windows SSL fix** in place — outbound HTTPS fails with `cURL error 60` otherwise; verify: `php -r "echo ini_get('curl.cainfo');"` prints a `.pem` path (see root `README.md → PHP HTTPS / SSL`)
 4. **Mailtrap** SMTP creds in `backend/.env` for Phase 5 (optional — without them email is written to `storage/logs` instead, `MAIL_MAILER=log`)
+5. **ngrok** running — required for real PayMongo webhooks to reach your machine (Phase 3A). Install: `winget install ngrok`. Start: `ngrok http 8000`. Copy the `https://...` URL and paste it into **PayMongo Dashboard → Developers → Webhooks → endpoint URL**. **Every time ngrok restarts, the URL changes — update the dashboard or webhooks silently fail.**
 
 ## Pre-flight (3 terminals)
 
@@ -104,13 +105,27 @@ already-paid invoice → `409` · invoice of an unlinked connection → `403`.
 
 ### 3A. Real QR Ph (needs internet + test-mode PayMongo)
 
+**Before testing, set up ngrok for webhooks:**
+
+```powershell
+# 1. Start ngrok (in a separate terminal or background)
+ngrok http 8000
+
+# 2. Copy the https://... URL from the ngrok output
+
+# 3. Go to PayMongo Dashboard → Developers → Webhooks → Edit your endpoint
+#    Paste the ngrok URL + /api/webhooks/paymongo as the endpoint URL
+#    Example: https://abc123.ngrok-free.app/api/webhooks/paymongo
+```
+
+> **Critical:** ngrok generates a new URL every restart. If webhooks silently fail,
+> check that the dashboard URL matches your current ngrok session.
+
 1. In the portal pay flow: E-wallet → **Scan QR · QR Ph** → Pay
 2. PayMongo returns a QR image (Base64, rendered in-page) + expiry countdown
 3. Scan with the **GCash app** (test mode) → approve → app redirects back (`return_url`)
 4. Portal polls every 15s → **"Payment received"** panel with receipt line
-5. PayMongo webhook (no ngrok needed for the QR-created intent to complete, but the
-   dashboard webhook URL must point at your machine for the mark-paid step — otherwise
-   use Phase 3B, which exercises the identical job offline)
+5. PayMongo webhook fires → invoice marked paid (requires ngrok running + correct URL in dashboard)
 
 > Bills over ₱100,000 are E-wallet-disabled (Card only); E-wallet minimum ₱1.00.
 
@@ -272,9 +287,9 @@ npm run build     # static export, TS clean
 | Symptom | Fix |
 |---|---|
 | `cURL error 60` / payment 502 | CA bundle missing — root `README.md → PHP HTTPS / SSL`; check `storage/logs/laravel.log` |
-| Invoice never marked paid | Queue worker not running — `jobs` table is filling; start `queue:work` |
+| Invoice never marked paid | Queue worker not running — `jobs` table is filling; start `queue:work`. Or ngrok not running / webhook URL stale — restart ngrok and update PayMongo dashboard |
 | No email in Mailtrap | Wrong inbox creds (per-inbox) or no active link on the paid connection; restart worker after `.env` change |
-| Webhook deliveries stuck "processing" | Stale ngrok URL (it changes each restart) — update the PayMongo dashboard URL, then Resend |
+| Webhook deliveries stuck "processing" | **Most common:** ngrok URL changed after restart — update PayMongo dashboard → Developers → Webhooks. Also: queue worker down, or ngrok not running |
 | `/pay` returns 409 "already went through" | Intent previously succeeded — double-charge guard working; run `paymongo:reconcile` |
 
 > Deep dive: `docs/manual-tests/paymongo-payment-e2e.md` — the full manual test including
