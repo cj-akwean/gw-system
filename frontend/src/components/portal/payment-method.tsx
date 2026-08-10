@@ -805,6 +805,11 @@ export function PaymentMethodScreen({
   const invoice = screen.invoice;
   const capExceeded = invoice.total_amount > E_WALLET_MAX_TOTAL;
   const busy = qr.phase === "starting" || qr.phase === "attaching";
+  // Once a QR exists (shown or expired), the swipe is locked — re-swiping
+  // would fabricate a fresh payment intent each time while the aside restores
+  // the same stored QR. Regeneration goes through the dedicated "Get a new QR"
+  // button instead.
+  const qrLocked = qrActive || qrExpired;
   const ewalletDisabled = capExceeded || busy;
 
   return (
@@ -1053,7 +1058,7 @@ export function PaymentMethodScreen({
                     </p>
                   )}
 
-                  {busy || ewalletDisabled ? (
+                  {busy || qrLocked || ewalletDisabled ? (
                     <button
                       type="button"
                       disabled
@@ -1069,6 +1074,10 @@ export function PaymentMethodScreen({
                               ? "Processing your card…"
                               : "Generating your QR code…"}
                         </>
+                      ) : qrActive ? (
+                        <>QR ready — scan to pay</>
+                      ) : qrExpired ? (
+                        <>QR expired — get a new one</>
                       ) : (
                         <>Pay {formatPeso(invoice.total_amount)}</>
                       )}

@@ -113,6 +113,24 @@ class PayMongoSimulatePaymentCommandTest extends TestCase
         $this->assertSame('09171234567', $payment->payer_phone);
     }
 
+    public function test_command_records_a_qrph_source(): void
+    {
+        $invoice = $this->unpaidInvoice();
+
+        $exitCode = Artisan::call('paymongo:simulate-payment', [
+            'invoice' => $invoice->id,
+            '--source' => 'qrph',
+        ]);
+
+        $this->assertSame(0, $exitCode);
+        $this->assertSame('paid', $invoice->fresh()->status);
+
+        $payment = Payment::where('invoice_id', $invoice->id)->sole();
+        $this->assertSame('paymongo', $payment->method);
+        $this->assertSame('qrph', $payment->paymongo_source);
+        $this->assertStringContainsString('qrph', Artisan::output());
+    }
+
     public function test_command_defaults_payer_to_the_first_linked_user(): void
     {
         $invoice = $this->unpaidInvoice();

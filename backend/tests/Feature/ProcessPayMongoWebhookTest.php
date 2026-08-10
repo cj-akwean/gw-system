@@ -124,6 +124,26 @@ class ProcessPayMongoWebhookTest extends TestCase
         $this->assertSame('gcash', $payment->paymongo_source);
     }
 
+    public function test_payment_paid_with_qrph_source_is_recorded(): void
+    {
+        $invoice = $this->invoiceFor('pi_qrph_1');
+
+        $payload = $this->paymentPaidPayload();
+        $payload['data']['id'] = 'evt_paid_qrph_1';
+        $payload['data']['attributes']['data']['id'] = 'pay_res_qrph_1';
+        $payload['data']['attributes']['data']['attributes']['payment_intent_id'] = 'pi_qrph_1';
+        $payload['data']['attributes']['data']['attributes']['source'] = [
+            'id' => 'src_qrph_1',
+            'type' => 'qrph',
+        ];
+
+        $this->runJob($payload);
+
+        $payment = Payment::where('invoice_id', $invoice->id)->sole();
+        $this->assertSame('paymongo', $payment->method);
+        $this->assertSame('qrph', $payment->paymongo_source);
+    }
+
     public function test_an_already_paid_invoice_is_left_alone(): void
     {
         $this->invoiceFor('pi_test_1', 'paid', 40.00);

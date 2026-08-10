@@ -651,6 +651,48 @@ describe("PaymentMethodScreen", () => {
     expect(mockAttachPaymentMethod).toHaveBeenCalledTimes(1);
   });
 
+  it("locks the pay button while the QR is active so the swipe cannot re-trigger", async () => {
+    mockStartPayment.mockResolvedValue(intentInfo);
+    mockCreatePaymentMethod.mockResolvedValue("pm_qr_1");
+    mockAttachPaymentMethod.mockImplementation(() => Promise.resolve(qrAttachResult()));
+
+    await goToReview();
+    clickPay();
+    await flushAsync();
+
+    expect(screen.getByTestId("qr-image")).toBeInTheDocument();
+    expect(screen.getByTestId("pay-now")).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("pay-now"));
+    await flushAsync();
+
+    expect(mockCreatePaymentMethod).toHaveBeenCalledTimes(1);
+    expect(mockAttachPaymentMethod).toHaveBeenCalledTimes(1);
+  });
+
+  it("locks the pay button while the QR is expired and regenerates only via Get a new QR", async () => {
+    vi.useFakeTimers();
+    mockStartPayment.mockResolvedValue(intentInfo);
+    mockCreatePaymentMethod.mockResolvedValue("pm_qr_1");
+    mockAttachPaymentMethod.mockImplementation(() => Promise.resolve(qrAttachResult()));
+
+    await goToReview();
+    clickPay();
+    await flushAsync();
+
+    act(() => {
+      vi.advanceTimersByTime(601_000);
+    });
+
+    expect(screen.getByTestId("qr-expired")).toBeInTheDocument();
+    expect(screen.getByTestId("pay-now")).toBeDisabled();
+    expect(mockCreatePaymentMethod).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByTestId("pay-now"));
+    await flushAsync();
+    expect(mockCreatePaymentMethod).toHaveBeenCalledTimes(1);
+  });
+
   it("resumes a still-valid stored QR without re-attaching", async () => {
     window.sessionStorage.setItem(
       "gw-qr:pi_1",
@@ -864,6 +906,37 @@ describe("PaymentMethodScreen", () => {
 
     fireEvent.click(screen.getByTestId("success-ok"));
     expect(mockRouter.push).toHaveBeenCalledWith("/dashboard");
+  });
+
+  it("shows the success modal once a QR payment is credited by the webhook", async () => {
+    vi.useFakeTimers();
+    mockGetInvoices
+      .mockResolvedValueOnce([invoice()])
+      .mockResolvedValueOnce([]);
+    mockStartPayment.mockResolvedValue(intentInfo);
+    mockCreatePaymentMethod.mockResolvedValue("pm_qr_1");
+    mockAttachPaymentMethod.mockImplementation(() => Promise.resolve(qrAttachResult()));
+
+    render(<PaymentMethodScreen invoiceId="1" />);
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("method-card-ewallet")).toBeInTheDocument()
+    );
+    selectMethod("qrph");
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("review-step")).toBeInTheDocument()
+    );
+    clickPay();
+    await flushAsync();
+    expect(screen.getByTestId("qr-image")).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(15_000);
+    });
+
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("success-modal")).toBeInTheDocument()
+    );
+    expect(screen.getByText(/Payment received/i)).toBeInTheDocument();
   });
 
   it("selecting Card shows the card form on the review step", async () => {

@@ -17,6 +17,7 @@ php artisan paymongo:simulate-payment          # first unpaid/overdue invoice
 php artisan paymongo:simulate-payment 3        # by id
 php artisan paymongo:simulate-payment GW-2026-00004   # by invoice number
 php artisan paymongo:simulate-payment 4 --source=gcash --payer-name="Jane Doe" --payer-email=jane@example.com
+php artisan paymongo:simulate-payment 4 --source=qrph    # QR Ph channel (same payment.paid flow as the others)
 ```
 
 - Needs the queue worker running (`php artisan queue:work --tries=3`) for the email job.
