@@ -207,15 +207,17 @@ export default function Hero33({
                       </div>
                       <DropdownMenuSeparator className="my-2 bg-gradient-to-r from-transparent via-border to-transparent" />
                       <div className="flex justify-center p-1">
-                        <WaterCanvas rounded={6} waterAmount={50}>
-                          <Link
-                            href="/auth"
-                            prefetch
-                            className="flex items-center justify-center rounded-md border border-amber-500 px-6 py-2.5 text-sm font-medium text-neutral-900 transition-transform hover:bg-black/5 active:scale-[0.96] dark:text-white dark:hover:bg-white/10"
-                          >
-                            Sign In
-                          </Link>
-                        </WaterCanvas>
+                        {/* Static pill — the WaterCanvas sim used to mount here
+                            (canvas + rAF loop) every time the menu opened, which
+                            ate CPU exactly while the user interacted with the
+                            menu on mobile. */}
+                        <Link
+                          href="/auth"
+                          prefetch
+                          className="flex items-center justify-center rounded-md border border-amber-500 px-6 py-2.5 text-sm font-medium text-neutral-900 transition-transform hover:bg-black/5 active:scale-[0.96] dark:text-white dark:hover:bg-white/10"
+                        >
+                          Sign In
+                        </Link>
                       </div>
                       <div className="flex items-center justify-between px-2 py-1.5">
                         <span className="text-sm text-muted-foreground">Theme</span>
@@ -308,7 +310,7 @@ export default function Hero33({
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
-              transition={{ type: 'spring', stiffness: 100, damping: 20, delay: 1.2 }}
+              transition={{ type: 'spring', stiffness: 100, damping: 20, delay: 0.4 }}
               className="order-1 z-10 mt-10 flex items-center justify-center lg:order-none lg:mt-0"
             >
               <Image

@@ -2,7 +2,7 @@ import { OpeningAnimation } from "@/components/opening-animation";
 import Hero33 from "@/components/ui/hero-33";
 import { LandingBackdrop } from "@/components/landing/landing-backdrop";
 import { FlowLine } from "@/components/landing/flow-line";
-import { RatesLazy } from "@/components/landing/rates-lazy";
+import { RatesSection } from "@/components/landing/rates-section";
 import { HowItWorks } from "@/components/landing/how-it-works";
 import { ContactSection } from "@/components/landing/contact-section";
 
@@ -21,7 +21,7 @@ export default function Home() {
           titleLines={['Every Drop', 'Matters.']}
           description="Delivering clean, reliable water to every home in Guinobatan."
         />
-        <RatesLazy />
+        <RatesSection />
         <HowItWorks />
         <ContactSection />
       </div>

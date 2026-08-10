@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Check, Droplets, Loader2 } from "lucide-react";
-import { LiquidOcean } from "@/components/ui/liquid-ocean";
+import { OceanBackground } from "@/components/landing/ocean-background";
 import { Button } from "@/components/ui/button";
 import { getRates, type PortalRates } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -38,16 +38,6 @@ export function RatesSection() {
   const { isAuthenticated, ready } = useAuth();
   const { dark } = useTheme();
   const [state, setState] = useState<State>({ status: "loading" });
-  const [narrow, setNarrow] = useState(false);
-
-  useEffect(() => {
-    if (typeof window.matchMedia !== "function") return;
-    const mq = window.matchMedia("(max-width: 767px)");
-    const apply = () => setNarrow(mq.matches);
-    apply();
-    mq.addEventListener("change", apply);
-    return () => mq.removeEventListener("change", apply);
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,22 +88,7 @@ export function RatesSection() {
       className="relative flex min-h-[100svh] items-center overflow-hidden py-20 md:py-28"
       id="rates"
     >
-      <LiquidOcean
-        accentColor={0x7dd3fc}
-        backgroundColor={dark ? 0x1a4a66 : 0x0d2b3e}
-        boatCount={5}
-        boatSpread={3}
-        fov={narrow ? 45 : 26}
-        oceanFragments={18}
-        oceanOpacity={0.65}
-        oceanSize={narrow ? 20 : 30}
-        showBoats
-        showGrid={false}
-        showWireframe
-        waveAmplitude={0.2}
-        waveSpeed={0.04}
-        className="absolute inset-0 min-h-full"
-      />
+      <OceanBackground />
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"

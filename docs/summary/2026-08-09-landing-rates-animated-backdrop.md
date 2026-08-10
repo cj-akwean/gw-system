@@ -108,3 +108,31 @@ Verify: frontend 172/172, tsc clean, lint 1 pre-existing warning (ocean gridColo
 3. **Fractal grid mobile-light** - added maxFps prop (30 on mobile, 60 desktop) + draw pause when document.hidden; mobile also gets initialPerformance 'medium' (fewer dots on slow devices).
 
 Verify: frontend 172/172, tsc clean, lint clean. Uncommitted.
+
+
+## Addendum - round 5 (same day): mobile-load overhaul + fractal density fix
+
+User asked: commit first, then make mobile loading fast (A51 profile) and fix the fractal grid 'denser/less dense dots' switching. Also decided: primary mobile test dimension = Samsung A51/71 412x914 (real PH device; 390x844 = spot-check).
+
+Committed c4a01cf (all pending round 2-4 work). Then:
+1. **AGENTS.md rule updated** - A51/71 412x914 mobile+touch, 4x CPU, Fast 4G, cache disabled, benchmark the PROD export not dev mode.
+2. **CSS-only loading screen** - replaced the JS/rAF DotmSquare17 matrix (lagged at 4x CPU, and the whole dotmatrix lib rode the initial bundle) with 5 CSS-animated pulse dots (compositor-driven) + shorter splash (450+350ms).
+3. **Fractal grid frozen until loadingComplete** - its full-viewport rAF no longer competes with parse/hydration (invisible behind the splash anyway).
+4. **Hero LCP image delay 1.2s to 0.6s.**
+5. **Fractal density switching fixed** - usePerformance is now monotonic degrade-only (never upgrades) with 1.5s windows; verified painted-dot count stable 251-265 over 10s.
+
+Results (prod export, 412x914 + 4x CPU + Fast 4G + no cache): **LCP 6432ms to 3369ms** (two consistent runs), CLS 0.06 to 0.02. Desktop 1280 same profile: 3369ms/0.02. Loader probe: CSS pulse dots from ~430ms, gone ~2.4s. Remaining floor = JS parse at 4x CPU + splash + entrance delay. Frontend 172/172, tsc clean, lint 1 pre-existing warning. Uncommitted after this round.
+
+
+## Addendum - round 6 (same day): interaction jank + CLS + scroll-lag overhaul
+
+User: hamburger lags, theme toggle lags, LCP/CLS bad, scrolling past the hero lags. 'Don't stop until it is very optimized.'
+
+Fixes (all verified at A51 412x914 + 4x CPU + Fast 4G + no cache, prod export):
+1. **Hamburger** - removed the WaterCanvas sim (canvas + rAF) from the dropdown menu Sign In button (plain styled Link now); menu contains 0 canvases, opens fast.
+2. **Theme toggle** - skip the 750ms full-screen clip-path view transition on mobile (theme.ts gates on max-width 767px; desktop keeps the circle). Verified: handler returns in 6ms, theme flips instantly.
+3. **CLS 0.00** - restructured: rates cards render statically (light); only the three.js ocean is deferred (ocean-background.tsx + ocean-scene.tsx dynamic import, -20% IntersectionObserver margin). The ocean is absolute -> zero layout shift. Was CLS 0.05-0.06 from the whole-section lazy pop-in.
+4. **Scroll lag** - fractal grid now draws a cached static base (offscreen canvas) + only the wave region around the pointer per frame (was full-viewport ~1600-dot redraw per frame); ocean chunk prefetched in idle (requestIdleCallback) so the first scroll doesn't hit a mid-scroll download/parse (was a 266ms long task). Verified post-load scroll at 4x CPU: avg 19-21ms/frame, max 33-41ms, 0-1 long frames.
+5. Splash 350ms + hero image delay 0.4s.
+
+Final: LCP 3369-3757ms (run variance), CLS 0.00, smooth scroll, instant menu/toggle. Remaining LCP floor = JS parse at 4x CPU + splash + entrance animation. Frontend 172/172, tsc clean, lint 1 pre-existing warning. Uncommitted.

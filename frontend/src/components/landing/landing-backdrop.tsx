@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import { CanvasFractalGrid } from "@/components/ui/canvas-fractal-grid";
 import { useTheme } from "@/lib/theme";
+import { useLoadingComplete } from "@/lib/loading-context";
 
 export function LandingBackdrop() {
   const { dark, mounted } = useTheme();
+  const loadingComplete = useLoadingComplete();
   const [narrow, setNarrow] = useState(false);
 
   useEffect(() => {
@@ -17,7 +19,7 @@ export function LandingBackdrop() {
     return () => mq.removeEventListener("change", apply);
   }, []);
 
-  if (!mounted) return null;
+  if (!mounted || !loadingComplete) return null;
 
   return (
     <div className="pointer-events-none fixed inset-0" aria-hidden="true">

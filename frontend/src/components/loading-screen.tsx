@@ -1,8 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { DotmSquare17 } from "@/components/ui/dotm-square-17";
 
+// Pure-CSS loading splash. The previous DotmSquare17 matrix was a JS/rAF
+// animation — it lagged badly at throttled CPU (4×) because its rAF loop
+// competed with hydration, and the whole dotmatrix lib rode in the initial
+// bundle just for the splash. CSS keyframes run on the compositor: zero main
+// thread, no lag, and the dots pulse even before React hydrates.
 export function LoadingScreen({ onDone }: { onDone?: () => void }) {
   const [visible, setVisible] = useState(true);
   const [fadeOut, setFadeOut] = useState(false);
@@ -18,13 +22,10 @@ export function LoadingScreen({ onDone }: { onDone?: () => void }) {
           setVisible(false);
           onDone?.();
         }
-      }, 450);
+      }, 350);
     };
 
-    // Fixed splash — no font/network dependency. Waiting on
-    // `document.fonts.ready` froze the animation for ~1s while fonts
-    // (which are discovered late in dev) finished downloading.
-    const timer = setTimeout(done, 650);
+    const timer = setTimeout(done, 350);
 
     return () => {
       cancelled = true;
@@ -39,12 +40,21 @@ export function LoadingScreen({ onDone }: { onDone?: () => void }) {
       className="fixed inset-0 z-[9999] flex flex-col items-center justify-center gap-6"
       style={{
         background: "var(--bg)",
-        transition: "opacity 500ms ease",
+        transition: "opacity 350ms ease",
         opacity: fadeOut ? 0 : 1,
       }}
     >
-      <div className="flex items-center justify-center">
-        <DotmSquare17 size={120} dotSize={6} animated colorPreset="grad-ocean" pattern="full" />
+      <div className="flex items-center gap-2" aria-hidden="true">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <span
+            className="size-2.5 animate-pulse rounded-full"
+            key={i}
+            style={{
+              animationDelay: `${i * 140}ms`,
+              background: "var(--primary)",
+            }}
+          />
+        ))}
       </div>
       <p
         className="animate-pulse text-sm font-semibold tracking-widest uppercase"

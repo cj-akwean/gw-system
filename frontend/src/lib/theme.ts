@@ -52,10 +52,15 @@ export function useTheme() {
         applyTheme(!isDark);
       };
 
+      // The clip-path circle reveal animates the whole page — at throttled
+      // mobile CPUs it stretches for seconds. Skip it on mobile (instant swap);
+      // desktop keeps the animation.
+      const isMobile = window.matchMedia("(max-width: 767px)").matches;
       const canAnimate =
         origin instanceof Element &&
         typeof document.startViewTransition === "function" &&
-        !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        !window.matchMedia("(prefers-reduced-motion: reduce)").matches &&
+        !isMobile;
 
       if (!canAnimate) {
         swap();

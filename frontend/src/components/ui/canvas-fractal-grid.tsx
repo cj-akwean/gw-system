@@ -117,19 +117,19 @@ const usePerformance = (
 
     const measureFps = (time: number) => {
       frameCount++;
-      if (time - lastTime > 1000) {
+      if (time - lastTime > 1500) {
         const fps = Math.round((frameCount * 1000) / (time - lastTime));
         frameCount = 0;
         lastTime = time;
-        if (fps < 30) {
-          setPerformance((prev) => (prev === "low" ? prev : "low"));
-        } else if (fps < 50) {
-          setPerformance((prev) =>
-            prev === "low" || prev === "medium" ? prev : "medium"
-          );
-        } else {
-          setPerformance((prev) => (prev === "high" ? prev : "high"));
-        }
+        // Degrade-only: the dot density may drop a level but never rises
+        // again, so the grid can't visibly toggle between densities when FPS
+        // hovers around a threshold (throttled mobile CPUs).
+        setPerformance((prev) => {
+          if (prev === "low") return "low";
+          if (fps < 30) return "low";
+          if (prev === "medium") return "medium";
+          return fps < 50 ? "medium" : "high";
+        });
       }
       framerId = requestAnimationFrame(measureFps);
     };
@@ -200,28 +200,52 @@ const DotCanvas: React.FC<{
   }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const animationRef = useRef<number | null>(null);
+    const baseCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-    const drawDots = useCallback(
+    const skip =
+      performance === "low" ? 3 : performance === "medium" ? 2 : 1;
+
+    // Static dot field, drawn once per config/size change. Each frame only
+    // redraws the wave region around the pointer on top of this cached base —
+    // a full-viewport redraw (~1600 dots of sqrt math) per frame was the main
+    // jank source while scrolling on throttled mobile CPUs.
+    const drawBase = useCallback(
+      (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const cols = Math.ceil(canvas.width / dotSpacing);
+        const rows = Math.ceil(canvas.height / dotSpacing);
+        ctx.fillStyle = dotColor.replace("1)", `${dotOpacity})`);
+        for (let i = 0; i < cols; i += skip) {
+          for (let j = 0; j < rows; j += skip) {
+            ctx.beginPath();
+            ctx.arc(i * dotSpacing, j * dotSpacing, dotSize / 2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      },
+      [dotSize, dotSpacing, dotOpacity, dotColor, skip]
+    );
+
+    const drawWaveRegion = useCallback(
       (ctx: CanvasRenderingContext2D, time: number) => {
         const { width, height } = ctx.canvas;
-        ctx.clearRect(0, 0, width, height);
-
-        const performanceSettings = {
-          low: { skip: 3 },
-          medium: { skip: 2 },
-          high: { skip: 1 },
-        };
-
-        const skip = performanceSettings[performance].skip;
-
-        const cols = Math.ceil(width / dotSpacing);
-        const rows = Math.ceil(height / dotSpacing);
-
         const centerX = mousePos.x * width;
         const centerY = mousePos.y * height;
 
-        for (let i = 0; i < cols; i += skip) {
-          for (let j = 0; j < rows; j += skip) {
+        // Only iterate grid cells inside the wave bounding box.
+        const minI = Math.max(0, Math.floor((centerX - waveRadius) / dotSpacing));
+        const maxI = Math.min(
+          Math.ceil((centerX + waveRadius) / dotSpacing),
+          Math.ceil(width / dotSpacing)
+        );
+        const minJ = Math.max(0, Math.floor((centerY - waveRadius) / dotSpacing));
+        const maxJ = Math.min(
+          Math.ceil((centerY + waveRadius) / dotSpacing),
+          Math.ceil(height / dotSpacing)
+        );
+
+        for (let i = minI; i < maxI; i += skip) {
+          for (let j = minJ; j < maxJ; j += skip) {
             const x = i * dotSpacing;
             const y = j * dotSpacing;
 
@@ -230,39 +254,32 @@ const DotCanvas: React.FC<{
             const distance = Math.sqrt(
               distanceX * distanceX + distanceY * distanceY
             );
+            if (distance >= waveRadius) continue;
 
-            let dotX = x;
-            let dotY = y;
+            const waveStrength = Math.pow(1 - distance / waveRadius, 2);
+            const angle = Math.atan2(distanceY, distanceX);
+            const waveOffset =
+              Math.sin(distance * 0.05 - time * 0.005) *
+              waveIntensity *
+              waveStrength;
+            const dotX = x + Math.cos(angle) * waveOffset;
+            const dotY = y + Math.sin(angle) * waveOffset;
 
-            if (distance < waveRadius) {
-              const waveStrength = Math.pow(1 - distance / waveRadius, 2);
-              const angle = Math.atan2(distanceY, distanceX);
-              const waveOffset =
-                Math.sin(distance * 0.05 - time * 0.005) *
-                waveIntensity *
-                waveStrength;
-              dotX += Math.cos(angle) * waveOffset;
-              dotY += Math.sin(angle) * waveOffset;
-
-              const glowRadius = dotSize * (1 + waveStrength);
-              const gradient = ctx.createRadialGradient(
-                dotX,
-                dotY,
-                0,
-                dotX,
-                dotY,
-                glowRadius
-              );
-              gradient.addColorStop(
-                0,
-                glowColor.replace("1)", `${dotOpacity * (1 + waveStrength)})`)
-              );
-              gradient.addColorStop(1, glowColor.replace("1)", "0)"));
-              ctx.fillStyle = gradient;
-            } else {
-              ctx.fillStyle = dotColor.replace("1)", `${dotOpacity})`);
-            }
-
+            const glowRadius = dotSize * (1 + waveStrength);
+            const gradient = ctx.createRadialGradient(
+              dotX,
+              dotY,
+              0,
+              dotX,
+              dotY,
+              glowRadius
+            );
+            gradient.addColorStop(
+              0,
+              glowColor.replace("1)", `${dotOpacity * (1 + waveStrength)})`)
+            );
+            gradient.addColorStop(1, glowColor.replace("1)", "0)"));
+            ctx.fillStyle = gradient;
             ctx.beginPath();
             ctx.arc(dotX, dotY, dotSize / 2, 0, Math.PI * 2);
             ctx.fill();
@@ -275,9 +292,8 @@ const DotCanvas: React.FC<{
         dotOpacity,
         waveIntensity,
         waveRadius,
-        dotColor,
         glowColor,
-        performance,
+        skip,
         mousePos,
       ]
     );
@@ -291,9 +307,20 @@ const DotCanvas: React.FC<{
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
+      let baseCanvas = baseCanvasRef.current;
+      if (!baseCanvas) {
+        baseCanvas = document.createElement("canvas");
+        baseCanvasRef.current = baseCanvas;
+      }
+      let baseCtx = baseCanvas.getContext("2d");
+
       const resizeCanvas = () => {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
+        baseCanvas.width = canvas.width;
+        baseCanvas.height = canvas.height;
+        baseCtx = baseCanvas.getContext("2d");
+        if (baseCtx) drawBase(baseCtx, baseCanvas);
       };
 
       resizeCanvas();
@@ -303,7 +330,12 @@ const DotCanvas: React.FC<{
       const frameInterval = 1000 / Math.max(1, maxFps);
       const animate = (time: number) => {
         if (!document.hidden && time - lastTime > frameInterval) {
-          drawDots(ctx, time);
+          if (baseCtx) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(baseCanvas, 0, 0);
+            // Wobble is time-driven — redraw the wave region every frame.
+            drawWaveRegion(ctx, time);
+          }
           lastTime = time;
         }
         animationRef.current = requestAnimationFrame(animate);
@@ -317,7 +349,7 @@ const DotCanvas: React.FC<{
           cancelAnimationFrame(animationRef.current);
         }
       };
-    }, [drawDots, maxFps]);
+    }, [drawBase, drawWaveRegion, maxFps]);
 
     return (
       <canvas

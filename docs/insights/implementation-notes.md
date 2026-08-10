@@ -630,3 +630,29 @@ Performance benchmark (new AGENTS.md rule 5: DevTools device toolbar, CPU 4×, F
 - Fixed: the three.js chunk (~860KB) was loading at page load on ALL sizes — `RatesLazy`'s 600px rootMargin fired at the fold because the rates section starts exactly at the first viewport boundary; even `0px` margin fires (boundary touch). Now `rootMargin: "0px 0px -20% 0px"` — loads only after the section is 20% into view. Initial payload halved: 1.8MB → ~921KB (verified three chunks absent from the load request list; scrollRestoration must be manual+top for clean measurements).
 - Fixed: water-orb.webp (LCP element) was 1058×908 / 132KB, rendered ≤640px → resized to 640×549 / 71KB via sharp (ImageDelivery waste 117KB → 52KB).
 - Remaining LCP floor = the splash (650+450ms) + hero entrance delays (image spring delay 1.2s) + JS parse at 4× CPU — a design trade-off, not a defect; trimming the splash would improve LCP if wanted.
+
+### 5. Landing round 5: mobile-load overhaul + fractal density fix (2026-08-09)
+
+AGENTS.md §5 updated: primary mobile dimension = Samsung A51/71 **412×914** mobile+touch (390×844 spot-check), CPU 4×, Fast 4G, cache disabled; benchmark the production export, never dev mode (dev gave LCP 11.4s vs prod 6.4s at the same profile).
+
+Baseline at A51 profile (412×914, 4× CPU, Fast 4G, no cache, prod export): LCP 6432ms, CLS 0.06, render delay 5.8s. Root causes: (1) JS parse ~2.5-3s at 4× CPU of the ~920KB initial bundle; (2) three competing rAF loops during the critical window — DotmSquare17 loader matrix, fractal grid full-viewport draw, hero springs — all starved the main thread ("the loading dot matrix is lagging").
+
+Fixes:
+1. **CSS-only loading screen** (`loading-screen.tsx` rewritten): 5 dots with Tailwind `animate-pulse` + staggered delays, CSS keyframes run on the compositor — zero main-thread cost, no lag, works pre-hydration. Also dropped the whole `dotmatrix-core`/`dotm-square-17`/hooks chain from the initial bundle (it existed only for the splash). Splash shortened 650+450 → **450+350ms**.
+2. **Fractal grid frozen until `loadingComplete`** (`landing-backdrop.tsx` gates on `useLoadingComplete`) — its full-viewport rAF loop no longer competes with parse/hydration; it's behind the opaque splash anyway, so nothing visually changes.
+3. **Hero LCP image delay 1.2s → 0.6s** (hero-33 image spring) — LCP element paints sooner; title/description stagger untouched.
+4. **Fractal density switching fixed** (the "dots get denser/less dense" bug): `usePerformance` previously upgraded AND downgraded the skip level from live FPS — at throttled CPU the FPS hovers around the 30/50 thresholds so the density visibly toggled. Now **monotonic degrade-only** (never upgrades; high→medium→low only) with a 1.5s sample window. Verified stable: painted-dot count held at 251-265 across 10s (previous runs showed halving/toggling).
+
+Results at the A51 profile (prod export): **LCP 6432 → 3369ms** (two consistent runs), CLS 0.06 → 0.02. Desktop 1280×800 same profile: LCP 3369ms, CLS 0.02. Loader probe: CSS `pulse` dots render from ~430ms, gone ~2.4s. Remaining ~3.4s floor = JS parse at 4× CPU + 800ms splash + 600ms entrance delay — further gains would require cutting initial-bundle JS (motion/framework/Next runtime) or dropping the splash entirely. Frontend 172/172, tsc clean, lint 1 pre-existing warning.
+
+### 6. Landing round 6: interaction jank + CLS + scroll-lag overhaul (2026-08-09)
+
+User reported: hamburger menu lags, theme toggle lags, CLS/LCP bad, scrolling past the hero lags. Measured at A51 profile (412×914, 4× CPU, Fast 4G, no cache, prod export):
+
+1. **Hamburger lag** — the menu mounted a `WaterCanvas` sim (canvas + rAF loop) inside the dropdown ("water-filled Sign In"), eating CPU exactly while the user interacted with the menu. Fixed: plain styled Link (same amber pill) inside the menu; verified menu now contains 0 canvases and opens fast.
+2. **Theme toggle lag** — the toggle ran a 750ms full-screen clip-path view transition (`startViewTransition` + circle reveal) which stretches for seconds at 4× CPU. Fixed: `theme.ts` skips the animation on mobile (`max-width: 767px` → instant class swap); desktop keeps the circle. Verified: toggle handler returns in 6ms on mobile, theme flips instantly.
+3. **CLS** — `RatesLazy` lazy-loaded the ENTIRE rates section (cards + ocean), so the section popped in with a height change (placeholder 600px → real 1405px) → CLS 0.05-0.06. Restructured: `rates-section.tsx` renders the cards statically (light); only the ocean is deferred — new `ocean-background.tsx` (IntersectionObserver, `-20%` margin) dynamically imports `ocean-scene.tsx` (the three.js `LiquidOcean` + dark/narrow props). The ocean is absolutely positioned → zero layout impact. CLS now **0.00**.
+4. **Scroll lag** — the fractal grid redrew the full viewport (~1600 dots of sqrt math) every frame, and the ocean chunk downloaded/parsed mid-scroll (266ms long task). Fixed: (a) fractal grid now renders a **cached static base** (offscreen canvas, rebuilt on config/size/theme change) and redraws only the **wave region** around the pointer each frame; (b) `ocean-background.tsx` **prefetches the ocean chunk in idle** (`requestIdleCallback`, 3s timeout / 2s setTimeout fallback) right after mount so the first scroll doesn't stall. Verified post-load scroll at 4× CPU: avg 19-21ms/frame, max 33-41ms, 0-1 long frames (was 266ms spikes).
+5. Splash 450→350ms, hero LCP image delay 0.6→0.4s.
+
+Final A51 profile: **LCP 3369-3757ms (run variance), CLS 0.00**, smooth scrolling, instant hamburger + theme toggle. Remaining LCP floor = JS parse at 4× CPU + splash + entrance animation — cutting further means trimming initial-bundle JS (motion/Next runtime) or the splash itself. Frontend 172/172, tsc clean, lint 1 pre-existing warning (hero `backgroundImage`).
