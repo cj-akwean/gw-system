@@ -28,6 +28,19 @@ class BillingRunResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'id';
 
+    /**
+     * Human-readable record title for headings ("View Run #8" instead of
+     * "View 8").
+     */
+    public static function getRecordTitle(?Model $record): string|\Illuminate\Contracts\Support\Htmlable|null
+    {
+        if ($record instanceof BillingRun) {
+            return 'Run #'.$record->id;
+        }
+
+        return parent::getRecordTitle($record);
+    }
+
     public static function infolist(Schema $schema): Schema
     {
         return $schema

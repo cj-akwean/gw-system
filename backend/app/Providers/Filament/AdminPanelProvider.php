@@ -13,6 +13,7 @@ use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
 use Filament\Widgets\AccountWidget;
+use Filament\View\PanelsRenderHook;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -37,9 +38,25 @@ class AdminPanelProvider extends PanelProvider
                 '*/admin/meter-readings/import*',
                 '*/admin/service-connections/import*',
             ])
+            ->brandName('Guinobatan Waterworks')
+            ->favicon('/favicon.svg')
             ->colors([
-                'primary' => Color::Amber,
+                'primary' => Color::Blue,
             ])
+            ->renderHook(PanelsRenderHook::HEAD_START, fn (): string => <<<'HTML'
+                <style>
+                    .fi-body { background-color: #dde8f4; }
+                    .fi-body .fi-topbar { background-color: #f0f6fb; }
+                    @media (max-width: 63.999rem) {
+                        .fi-body .fi-sidebar { background-color: #f0f6fb; }
+                    }
+                    .fi-body:where(.dark, .dark *) { background-color: var(--gray-950); }
+                    .fi-body:where(.dark, .dark *) .fi-topbar { background-color: var(--gray-900); }
+                    @media (max-width: 63.999rem) {
+                        .fi-body:where(.dark, .dark *) .fi-sidebar { background-color: var(--gray-900); }
+                    }
+                </style>
+                HTML)
             ->databaseNotifications(livewireComponent: AdminDatabaseNotifications::class)
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')

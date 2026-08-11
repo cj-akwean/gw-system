@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\BillingRunResource;
 use App\Filament\Resources\BillingRunResource\Pages\ListBillingRuns;
 use App\Filament\Resources\BillingRunResource\Pages\ViewBillingRun;
 use App\Jobs\RunBillingJob;
@@ -215,5 +216,21 @@ class BillingRunResourceTest extends TestCase
         Livewire::actingAs($this->admin(), 'admin')
             ->test(ViewBillingRun::class, ['record' => $run->id])
             ->assertSee('No report rows');
+    }
+
+    public function test_record_title_is_human_readable_run_number(): void
+    {
+        $run = $this->billingRun();
+
+        $this->assertSame('Run #'.$run->id, BillingRunResource::getRecordTitle($run));
+    }
+
+    public function test_view_page_heading_shows_human_title(): void
+    {
+        $run = $this->billingRun();
+
+        Livewire::actingAs($this->admin(), 'admin')
+            ->test(ViewBillingRun::class, ['record' => $run->id])
+            ->assertSee('View Run #'.$run->id);
     }
 }

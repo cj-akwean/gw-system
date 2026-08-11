@@ -447,6 +447,59 @@ invoice no, account no, meter no, customer name, status, billing period start/en
 date, previous balance, base, penalty, total, rate schedule, cu.m. used, reading entered
 at, formula-injection sanitized *(2026-08-07)*.
 
+### 4. Financial report page + Excel/PDF export *(2026-08-11)*
+`FinancialReport` page (`/admin/financial-report`, sidebar "Financial Report") shows
+the dashboard metrics as stat cards + a 12-month revenue table (the revenue-graph data).
+**Data source of truth:** `App\Services\FinancialReportService::build()` — the page,
+the Excel export and the PDF all consume the same array, so numbers can't drift.
+Header actions: "Export Excel" (`App\Exports\FinancialReportExport`, maatwebsite
+WithMultipleSheets → Summary sheet + Revenue by Month sheet, `financial-report-*.xlsx`)
+and "Export PDF" (dompdf `pdfs/financial-report` blade, mirrors the invoice PDF look).
+**Gotcha:** a plain `Pdf::loadHTML()->download()` response cannot be returned from a
+Filament action — Livewire tries to JSON-serialize it → "Malformed UTF-8 characters"
+500. Excel works because Filament intercepts `BinaryFileResponse`. Fix: write the PDF
+bytes to a temp file and return `response()->download($temp)` with
+`deleteFileAfterSend(true)` — same BinaryFileResponse path. Zero-revenue months stay
+zero-filled via `revenueLastMonths()` (no gaps in the table). Tests:
+`tests/Feature/FinancialReportTest.php` (service shape, page render + auth guard, both
+export sheets, PDF template, action registration).
+
+## Branding *(2026-08-11)*
+
+### 1. App named "Guinobatan Waterworks" end-to-end
+`APP_NAME="Guinobatan Waterworks"` in `.env` + `.env.example` — **must be quoted** or
+dotenv fails parsing on the space. Fixes Filament brand, browser tab, `© YYYY` footer,
+`MAIL_FROM_NAME` and session/cache prefixes (slug-derived → admin session cookie
+changes once). `AdminPanelProvider` now sets `->brandName('Guinobatan Waterworks')`
+(explicit, env-independent) + `->favicon('/favicon.svg')` (new amber-drop-on-blue SVG,
+also used by the branded `welcome.blade.php` at `/`, which replaced the stock Laravel
+welcome page). Frontend: metadata title "Guinobatan Waterworks", `src/app/icon.svg`
+replaces the default Next.js favicon (`.ico` deleted; Next auto-serves `/icon.svg`),
+unused `next.svg`/`vercel.svg`/`globe.svg`/`window.svg`/`file.svg` removed from
+`public/` (verified unreferenced).
+
+### 2. Filament light-mode soft-slate background
+Default Filament v5 light theme is gray-50 page + pure-white topbar/sidebar (reads as
+a white flashbang). Override injected via `->renderHook(PanelsRenderHook::HEAD_START)`
+in `AdminPanelProvider` — no Vite/theme build needed (backend uses Filament's prebuilt
+assets). Light: `.fi-body` #dde8f4 (blue-gray — user wanted clearly non-white),
+`.fi-topbar` + mobile `.fi-sidebar` #f0f6fb (sidebar is transparent ≥64rem on desktop,
+so the body rule covers it). **Dark mode must be re-declared AFTER the light rules**
+(equal specificity → later wins) using the exact compiled values (`var(--gray-950)` /
+`var(--gray-900)`), so dark theme is untouched. SPA-safe: head-level style persists
+across Livewire SPA swaps. *(2026-08-11, values deepened from #f1f5f9/#f8fafc after
+user feedback that it was still too white)*
+
+### 3. Blue accent theme + human view titles *(2026-08-11)*
+Panel `primary` color `Color::Amber` → `Color::Blue` — accents only (buttons/links/
+focus), applied by Filament in both light and dark; frontend untouched (its theme was
+already blue). View-page headings were "View 75"-style: `ViewRecord` titles itself
+`View {recordTitle}`, and `PaymentResource`/`BillingRunResource` used
+`recordTitleAttribute = 'id'`. Fixed by overriding `getRecordTitle()` on both
+resources — Payment → `reference ?? 'Payment #<id>'`, BillingRun → `'Run #<id>'`
+(invoice_number/account_number resources were already human-readable). Tests added to
+`PaymentResourceTest`/`BillingRunResourceTest`.
+
 ## Customer Registration (Admin)
 
 ### 1. Applicant fields on `service_connections`

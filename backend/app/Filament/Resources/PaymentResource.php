@@ -32,6 +32,20 @@ class PaymentResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'id';
 
+    /**
+     * Human-readable record title for headings ("View OR-…" instead of
+     * "View 75"). Falls back to the OR number when present, otherwise a
+     * plain "Payment #<id>".
+     */
+    public static function getRecordTitle(?Model $record): string|\Illuminate\Contracts\Support\Htmlable|null
+    {
+        if ($record instanceof Payment) {
+            return $record->reference ?? 'Payment #'.$record->id;
+        }
+
+        return parent::getRecordTitle($record);
+    }
+
     public static function form(Schema $schema): Schema
     {
         return $schema

@@ -10,7 +10,7 @@ const montserratHeading = Montserrat({subsets:['latin'],variable:'--font-heading
 const spaceGrotesk = Space_Grotesk({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
-  title: "GW-System",
+  title: "Guinobatan Waterworks",
   description: "Guinobatan Waterworks System",
 };
 

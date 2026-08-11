@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\PaymentResource;
 use App\Filament\Resources\PaymentResource\Pages\CreatePayment;
 use App\Filament\Resources\PaymentResource\Pages\ListPayments;
 use App\Filament\Resources\PaymentResource\Pages\ViewPayment;
@@ -266,5 +267,41 @@ class PaymentResourceTest extends TestCase
             ->assertCanSeeTableRecords([$payment])
             ->assertSee('OR-2026-300')
             ->assertSee('Office Clerk');
+    }
+
+    public function test_record_title_uses_reference_when_present(): void
+    {
+        $invoice = $this->payableInvoice();
+        $payment = Payment::factory()->create([
+            'invoice_id' => $invoice->id,
+            'reference' => 'OR-2026-777',
+        ]);
+
+        $this->assertSame('OR-2026-777', PaymentResource::getRecordTitle($payment));
+    }
+
+    public function test_record_title_falls_back_to_payment_number(): void
+    {
+        $invoice = $this->payableInvoice();
+        $payment = Payment::factory()->create([
+            'invoice_id' => $invoice->id,
+            'reference' => null,
+        ]);
+
+        $this->assertSame('Payment #'.$payment->id, PaymentResource::getRecordTitle($payment));
+    }
+
+    public function test_view_page_heading_shows_human_title(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true]);
+        $invoice = $this->payableInvoice();
+        $payment = Payment::factory()->create([
+            'invoice_id' => $invoice->id,
+            'reference' => 'OR-2026-888',
+        ]);
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(ViewPayment::class, ['record' => $payment->id])
+            ->assertSee('View OR-2026-888');
     }
 }
