@@ -618,6 +618,29 @@ dispatcher (positional form).
   found and resolved by the stored action-URL path-suffix fallback in
   `ResendReceiptController`, regardless of the host embedded in the stored URL.
 
+### 7. Live badge refresh (10s poll) + hub search + refresh button *(2026-08-11)*
+All surfaces now update on their own, no page reload:
+- **Topbar bell:** panel `->databaseNotificationsPolling('10s')` (was Filament's 30s
+  default) — count + list re-render every 10s.
+- **Sidebar "Notification Hub" badge:** the sidebar only re-evaluates `getNavigationBadge()`
+  when it re-renders. The custom `AdminDatabaseNotifications` overrides `render()` to
+  dispatch `refresh-sidebar` on every bell render (mount, poll tick, events), so the badge
+  follows the bell's 10s cadence. Dispatching from render is safe — the event targets the
+  Sidebar component, which never dispatches back.
+- **Hub table:** `->poll('10s')` on the table re-queries while the page is open (filters/
+  search/pagination state preserved).
+- **Refresh button:** header action on the hub re-renders the table immediately and
+  dispatches both `refresh-sidebar` and `databaseNotificationsSent` (shared
+  `refreshBadges()` helper, also used by mark-read/unread/mark-all).
+- **Hub search:** `TextColumn::make('title')->searchable(query: …)` — ILIKE over
+  `data->title` OR `data->body`, `%`/`_`/`\` escaped via `addcslashes` so wildcards in
+  the term can't match everything; composes with the State filter.
+- **Queue gotcha (bit us during verification):** `AdminNotifier` notifications are
+  **queued** — `Filament\Notifications\DatabaseNotification` implements `ShouldQueue`,
+  so without a running `queue:work` they sit in the `jobs` table and the bell never
+  updates, no matter the poll interval. AGENTS.md queue-worker line now lists admin
+  notifications explicitly.
+
 ## Infra / Ops
 
 ### 1. Graphify graph rebuilt vendor-free

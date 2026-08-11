@@ -143,4 +143,20 @@ class AdminDatabaseNotificationsTest extends TestCase
             ->assertOk()
             ->assertSee('fi-topbar-database-notifications-btn');
     }
+
+    public function test_bell_polls_every_ten_seconds(): void
+    {
+        $this->actingAs($this->admin(), 'admin')->get('/admin')->assertOk();
+
+        $this->assertSame('10s', \Filament\Facades\Filament::getDatabaseNotificationsPollingInterval());
+    }
+
+    public function test_bell_render_dispatches_sidebar_refresh(): void
+    {
+        $admin = $this->admin();
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(AdminDatabaseNotifications::class)
+            ->assertDispatched('refresh-sidebar');
+    }
 }

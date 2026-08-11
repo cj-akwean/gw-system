@@ -93,6 +93,12 @@ class NotificationHub extends Page implements HasTable
                     ->badge()
                     ->color(fn (DatabaseNotification $record): string => (string) (Arr::get($record->data, 'status') ?? Arr::get($record->data, 'color') ?? 'gray'))
                     ->description(fn (DatabaseNotification $record): ?string => Arr::get($record->data, 'body'))
+                    ->searchable(query: function (Builder $query, string $search): Builder {
+                        $escaped = addcslashes($search, '\\%_');
+
+                        return $query->where('data->title', 'ilike', '%'.$escaped.'%')
+                            ->orWhere('data->body', 'ilike', '%'.$escaped.'%');
+                    })
                     ->wrap(),
 
                 TextColumn::make('read_at')
@@ -154,14 +160,25 @@ class NotificationHub extends Page implements HasTable
                     ->label('Mark as read')
                     ->icon('heroicon-o-check-circle')
                     ->visible(fn (DatabaseNotification $record): bool => $record->read_at === null)
-                    ->action(fn (DatabaseNotification $record): mixed => $record->update(['read_at' => now()])),
+                    ->action(function (DatabaseNotification $record): mixed {
+                        $result = $record->update(['read_at' => now()]);
+                        $this->refreshBadges();
+
+                        return $result;
+                    }),
 
                 Action::make('markAsUnread')
                     ->label('Mark as unread')
                     ->icon('heroicon-o-arrow-uturn-left')
                     ->visible(fn (DatabaseNotification $record): bool => $record->read_at !== null)
-                    ->action(fn (DatabaseNotification $record): mixed => $record->update(['read_at' => null])),
+                    ->action(function (DatabaseNotification $record): mixed {
+                        $result = $record->update(['read_at' => null]);
+                        $this->refreshBadges();
+
+                        return $result;
+                    }),
             ])
+            ->poll('10s')
             ->defaultSort('created_at', 'desc');
     }
 
@@ -176,6 +193,10 @@ class NotificationHub extends Page implements HasTable
     public function getHeaderActions(): array
     {
         return [
+            Action::make('refresh')
+                ->label('Refresh')
+                ->icon('heroicon-o-arrow-path')
+                ->action(fn () => $this->refreshBadges()),
             Action::make('markAllAsRead')
                 ->label('Mark all as read')
                 ->icon('heroicon-o-check')
@@ -187,6 +208,21 @@ class NotificationHub extends Page implements HasTable
     public function markAllNotificationsAsRead(): void
     {
         $this->notificationsQuery()->unread()->update(['read_at' => now()]);
+        $this->refreshBadges();
+    }
+
+    /**
+     * The sidebar "Notification Hub" badge (`getNavigationBadge()`) only
+     * re-evaluates when Filament's Sidebar Livewire component re-renders, and
+     * the topbar bell polls at best every 30s. Both components listen for
+     * events (`refresh-sidebar` / `databaseNotificationsSent`); without them
+     * the counts stay stale until a full page reload. Dispatching both is a
+     * no-op on pages where either component is absent.
+     */
+    protected function refreshBadges(): void
+    {
+        $this->dispatch('refresh-sidebar');
+        $this->dispatch('databaseNotificationsSent');
     }
 
     /**

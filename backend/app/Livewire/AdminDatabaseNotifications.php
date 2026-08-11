@@ -58,4 +58,19 @@ class AdminDatabaseNotifications extends DatabaseNotifications
     {
         return parent::clearNotificationsAction()->hidden();
     }
+
+    /**
+     * Every render of the bell (mount, poll tick, incoming events) also
+     * refreshes the sidebar, so the "Notification Hub" navigation badge
+     * re-evaluates its unread count without a page reload. The bell polls
+     * every 10s (AdminPanelProvider), which caps how stale that badge can get.
+     * Dispatching from render is safe here: the event targets the Sidebar
+     * component, which never dispatches back to the bell.
+     */
+    public function render(): \Illuminate\Contracts\View\View
+    {
+        $this->dispatch('refresh-sidebar');
+
+        return parent::render();
+    }
 }

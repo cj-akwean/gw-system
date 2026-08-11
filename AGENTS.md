@@ -84,7 +84,8 @@ cd frontend && npm run dev
   PayMongo/Resend call ever 502s, check `storage/logs/laravel.log` for `cURL error 60`
   BEFORE touching service code.
 - **Queue worker:** `php artisan queue:work` in a second terminal — required for
-  payment-confirmation emails, identifier-change notifications, SMS, PDFs, and billing runs.
+  payment-confirmation emails, identifier-change notifications, **admin bell/hub
+  notifications (AdminNotifier is a queued notification!)**, SMS, PDFs, and billing runs.
   Without a worker, queued jobs sit silently in the `jobs` table forever. Kill with Ctrl+C
   when done.
 

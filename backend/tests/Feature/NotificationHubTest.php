@@ -404,4 +404,153 @@ class NotificationHubTest extends TestCase
         $this->assertNull(NotificationHub::getNavigationBadge());
         $this->assertNull(NotificationHub::getNavigationBadgeColor());
     }
+
+    public function test_search_filters_by_notification_title_and_body(): void
+    {
+        $admin = $this->admin();
+
+        $match = $this->notify($admin, [
+            'data' => [
+                'format' => 'filament',
+                'duration' => 'persistent',
+                'title' => 'Payment confirmation email failed',
+                'body' => 'Invoice GW-2026-00001 never reached the customer.',
+                'color' => 'danger',
+                'status' => 'danger',
+            ],
+        ]);
+        $bodyMatch = $this->notify($admin, [
+            'data' => [
+                'format' => 'filament',
+                'duration' => 'persistent',
+                'title' => 'Identifier change email failed',
+                'body' => 'Re-save the connection to retry for invoice GW-2026-00099.',
+                'color' => 'danger',
+                'status' => 'danger',
+            ],
+        ]);
+        $noMatch = $this->notify($admin, [
+            'data' => [
+                'format' => 'filament',
+                'duration' => 'persistent',
+                'title' => 'Billing run completed',
+                'body' => 'All invoices generated.',
+                'color' => 'success',
+                'status' => 'success',
+            ],
+        ]);
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(NotificationHub::class)
+            ->searchTable('GW-2026-00001')
+            ->assertCanSeeTableRecords([$match])
+            ->assertCanNotSeeTableRecords([$bodyMatch, $noMatch])
+            ->searchTable('GW-2026-00099')
+            ->assertCanSeeTableRecords([$bodyMatch])
+            ->assertCanNotSeeTableRecords([$match, $noMatch])
+            ->searchTable('billing run')
+            ->assertCanSeeTableRecords([$noMatch])
+            ->assertCanNotSeeTableRecords([$match, $bodyMatch]);
+    }
+
+    public function test_search_escapes_wildcards(): void
+    {
+        $admin = $this->admin();
+
+        $match = $this->notify($admin, [
+            'data' => [
+                'format' => 'filament',
+                'duration' => 'persistent',
+                'title' => '100% capacity reached',
+                'body' => 'Tanks full.',
+                'color' => 'warning',
+                'status' => 'warning',
+            ],
+        ]);
+        $other = $this->notify($admin, [
+            'data' => [
+                'format' => 'filament',
+                'duration' => 'persistent',
+                'title' => 'Capacity check',
+                'body' => 'Routine.',
+                'color' => 'info',
+                'status' => 'info',
+            ],
+        ]);
+
+        // A raw % would match everything; the escaped term must only match the literal title.
+        Livewire::actingAs($admin, 'admin')
+            ->test(NotificationHub::class)
+            ->searchTable('100% capacity')
+            ->assertCanSeeTableRecords([$match])
+            ->assertCanNotSeeTableRecords([$other]);
+    }
+
+    public function test_mark_as_read_refreshes_sidebar_and_bell_badges(): void
+    {
+        $admin = $this->admin();
+        $notification = $this->notify($admin);
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(NotificationHub::class)
+            ->callTableAction('markAsRead', $notification->getKey())
+            ->assertDispatched('refresh-sidebar')
+            ->assertDispatched('databaseNotificationsSent');
+
+        $this->assertNull(NotificationHub::getNavigationBadge());
+    }
+
+    public function test_mark_as_unread_refreshes_sidebar_and_bell_badges(): void
+    {
+        $admin = $this->admin();
+        $notification = $this->notify($admin, ['read_at' => now()]);
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(NotificationHub::class)
+            ->callTableAction('markAsUnread', $notification->getKey())
+            ->assertDispatched('refresh-sidebar')
+            ->assertDispatched('databaseNotificationsSent');
+
+        $this->assertSame('1', NotificationHub::getNavigationBadge());
+    }
+
+    public function test_mark_all_as_read_refreshes_sidebar_and_bell_badges(): void
+    {
+        $admin = $this->admin();
+        $this->notify($admin);
+        $this->notify($admin);
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(NotificationHub::class)
+            ->call('markAllNotificationsAsRead')
+            ->assertDispatched('refresh-sidebar')
+            ->assertDispatched('databaseNotificationsSent');
+
+        $this->assertNull(NotificationHub::getNavigationBadge());
+    }
+
+    public function test_refresh_header_action_reloads_data_and_badges(): void
+    {
+        $admin = $this->admin();
+        $this->notify($admin);
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(NotificationHub::class)
+            ->callAction('refresh')
+            ->assertDispatched('refresh-sidebar')
+            ->assertDispatched('databaseNotificationsSent')
+            ->assertCanSeeTableRecords([$admin->notifications()->first()]);
+    }
+
+    public function test_table_polls_every_ten_seconds(): void
+    {
+        $admin = $this->admin();
+        $this->notify($admin);
+
+        $component = Livewire::actingAs($admin, 'admin')
+            ->test(NotificationHub::class)
+            ->instance();
+
+        $this->assertSame('10s', $component->getTable()->getPollingInterval());
+    }
 }
