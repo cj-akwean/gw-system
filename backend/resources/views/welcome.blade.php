@@ -36,7 +36,7 @@
                 color: #0f172a;
                 transition: border-color 0.15s ease, background 0.15s ease;
             }
-            .links a:hover { border-color: #f59e0b; background: #f8fafc; }
+            .links a:hover { border-color: #2563eb; background: #f8fafc; }
         </style>
     </head>
     <body>

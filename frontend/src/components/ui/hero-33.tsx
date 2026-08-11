@@ -136,7 +136,7 @@ export default function Hero33({
     <Link
       href="/auth"
       prefetch
-      className="hidden rounded-md border border-amber-500 px-6 py-2.5 text-sm font-medium text-neutral-900 transition-transform hover:bg-black/5 active:scale-[0.96] lg:inline-block dark:text-white dark:hover:bg-white/10"
+      className="hidden rounded-md border border-blue-500 px-6 py-2.5 text-sm font-medium text-neutral-900 transition-transform hover:bg-black/5 active:scale-[0.96] lg:inline-block dark:text-white dark:hover:bg-white/10"
     >
       Sign In
     </Link>
@@ -156,7 +156,7 @@ export default function Hero33({
           >
             <div className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">
               {logoText}
-              <span className="text-amber-500">.</span>
+              <span className="text-blue-600">.</span>
             </div>
             <div className="hidden items-center gap-10 lg:flex">
               {navItems.map((item) => (
@@ -172,7 +172,7 @@ export default function Hero33({
             {!ready ? (
               <div
                 aria-hidden
-                className="inline-block h-10 w-24 rounded-md border border-amber-500/40"
+                className="inline-block h-10 w-24 rounded-md border border-blue-500/40"
               />
             ) : isAuthenticated ? (
               <ProfileDropdown user={user} onLogout={handleLogout} />
@@ -185,7 +185,7 @@ export default function Hero33({
                       <button
                         aria-label="Open menu"
                         type="button"
-                        className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-full border border-amber-500/60 text-neutral-900 transition-transform hover:bg-black/5 active:scale-[0.96] dark:text-white dark:hover:bg-white/10"
+                        className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-full border border-blue-500/60 text-neutral-900 transition-transform hover:bg-black/5 active:scale-[0.96] dark:text-white dark:hover:bg-white/10"
                       >
                         <Menu className="h-5 w-5" />
                       </button>
@@ -207,7 +207,7 @@ export default function Hero33({
                         <Link
                           href="/auth"
                           prefetch
-                          className="flex items-center justify-center rounded-md border border-amber-500 px-6 py-2.5 text-sm font-medium text-neutral-900 transition-transform hover:bg-black/5 active:scale-[0.96] dark:text-white dark:hover:bg-white/10"
+                          className="flex items-center justify-center rounded-md border border-blue-500 px-6 py-2.5 text-sm font-medium text-neutral-900 transition-transform hover:bg-black/5 active:scale-[0.96] dark:text-white dark:hover:bg-white/10"
                         >
                           Sign In
                         </Link>
@@ -292,7 +292,7 @@ export default function Hero33({
                 <motion.button
                   onClick={handleSecondaryAction}
                   variants={ctaItemVariants}
-                  className="flex h-14 items-center rounded-md border border-amber-500 px-10 text-base font-medium text-neutral-900 transition-transform hover:bg-black/5 active:scale-[0.96] dark:text-white dark:hover:bg-white/10"
+                  className="flex h-14 items-center rounded-md border border-blue-500 px-10 text-base font-medium text-neutral-900 transition-transform hover:bg-black/5 active:scale-[0.96] dark:text-white dark:hover:bg-white/10"
                 >
                   {secondaryActionText}
                 </motion.button>
@@ -333,7 +333,7 @@ export default function Hero33({
                     variants={featureItemVariants}
                     className="flex items-center gap-4"
                   >
-                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-amber-500 bg-black/5 backdrop-blur-sm dark:bg-white/5">
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-blue-500 bg-black/5 backdrop-blur-sm dark:bg-white/5">
                       <Icon className="h-6 w-6 text-neutral-900 dark:text-white" strokeWidth={1.5} />
                     </div>
                     <div>

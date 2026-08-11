@@ -17,7 +17,7 @@ export function DashboardHeader({ user, onLogout }: DashboardHeaderProps) {
           href="/"
           className="min-w-0 truncate text-base font-bold tracking-tight transition-colors hover:text-foreground/80 md:text-lg"
         >
-          Guinobatan Waterworks<span className="text-amber-500">.</span>
+          Guinobatan Waterworks<span className="text-blue-600">.</span>
         </Link>
         <ProfileDropdown user={user} onLogout={onLogout} />
       </div>

@@ -36,7 +36,7 @@ describe("DashboardHeader", () => {
 
     const brand = screen.getByRole("link", { name: /Guinobatan Waterworks/ });
     expect(brand).toHaveAttribute("href", "/");
-    expect(brand.querySelector(".text-amber-500")?.textContent).toBe(".");
+    expect(brand.querySelector(".text-blue-600")?.textContent).toBe(".");
   });
 
   it("renders the profile dropdown with the user", () => {

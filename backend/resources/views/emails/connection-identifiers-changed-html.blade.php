@@ -4,67 +4,107 @@
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="x-apple-disable-message-reformatting">
+    <meta name="format-detection" content="telephone=no">
     <title>Your water account details have been updated</title>
     <style>
-        html, body, td, a, span, div, p, table {
-            border: 0 !important;
-            margin: 0 !important;
-            outline: 0 !important;
-            text-decoration: none !important;
+        body, table, td, a, span, p {
+            border: 0;
+            margin: 0;
+            padding: 0;
         }
-        body, td {
-            -webkit-font-smoothing: antialiased !important;
-            -moz-osx-font-smoothing: grayscale !important;
-        }
-        .gw-font {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Ubuntu, sans-serif;
+        body {
+            background-color: #eef4f9;
+            -webkit-text-size-adjust: 100%;
+            -ms-text-size-adjust: 100%;
         }
         .gw-preheader {
-            color: #eef4f9;
             display: none !important;
+            mso-hide: all !important;
             font-size: 1px;
             line-height: 1px;
+            color: #eef4f9;
             max-height: 0;
             max-width: 0;
-            mso-hide: all !important;
             opacity: 0;
             overflow: hidden;
             visibility: hidden;
         }
+        .gw-container {
+            width: 600px;
+            max-width: 600px;
+        }
+        .gw-card {
+            background-color: #ffffff;
+            border: 1px solid #dbe4ee;
+            border-radius: 12px;
+        }
+        .gw-rule {
+            height: 1px;
+            font-size: 1px;
+            line-height: 1px;
+            background-color: #e5ebf2;
+        }
+        a {
+            text-decoration: none;
+        }
+        @media screen and (max-width: 600px) {
+            .gw-container {
+                width: 100% !important;
+                max-width: 100% !important;
+            }
+            .gw-pad {
+                padding-left: 14px !important;
+                padding-right: 14px !important;
+            }
+            .gw-card-pad {
+                padding: 22px 20px !important;
+            }
+            .gw-stack td {
+                display: block !important;
+                width: 100% !important;
+                text-align: left !important;
+                padding-bottom: 6px !important;
+            }
+            .gw-stack .gw-gap {
+                display: none !important;
+                height: 0 !important;
+                font-size: 0 !important;
+                line-height: 0 !important;
+            }
+            .gw-stack .gw-right {
+                padding-bottom: 14px !important;
+            }
+        }
     </style>
 </head>
-<body class="gw-font" style="margin: 0; padding: 0; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; min-width: 100%; width: 100%; background-color: #eef4f9;">
+<body style="margin: 0; padding: 0; width: 100%; min-width: 100%; background-color: #eef4f9; font-family: Arial, Helvetica, sans-serif;">
 
     <div class="gw-preheader">
         Your water account details have been updated
         &nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
     </div>
 
-    <table width="100%" cellpadding="0" cellspacing="0" style="width: 100%; background-color: #eef4f9;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; background-color: #eef4f9;">
         <tr>
-            <td align="center" style="padding: 32px 16px 24px;">
+            <td align="center" class="gw-pad" style="padding: 32px 16px 24px;">
 
-                <table cellpadding="0" cellspacing="0" style="width: 560px; min-width: 560px; max-width: 560px;">
+                <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" class="gw-container" style="width: 600px; max-width: 600px;">
 
                     <!-- Header / brand -->
                     <tr>
                         <td style="padding-bottom: 24px;">
-                            <table cellpadding="0" cellspacing="0" style="width: 100%;">
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%;">
                                 <tr>
                                     <td width="44" valign="middle" style="width: 44px;">
-                                        <table cellpadding="0" cellspacing="0">
+                                        <table role="presentation" cellpadding="0" cellspacing="0" border="0">
                                             <tr>
-                                                <td align="center" valign="middle" width="40" height="40" style="width: 40px; height: 40px; background-color: #0f4c81; border-radius: 100%;">
-                                                    <span style="color: #ffffff; font-size: 15px; font-weight: 700; line-height: 40px;">GW</span>
-                                                </td>
+                                                <td align="center" valign="middle" width="40" height="40" style="width: 40px; height: 40px; background-color: #0f4c81; border-radius: 100%; font-size: 15px; font-weight: bold; color: #ffffff; line-height: 40px;">GW</td>
                                             </tr>
                                         </table>
                                     </td>
-                                    <td width="12" style="width: 12px;">&nbsp;</td>
-                                    <td valign="middle">
-                                        <span style="color: #12294a; font-size: 17px; font-weight: 600;">
-                                            Guinobatan Waterworks<span style="color: #f59e0b;">.</span>
-                                        </span>
+                                    <td width="12" style="width: 12px; font-size: 1px; line-height: 1px;">&nbsp;</td>
+                                    <td valign="middle" style="font-size: 17px; font-weight: bold; color: #12294a;">
+                                        Guinobatan Waterworks<span style="color: #2563eb;">.</span>
                                     </td>
                                 </tr>
                             </table>
@@ -74,107 +114,78 @@
                     <!-- Body card -->
                     <tr>
                         <td>
-                            <table width="100%" cellpadding="0" cellspacing="0" style="width: 100%; background-color: #ffffff; border-radius: 12px; box-shadow: 0 2px 5px 0 rgb(15 76 129 / 8%), 0 1px 1px 0 rgb(0 0 0 / 4%);">
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="gw-card" style="width: 100%; background-color: #ffffff; border: 1px solid #dbe4ee; border-radius: 12px;">
                                 <tr>
-                                    <td style="padding: 32px;">
-                                        <table width="100%" cellpadding="0" cellspacing="0" style="width: 100%;">
+                                    <td class="gw-card-pad" style="padding: 32px;">
+
+                                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%;">
                                             <tr>
-                                                <td style="padding-bottom: 4px;">
-                                                    <span style="color: #12294a; font-size: 22px; line-height: 28px; font-weight: 600;">
-                                                        Your water account details have been updated
-                                                    </span>
-                                                </td>
+                                                <td style="padding-bottom: 4px; font-size: 22px; line-height: 28px; color: #12294a; font-weight: bold;">Your water account details have been updated</td>
                                             </tr>
                                             <tr>
-                                                <td>
-                                                    <span style="color: #5f7186; font-size: 14px; line-height: 22px;">
-                                                        Details for <strong style="color: #12294a;">{{ $serviceConnection->registered_name }}</strong> were updated on <strong style="color: #12294a;">{{ now()->format('M d, Y') }}</strong>.
-                                                    </span>
-                                                </td>
+                                                <td style="font-size: 14px; line-height: 22px; color: #5f7186;">Details for <strong style="color: #12294a;">{{ $serviceConnection->registered_name }}</strong> were updated on <strong style="color: #12294a;">{{ now()->format('M d, Y') }}</strong>.</td>
                                             </tr>
                                         </table>
 
                                         @if (array_key_exists('account_number', $oldIdentifiers) && $oldIdentifiers['account_number'] !== $serviceConnection->account_number)
-                                        <table width="100%" cellpadding="0" cellspacing="0" style="width: 100%;">
+                                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%;">
                                             <tr>
                                                 <td height="20" style="height: 20px; font-size: 1px; line-height: 1px;">&nbsp;</td>
                                             </tr>
+                                        </table>
+                                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="gw-stack" style="width: 100%;">
                                             <tr>
-                                                <td style="padding-bottom: 8px;">
-                                                    <span style="color: #5f7186; font-size: 13px; line-height: 16px;">Field</span>
-                                                </td>
-                                                <td width="24" style="width: 24px;">&nbsp;</td>
-                                                <td align="right" style="padding-bottom: 8px;">
-                                                    <span style="color: #5f7186; font-size: 13px; line-height: 16px;">Previous</span>
-                                                </td>
-                                                <td width="24" style="width: 24px;">&nbsp;</td>
-                                                <td align="right" style="padding-bottom: 8px;">
-                                                    <span style="color: #5f7186; font-size: 13px; line-height: 16px;">Now</span>
-                                                </td>
+                                                <td style="padding-bottom: 8px; font-size: 13px; line-height: 16px; color: #5f7186;">Field</td>
+                                                <td width="24" class="gw-gap" style="width: 24px; font-size: 1px; line-height: 1px;">&nbsp;</td>
+                                                <td align="right" class="gw-right" style="padding-bottom: 8px; font-size: 13px; line-height: 16px; color: #5f7186;">Previous</td>
+                                                <td width="24" class="gw-gap" style="width: 24px; font-size: 1px; line-height: 1px;">&nbsp;</td>
+                                                <td align="right" class="gw-right" style="padding-bottom: 8px; font-size: 13px; line-height: 16px; color: #5f7186;">Now</td>
                                             </tr>
                                             <tr>
-                                                <td>
-                                                    <span style="color: #12294a; font-size: 14px; line-height: 16px; font-weight: 500;">Account number</span>
-                                                </td>
-                                                <td width="24" style="width: 24px;">&nbsp;</td>
-                                                <td align="right">
-                                                    <span style="color: #5f7186; font-size: 14px; line-height: 16px;">{{ $oldIdentifiers['account_number'] }}</span>
-                                                </td>
-                                                <td width="24" style="width: 24px;">&nbsp;</td>
-                                                <td align="right">
-                                                    <span style="color: #12294a; font-size: 14px; line-height: 16px; font-weight: 600;">{{ $serviceConnection->account_number }}</span>
-                                                </td>
+                                                <td style="font-size: 14px; line-height: 16px; color: #12294a; font-weight: bold;">Account number</td>
+                                                <td width="24" class="gw-gap" style="width: 24px; font-size: 1px; line-height: 1px;">&nbsp;</td>
+                                                <td align="right" class="gw-right" style="font-size: 14px; line-height: 16px; color: #5f7186;">{{ $oldIdentifiers['account_number'] }}</td>
+                                                <td width="24" class="gw-gap" style="width: 24px; font-size: 1px; line-height: 1px;">&nbsp;</td>
+                                                <td align="right" class="gw-right" style="font-size: 14px; line-height: 16px; color: #12294a; font-weight: bold;">{{ $serviceConnection->account_number }}</td>
                                             </tr>
                                         </table>
                                         @endif
 
                                         @if (array_key_exists('meter_number', $oldIdentifiers) && $oldIdentifiers['meter_number'] !== $serviceConnection->meter_number)
-                                        <table width="100%" cellpadding="0" cellspacing="0" style="width: 100%;">
+                                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%;">
                                             <tr>
                                                 <td height="16" style="height: 16px; font-size: 1px; line-height: 1px;">&nbsp;</td>
                                             </tr>
+                                        </table>
+                                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="gw-stack" style="width: 100%;">
                                             <tr>
-                                                <td>
-                                                    <span style="color: #12294a; font-size: 14px; line-height: 16px; font-weight: 500;">Meter number</span>
-                                                </td>
-                                                <td width="24" style="width: 24px;">&nbsp;</td>
-                                                <td align="right">
-                                                    <span style="color: #5f7186; font-size: 14px; line-height: 16px;">{{ $oldIdentifiers['meter_number'] }}</span>
-                                                </td>
-                                                <td width="24" style="width: 24px;">&nbsp;</td>
-                                                <td align="right">
-                                                    <span style="color: #12294a; font-size: 14px; line-height: 16px; font-weight: 600;">{{ $serviceConnection->meter_number }}</span>
-                                                </td>
+                                                <td style="font-size: 14px; line-height: 16px; color: #12294a; font-weight: bold;">Meter number</td>
+                                                <td width="24" class="gw-gap" style="width: 24px; font-size: 1px; line-height: 1px;">&nbsp;</td>
+                                                <td align="right" class="gw-right" style="font-size: 14px; line-height: 16px; color: #5f7186;">{{ $oldIdentifiers['meter_number'] }}</td>
+                                                <td width="24" class="gw-gap" style="width: 24px; font-size: 1px; line-height: 1px;">&nbsp;</td>
+                                                <td align="right" class="gw-right" style="font-size: 14px; line-height: 16px; color: #12294a; font-weight: bold;">{{ $serviceConnection->meter_number }}</td>
                                             </tr>
                                         </table>
                                         @endif
 
-                                        <table width="100%" cellpadding="0" cellspacing="0" style="width: 100%;">
+                                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%;">
                                             <tr>
                                                 <td height="24" style="height: 24px; font-size: 1px; line-height: 1px;">&nbsp;</td>
                                             </tr>
                                             <tr>
-                                                <td style="height: 1px; font-size: 1px; line-height: 1px; background-color: #e5ebf2;">&nbsp;</td>
+                                                <td class="gw-rule" style="height: 1px; font-size: 1px; line-height: 1px; background-color: #e5ebf2;">&nbsp;</td>
                                             </tr>
                                             <tr>
                                                 <td height="20" style="height: 20px; font-size: 1px; line-height: 1px;">&nbsp;</td>
                                             </tr>
                                         </table>
 
-                                        <table width="100%" cellpadding="0" cellspacing="0" style="width: 100%;">
+                                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%;">
                                             <tr>
-                                                <td style="padding-bottom: 6px;">
-                                                    <span style="color: #5f7186; font-size: 13px; line-height: 20px;">
-                                                        If you have a copy of an older bill, its account and meter numbers may no longer match — use the new ones for future reference.
-                                                    </span>
-                                                </td>
+                                                <td style="padding-bottom: 6px; font-size: 13px; line-height: 20px; color: #5f7186;">If you have a copy of an older bill, its account and meter numbers may no longer match — use the new ones for future reference.</td>
                                             </tr>
                                             <tr>
-                                                <td>
-                                                    <span style="color: #5f7186; font-size: 13px; line-height: 20px;">
-                                                        Your portal access is unaffected.
-                                                    </span>
-                                                </td>
+                                                <td style="font-size: 13px; line-height: 20px; color: #5f7186;">Your portal access is unaffected.</td>
                                             </tr>
                                         </table>
                                     </td>
@@ -190,24 +201,46 @@
                     <!-- Footer -->
                     <tr>
                         <td align="center">
-                            <table cellpadding="0" cellspacing="0" style="width: 100%;">
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%;">
                                 <tr>
-                                    <td align="center">
-                                        <span style="color: #5f7186; font-size: 12px; line-height: 20px;">
-                                            Questions? Contact us at
-                                            <a href="mailto:{{ config('mail.from.address') }}" style="color: #0f4c81 !important; font-weight: 600; white-space: nowrap;">{{ config('mail.from.address') }}</a>
-                                            or call <a href="tel:0520000000" style="color: #0f4c81 !important; font-weight: 600; white-space: nowrap;">(052) 000-0000</a>.
-                                        </span>
+                                    <td align="center" style="padding-bottom: 16px; font-size: 12px; line-height: 20px; color: #5f7186;">
+                                        Questions? Contact us at
+                                        <a href="mailto:{{ config('mail.from.address') }}" style="color: #2563eb; font-weight: bold; text-decoration: underline; white-space: nowrap;">{{ config('mail.from.address') }}</a>
+                                        or call <a href="tel:0520000000" style="color: #2563eb; font-weight: bold; text-decoration: underline; white-space: nowrap;">(052) 000-0000</a>.
                                     </td>
                                 </tr>
                                 <tr>
-                                    <td height="6" style="height: 6px; font-size: 1px; line-height: 1px;">&nbsp;</td>
+                                    <td align="center">
+                                        <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                                            <tr>
+                                                <td align="center">
+                                                    <!--[if mso]>
+                                                    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="mailto:{{ config('mail.from.address') }}" style="height:44px;v-text-anchor:middle;width:160px;" arcsize="14%" stroke="f" fillcolor="#2563eb">
+                                                        <w:anchorlock/>
+                                                        <center style="color:#ffffff;font-family:Arial,sans-serif;font-size:14px;font-weight:bold;">Contact us</center>
+                                                    </v:roundrect>
+                                                    <![endif]-->
+                                                    <!--[if !mso]><!-->
+                                                    <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                                                        <tr>
+                                                            <td align="center" bgcolor="#2563eb" style="border-radius: 6px; background-color: #2563eb;">
+                                                                <a href="mailto:{{ config('mail.from.address') }}" style="display: inline-block; padding: 13px 32px; font-family: Arial, Helvetica, sans-serif; font-size: 14px; font-weight: bold; line-height: 18px; color: #ffffff; text-decoration: none;">Contact us</a>
+                                                            </td>
+                                                        </tr>
+                                                    </table>
+                                                    <!--<![endif]-->
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
                                 </tr>
                                 <tr>
-                                    <td align="center">
-                                        <span style="color: #93a4b8; font-size: 11px; line-height: 18px;">
-                                            Guinobatan Waterworks · Guinobatan, Albay
-                                        </span>
+                                    <td height="16" style="height: 16px; font-size: 1px; line-height: 1px;">&nbsp;</td>
+                                </tr>
+                                <tr>
+                                    <td align="center" style="font-size: 11px; line-height: 18px; color: #93a4b8;">
+                                        Guinobatan Waterworks · Guinobatan, Albay<br>
+                                        You are receiving this email because you are linked to this water account.
                                     </td>
                                 </tr>
                             </table>

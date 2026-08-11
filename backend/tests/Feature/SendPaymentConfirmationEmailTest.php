@@ -369,4 +369,20 @@ class SendPaymentConfirmationEmailTest extends TestCase
 
         $this->assertDatabaseCount('notifications', 0);
     }
+
+    public function test_html_is_responsive_email_shell(): void
+    {
+        $invoice = Invoice::factory()->create(['status' => 'paid']);
+        $payment = $this->paymentFor($invoice);
+
+        $html = (new PaymentConfirmation($invoice, $payment))->render();
+
+        $this->assertStringContainsString('@media screen and (max-width: 600px)', $html);
+        $this->assertStringContainsString('width="600"', $html);
+        $this->assertStringNotContainsString('min-width: 560px', $html);
+        $this->assertStringContainsString('role="presentation"', $html);
+        $this->assertStringContainsString('Contact us', $html);
+        $this->assertStringContainsString('mailto:', $html);
+        $this->assertStringContainsString('bgcolor="#2563eb"', $html);
+    }
 }
