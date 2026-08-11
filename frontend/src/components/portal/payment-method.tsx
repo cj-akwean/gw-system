@@ -6,10 +6,12 @@ import Image from "next/image";
 import {
   ApiError,
   buildReturnUrl,
+  checkPaymentHealth,
   clearPendingInvoice,
   formatPeso,
   getInvoice,
   getInvoices,
+  reconcileInvoice,
   resolveIntentStatus,
   startPayment,
   writePendingInvoice,
@@ -65,6 +67,8 @@ const QR_STORAGE_PREFIX = "gw-qr:";
 const POLL_INTERVAL_MS = 15_000;
 const CONFIRMING_POLL_MS = 5_000;
 const E_WALLET_MAX_TOTAL = 100_000;
+const CONFIRMING_TIMEOUT_MS = 30_000;
+const CONFIRMING_RECONCILE_MS = 60_000;
 
 interface StoredQr {
   intentId: string;
@@ -172,6 +176,12 @@ export function PaymentMethodScreen({
   // confirmed / failed all carry it) — used to poll the confirming state and
   // to rebuild the pay screen after a failed attempt.
   const [resolvedInvoiceId, setResolvedInvoiceId] = useState<number | null>(null);
+  // Payment system health check — gates the payment buttons.
+  const [healthStatus, setHealthStatus] = useState<{ healthy: boolean; reason?: string } | null>(null);
+  const [healthLoading, setHealthLoading] = useState(true);
+  // Confirming recovery — tracks how long the customer has been waiting.
+  const [confirmingElapsed, setConfirmingElapsed] = useState(0);
+  const [reconciling, setReconciling] = useState(false);
 
   // Load the invoice — it must still be in the unpaid list to be payable.
   // When it's gone, it may have just been paid (webhook beat the UI, e.g.
@@ -292,6 +302,35 @@ export function PaymentMethodScreen({
       cancelled = true;
     };
   }, [invoiceId, paymentIntentId, attempt, logout, router]);
+
+  // Health check — runs once on mount to verify the payment system is reachable.
+  // Skipped when returning from a redirect (the payment already started).
+  useEffect(() => {
+    if (returnedFromRedirect || paymentIntentId !== null) {
+      setHealthLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    checkPaymentHealth()
+      .then((status) => {
+        if (!cancelled) {
+          setHealthStatus(status);
+          setHealthLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHealthStatus({ healthy: false, reason: "Unable to reach the server." });
+          setHealthLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [returnedFromRedirect, paymentIntentId]);
 
   // Poll for payment completion while the screen is open: once the invoice
   // leaves the unpaid list, the webhook has confirmed the payment. The
@@ -425,11 +464,45 @@ export function PaymentMethodScreen({
     router,
   ]);
 
+  // Confirming recovery timer — tracks how long the customer has been waiting
+  // in the confirming state so we can show helpful messages and a reconcile button.
+  useEffect(() => {
+    if (!confirmingPaid) {
+      setConfirmingElapsed(0);
+      return;
+    }
+
+    const startTime = Date.now();
+    const id = window.setInterval(() => {
+      setConfirmingElapsed(Date.now() - startTime);
+    }, 1000);
+
+    return () => {
+      window.clearInterval(id);
+    };
+  }, [confirmingPaid]);
+
   const { remaining, expired } = useCountdown(    qr.phase === "active" && qr.deadline !== null ? qr.deadline : null
   );
 
   const qrExpired = qr.phase === "active" && qr.deadline !== null && expired;
   const qrActive = qr.phase === "active" && !qrExpired;
+
+  const handleReconcile = useCallback(async () => {
+    if (reconciling) return;
+    setReconciling(true);
+    try {
+      const result = await reconcileInvoice(invoiceId);
+      if (result.status === "paid") {
+        clearPendingInvoice();
+        setPaymentResult({ status: "paid", confirming: false });
+      }
+    } catch {
+      // Reconcile failed — keep the confirming state, user can try again.
+    } finally {
+      setReconciling(false);
+    }
+  }, [invoiceId, reconciling]);
 
   const startQrPh = useCallback(async () => {
     setQr({ phase: "starting" });
@@ -552,6 +625,7 @@ export function PaymentMethodScreen({
 
   const startCard = useCallback(
     async (payload: CardPayload) => {
+      if (healthStatus != null && !healthStatus.healthy) return;
       setQr({ phase: "starting" });
       try {
         const info = await startPayment(invoiceId);
@@ -656,6 +730,9 @@ export function PaymentMethodScreen({
       ? paymentResult.confirming
         ? <ConfirmingModal
             connectionTrouble={confirmingNetworkFailures >= 2}
+            elapsed={confirmingElapsed}
+            onReconcile={handleReconcile}
+            reconciling={reconciling}
           />
         : <SuccessModal onOK={() => router.push("/dashboard")} email={user?.email} />
       : null;
@@ -829,7 +906,7 @@ export function PaymentMethodScreen({
   // the same stored QR. Regeneration goes through the dedicated "Get a new QR"
   // button instead.
   const qrLocked = qrActive || qrExpired;
-  const ewalletDisabled = capExceeded || busy;
+  const ewalletDisabled = capExceeded || busy || healthLoading || (healthStatus != null && !healthStatus.healthy);
 
   return (
     <>
@@ -874,6 +951,35 @@ export function PaymentMethodScreen({
                   {invoice.service_connection.registered_name}
                 </p>
               </div>
+
+              {healthStatus && !healthStatus.healthy && (
+                <div className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="size-5 shrink-0 text-yellow-600 dark:text-yellow-500" />
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-yellow-800 dark:text-yellow-200">
+                        Payment system temporarily unavailable
+                      </p>
+                      <p className="mt-1 text-xs text-yellow-700 dark:text-yellow-300">
+                        {healthStatus.reason ?? "Please try again later."}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHealthLoading(true);
+                        checkPaymentHealth().then((status) => {
+                          setHealthStatus(status);
+                          setHealthLoading(false);
+                        });
+                      }}
+                      className="shrink-0 rounded-md border border-yellow-500/40 px-3 py-1 text-xs font-medium text-yellow-800 hover:bg-yellow-500/20 dark:text-yellow-200"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {step === "method" && (
                 <div className="space-y-3">
@@ -1104,8 +1210,11 @@ export function PaymentMethodScreen({
                   ) : (
                     <SwipeButton
                       data-testid="pay-now"
-                      text={`Swipe to pay ${formatPeso(invoice.total_amount)}`}
+                      text={healthStatus != null && !healthStatus.healthy
+                        ? "Payment unavailable"
+                        : `Swipe to pay ${formatPeso(invoice.total_amount)}`}
                       onSwipeComplete={() => {
+                        if (healthStatus != null && !healthStatus.healthy) return;
                         if (selectedMethod === "card") {
                           cardFormRef.current?.submit();
                         } else if (selectedMethod === "gcash") {
@@ -1310,7 +1419,20 @@ function SuccessModal({ onOK, email }: { onOK: () => void; email?: string }) {
   );
 }
 
-function ConfirmingModal({ connectionTrouble }: { connectionTrouble?: boolean }) {
+function ConfirmingModal({
+  connectionTrouble,
+  elapsed,
+  onReconcile,
+  reconciling,
+}: {
+  connectionTrouble?: boolean;
+  elapsed?: number;
+  onReconcile?: () => void;
+  reconciling?: boolean;
+}) {
+  const showTimeoutHint = elapsed != null && elapsed > CONFIRMING_TIMEOUT_MS;
+  const showReconcileButton = elapsed != null && elapsed > CONFIRMING_RECONCILE_MS;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div
@@ -1327,14 +1449,37 @@ function ConfirmingModal({ connectionTrouble }: { connectionTrouble?: boolean })
             We&apos;re updating your account — your receipt will be emailed
             shortly.
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            This usually takes a few seconds.
-          </p>
+          {!showTimeoutHint && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              This usually takes a few seconds.
+            </p>
+          )}
         </div>
         {connectionTrouble && (
           <p data-testid="connection-trouble" className="text-xs font-medium text-muted-foreground">
             Having trouble reaching the server — retrying…
           </p>
+        )}
+        {showTimeoutHint && !showReconcileButton && (
+          <p className="text-xs text-muted-foreground">
+            Your payment is taking longer than expected. If you completed payment,
+            your receipt will be emailed shortly.
+          </p>
+        )}
+        {showReconcileButton && (
+          <div className="flex flex-col items-center gap-2">
+            <p className="text-xs text-muted-foreground">
+              Still waiting? We can check your payment status now.
+            </p>
+            <button
+              type="button"
+              onClick={onReconcile}
+              disabled={reconciling}
+              className="rounded-md border border-border bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+            >
+              {reconciling ? "Checking…" : "Check payment status"}
+            </button>
+          </div>
         )}
       </div>
     </div>

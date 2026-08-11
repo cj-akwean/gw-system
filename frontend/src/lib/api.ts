@@ -481,3 +481,53 @@ export async function authFetch(
 
   return resolveResponse(res);
 }
+
+export interface PaymentHealthStatus {
+  healthy: boolean;
+  reason?: string;
+}
+
+/**
+ * Checks if the PayMongo payment system is healthy (API key configured,
+ * webhook secret configured, PayMongo API reachable). Cached server-side
+ * for 60 seconds.
+ */
+export async function checkPaymentHealth(): Promise<PaymentHealthStatus> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/health/payment`, {
+      headers: { Accept: "application/json" },
+    });
+  } catch {
+    return { healthy: false, reason: "Unable to reach the server." };
+  }
+
+  if (res.ok) {
+    return { healthy: true };
+  }
+
+  const body = await res.json().catch(() => ({}));
+  return {
+    healthy: false,
+    reason: (body as { reason?: string }).reason ?? "Payment system unavailable.",
+  };
+}
+
+export interface ReconcileResult {
+  status: "paid" | "unpaid" | "overdue" | "not_payable";
+}
+
+/**
+ * Reconciles a single invoice against PayMongo's intent status.
+ * Use-case: customer returned from redirect, PayMongo says the payment
+ * succeeded, but the webhook never arrived. This verifies the intent
+ * and credits the invoice if needed.
+ */
+export async function reconcileInvoice(
+  invoiceId: number | string
+): Promise<ReconcileResult> {
+  const res = await authFetch(`/api/invoices/${invoiceId}/reconcile`, {
+    method: "POST",
+  });
+  return res.json();
+}

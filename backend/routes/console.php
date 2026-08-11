@@ -34,3 +34,13 @@ Schedule::command('paymongo:reconcile')
     ->dailyAt('06:00')
     ->timezone('Asia/Manila')
     ->withoutOverlapping();
+
+/**
+ * Auto-credit invoices whose PayMongo intent succeeded but the webhook was
+ * missed (wrong URL, ngrok down, etc.). Runs every 5 minutes as a
+ * background safety net — credits the invoice, sends a notification, and
+ * logs the action to the paymongo channel.
+ */
+Schedule::command('paymongo:auto-credit')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();

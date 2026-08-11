@@ -1,8 +1,10 @@
 <?php
 
 use App\Http\Controllers\Api\ConnectionLinkController;
+use App\Http\Controllers\Api\HealthController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\InvoicePaymentController;
+use App\Http\Controllers\Api\InvoiceReconcileController;
 use App\Http\Controllers\Api\PayMongoWebhookController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ProfileController;
@@ -28,6 +30,9 @@ Route::post('/register', [AuthController::class, 'register'])
     ->name('register');
 Route::post('/logout', [AuthController::class, 'logout'])
     ->middleware(['auth:sanctum', 'throttle:30,1,auth-logout']);
+
+Route::get('/health/payment', [HealthController::class, 'check'])
+    ->middleware('throttle:10,1,health-payment');
 
 Route::get('/rates', [RateController::class, 'index'])
     ->middleware('throttle:60,1,rates-index');
@@ -55,4 +60,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/payments', [PaymentController::class, 'index'])->middleware('throttle:30,1,payments-index');
     Route::post('/payments/intent-status', [PaymentController::class, 'intentStatus'])
         ->middleware('throttle:30,1,payments-intent-status');
+    Route::post('/invoices/{invoice}/reconcile', [InvoiceReconcileController::class, 'reconcile'])
+        ->middleware('throttle:10,1,invoices-reconcile');
 });
