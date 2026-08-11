@@ -5,6 +5,7 @@ namespace App\Filament\Resources\MeterReadingResource\Pages;
 use App\Filament\Resources\MeterReadingResource;
 use App\Imports\MeterReadingImport;
 use App\Services\ReadingService;
+use App\Support\AdminNotifier;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\FileUpload;
@@ -213,6 +214,12 @@ class ImportMeterReadings extends Page
             ->title($title)
             ->{$failed ? 'warning' : 'success'}()
             ->send();
+
+        AdminNotifier::notify(
+            'Meter readings imported',
+            $title,
+            $failed ? 'warning' : 'success',
+        );
     }
 
     public function getTitle(): string

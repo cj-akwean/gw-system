@@ -91,7 +91,7 @@ class NotificationHub extends Page implements HasTable
                     ->label('Notification')
                     ->getStateUsing(fn (DatabaseNotification $record): string => (string) Arr::get($record->data, 'title', ''))
                     ->badge()
-                    ->color(fn (DatabaseNotification $record): string => (string) (Arr::get($record->data, 'color') ?? 'gray'))
+                    ->color(fn (DatabaseNotification $record): string => (string) (Arr::get($record->data, 'status') ?? Arr::get($record->data, 'color') ?? 'gray'))
                     ->description(fn (DatabaseNotification $record): ?string => Arr::get($record->data, 'body'))
                     ->wrap(),
 

@@ -517,6 +517,23 @@ action-needed filters, per-row mark read/unread, mark-all-read, no delete — hi
 audit trail; resolution state `data.resolved_at` written by `ResendReceiptController` is
 the only way a row stops needing action) — 2026-08-07.
 
+**Hub events + `AdminNotifier` (2026-08-10):** the hub now also receives persistent
+entries for routine events (not just email failures), all via the new
+`App\Support\AdminNotifier::notify()` helper (sends a Filament DB notification to every
+`is_admin` user; no-op when none; action URLs stored as host-independent path suffixes,
+`actionName` optional — the resend failure keeps the legacy `resendReceipt` name the
+controller/tests rely on). Wired senders: `RunBillingJob` (completed → success w/ invoice
+count + ₱ total and a **View run** action; failed → danger + **View run**; mismatched
+period / superseded / force-failed-not-resumed → warning), `SendPaymentConfirmationEmail`
+(successful send → info "Receipt sent", including resends; failed → unchanged danger
+resend flow), `ProcessPayMongoWebhook` (payment.paid that actually created a Payment row
+→ info "Payment received" w/ invoice, amount, channel — replays can't duplicate because
+the dedupe row is written in the same transaction), and both CSV import pages (meter
+readings / service connections → info/warning with imported+failed counts; initiator
+keeps the toast). A resend therefore leaves two honest rows: the resolved failure + a
+"Receipt sent" entry. Hub badge colors read `data.status` (Filament stores severity
+there, not `data.color` — the old fallback rendered every badge gray).
+
 ### 5. Host-agnostic notification tagging/resolution
 Failure notifications store the resend action as a **relative route path** (no host);
 tagging and the resend controller match by `data.payment_id` first with a URL

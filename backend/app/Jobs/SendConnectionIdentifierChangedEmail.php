@@ -4,8 +4,7 @@ namespace App\Jobs;
 
 use App\Mail\ConnectionIdentifiersChanged;
 use App\Models\ServiceConnection;
-use App\Models\User;
-use Filament\Notifications\Notification;
+use App\Support\AdminNotifier;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -80,19 +79,11 @@ class SendConnectionIdentifierChangedEmail implements ShouldQueue, ShouldBeUniqu
             'error' => $exception?->getMessage(),
         ]);
 
-        $admins = User::where('is_admin', true)->get();
-
-        if ($admins->isEmpty()) {
-            return;
-        }
-
-        Notification::make()
-            ->danger()
-            ->title('Identifier change email failed')
-            ->body(
-                'Identifier change for connection #'.$this->serviceConnectionId
-                .' never reached the customer(s). Fix the mailer, then re-save the connection to retry.'
-            )
-            ->sendToDatabase($admins);
+        AdminNotifier::notify(
+            'Identifier change email failed',
+            'Identifier change for connection #'.$this->serviceConnectionId
+            .' never reached the customer(s). Fix the mailer, then re-save the connection to retry.',
+            'danger',
+        );
     }
 }

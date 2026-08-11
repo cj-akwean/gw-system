@@ -124,6 +124,30 @@ class SendPaymentConfirmationEmailTest extends TestCase
         $this->runJob($invoice, $payment);
 
         Mail::assertNothingSent();
+        $this->assertDatabaseCount('notifications', 0);
+    }
+
+    public function test_successful_send_creates_a_hub_entry_for_admins(): void
+    {
+        Mail::fake();
+
+        $admin = User::factory()->create(['is_admin' => true]);
+        $invoice = Invoice::factory()->create([
+            'status' => 'paid',
+            'invoice_number' => 'GW-2026-67895',
+        ]);
+        $renter = $this->linkUser($invoice, 'renter@example.com');
+        $payment = $this->paymentFor($invoice);
+
+        $this->runJob($invoice, $payment);
+
+        $this->assertDatabaseHas('notifications', [
+            'notifiable_id' => $admin->id,
+            'notifiable_type' => User::class,
+            'data->format' => 'filament',
+            'data->title' => 'Receipt sent',
+        ]);
+        $this->assertDatabaseMissing('notifications', ['notifiable_id' => $renter->id]);
     }
 
     public function test_the_invoice_pdf_is_attached(): void

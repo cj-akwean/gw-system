@@ -9,6 +9,7 @@ use App\Models\MeterReading;
 use App\Models\PenaltyRule;
 use App\Models\RateSchedule;
 use App\Models\ServiceConnection;
+use App\Models\User;
 use App\Services\BillingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use RuntimeException;
@@ -212,5 +213,79 @@ class RunBillingJobTest extends TestCase
         // The fresh run keeps the period — it must not have been disrupted.
         $this->assertSame(1, BillingRun::where('status', 'running')->count());
         $this->assertSame(0, Invoice::count(), 'Older job must not bill while superseded.');
+    }
+
+    public function test_completed_run_notifies_admins_via_the_hub(): void
+    {
+        $this->seedPenaltyRule();
+        $schedule = $this->flatSchedule(10.00);
+        $connection = ServiceConnection::factory()->create(['rate_schedule_id' => $schedule->id]);
+        $this->reading($connection->id, 75.00, '2026-07-30');
+        $admin = User::factory()->create(['is_admin' => true]);
+        $regular = User::factory()->create(['is_admin' => false]);
+        $run = BillingRun::create(['period_end' => '2026-07-31', 'status' => 'running']);
+
+        RunBillingJob::dispatch('2026-07-31', $run->id);
+
+        $this->assertDatabaseCount('notifications', 1);
+        $this->assertDatabaseHas('notifications', [
+            'notifiable_id' => $admin->id,
+            'notifiable_type' => User::class,
+            'data->format' => 'filament',
+            'data->title' => 'Billing run completed',
+            'data->actions->0->url' => '/admin/billing-runs/'.$run->id,
+        ]);
+        $this->assertDatabaseMissing('notifications', ['notifiable_id' => $regular->id]);
+    }
+
+    public function test_failed_run_notifies_admins_via_the_hub(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true]);
+        $run = BillingRun::create(['period_end' => '2026-07-31', 'status' => 'running']);
+
+        $this->mock(BillingService::class, function ($mock) {
+            $mock->shouldReceive('run')->once()->andThrow(new RuntimeException('boom'));
+        });
+
+        $job = new RunBillingJob('2026-07-31', $run->id);
+
+        try {
+            $job->handle(app(BillingService::class));
+        } catch (RuntimeException) {
+            // expected
+        }
+
+        $this->assertDatabaseHas('notifications', [
+            'notifiable_id' => $admin->id,
+            'data->title' => 'Billing run failed',
+            'data->status' => 'danger',
+        ]);
+    }
+
+    public function test_superseded_run_notifies_admins_via_the_hub(): void
+    {
+        $this->seedPenaltyRule();
+        $schedule = $this->flatSchedule(10.00);
+        $connection = ServiceConnection::factory()->create(['rate_schedule_id' => $schedule->id]);
+        $this->reading($connection->id, 75.00, '2026-07-30');
+        $admin = User::factory()->create(['is_admin' => true]);
+
+        BillingRun::create(['period_end' => '2026-07-31', 'status' => 'running']);
+
+        $staleRun = BillingRun::create([
+            'period_end' => '2026-07-31',
+            'status' => 'failed',
+            'error' => 'previous transient failure',
+            'finished_at' => now(),
+        ]);
+
+        $job = new RunBillingJob('2026-07-31', $staleRun->id);
+        $job->handle(app(BillingService::class));
+
+        $this->assertDatabaseHas('notifications', [
+            'notifiable_id' => $admin->id,
+            'data->title' => 'Billing run superseded',
+            'data->status' => 'warning',
+        ]);
     }
 }

@@ -6,6 +6,7 @@ use App\Exports\Concerns\SanitizesCsvFields;
 use App\Filament\Resources\ServiceConnectionResource;
 use App\Imports\ServiceConnectionImport;
 use App\Services\ServiceConnectionService;
+use App\Support\AdminNotifier;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\FileUpload;
@@ -227,6 +228,12 @@ class ImportServiceConnections extends Page
             ->body($body)
             ->{$failed ? 'warning' : 'success'}()
             ->send();
+
+        AdminNotifier::notify(
+            'Service connections imported',
+            $body !== null ? $title.' '.$body : $title,
+            $failed ? 'warning' : 'success',
+        );
 
         Log::info('Service connection import completed.', [
             'imported_by' => $importerId,

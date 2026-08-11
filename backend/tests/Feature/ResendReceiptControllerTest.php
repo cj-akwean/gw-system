@@ -149,7 +149,8 @@ class ResendReceiptControllerTest extends TestCase
 
         Mail::assertSent(PaymentConfirmation::class);
 
-        $notification = $admin->notifications()->first();
+        $notification = $admin->notifications()->where('data->title', 'Payment confirmation email resent')->first();
+        $this->assertNotNull($notification);
         $data = $notification->fresh()->data;
 
         $this->assertArrayHasKey('resolved_at', $data);
@@ -197,7 +198,9 @@ class ResendReceiptControllerTest extends TestCase
 
         Mail::assertSent(PaymentConfirmation::class, 1);
 
-        $this->assertArrayHasKey('resolved_at', $admin->notifications()->first()->fresh()->data);
+        $resolved = $admin->notifications()->where('data->title', 'Payment confirmation email resent')->first();
+        $this->assertNotNull($resolved);
+        $this->assertArrayHasKey('resolved_at', $resolved->fresh()->data);
     }
 
     public function test_failed_resend_leaves_the_notification_untouched(): void

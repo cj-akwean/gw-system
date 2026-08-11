@@ -6,8 +6,7 @@ use App\Mail\PaymentConfirmation;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\User;
-use Filament\Actions\Action;
-use Filament\Notifications\Notification;
+use App\Support\AdminNotifier;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Notifications\DatabaseNotification;
@@ -66,6 +65,11 @@ class SendPaymentConfirmationEmail implements ShouldQueue
             'invoice_number' => $this->invoice->invoice_number,
             'recipients' => $recipients,
         ]);
+
+        AdminNotifier::notify(
+            'Receipt sent',
+            'Invoice '.$this->invoice->invoice_number.' — payment receipt emailed to '.count($recipients).' recipient(s).',
+        );
     }
 
     /**
@@ -109,29 +113,19 @@ class SendPaymentConfirmationEmail implements ShouldQueue
             'error' => $exception?->getMessage(),
         ]);
 
-        $admins = User::query()->where('is_admin', true)->get();
+        $admins = AdminNotifier::notify(
+            'Payment confirmation email failed',
+            'Invoice '.$this->invoice->invoice_number
+            .' (payment #'.$this->payment->id.') never reached the customer.',
+            'danger',
+            'Resend receipt',
+            $this->resendPath(),
+            'resendReceipt',
+        );
 
-        if ($admins->isEmpty()) {
-            return;
+        if ($admins->isNotEmpty()) {
+            $this->tagNotifications($admins);
         }
-
-        Notification::make()
-            ->danger()
-            ->title('Payment confirmation email failed')
-            ->body(
-                'Invoice '.$this->invoice->invoice_number
-                .' (payment #'.$this->payment->id.') never reached the customer.'
-            )
-            ->actions([
-                Action::make('resendReceipt')
-                    ->label('Resend receipt')
-                    ->button()
-                    ->color('primary')
-                    ->url($this->resendPath()),
-            ])
-            ->sendToDatabase($admins);
-
-        $this->tagNotifications($admins);
     }
 
     /**

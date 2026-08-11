@@ -144,6 +144,25 @@ class ProcessPayMongoWebhookTest extends TestCase
         $this->assertSame('qrph', $payment->paymongo_source);
     }
 
+    public function test_payment_paid_creates_a_hub_entry_only_for_a_new_payment(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true]);
+        $this->invoiceFor('pi_test_1');
+
+        $payload = $this->paymentPaidPayload();
+
+        $this->runJob($payload);
+        $this->runJob($payload); // replay — deduped by event id, must not notify twice
+
+        $this->assertDatabaseCount('notifications', 1);
+        $this->assertDatabaseHas('notifications', [
+            'notifiable_id' => $admin->id,
+            'notifiable_type' => User::class,
+            'data->format' => 'filament',
+            'data->title' => 'Payment received',
+        ]);
+    }
+
     public function test_an_already_paid_invoice_is_left_alone(): void
     {
         $this->invoiceFor('pi_test_1', 'paid', 40.00);

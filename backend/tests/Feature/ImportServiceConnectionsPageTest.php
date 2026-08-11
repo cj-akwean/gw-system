@@ -184,6 +184,12 @@ class ImportServiceConnectionsPageTest extends TestCase
             'account_number' => 'GW-00001',
             'imported_by' => $admin->id,
         ]);
+
+        $this->assertDatabaseHas('notifications', [
+            'notifiable_id' => $admin->id,
+            'data->format' => 'filament',
+            'data->title' => 'Service connections imported',
+        ]);
     }
 
     public function test_mid_batch_failure_keeps_other_rows_is_logged_and_surfaces_rows(): void

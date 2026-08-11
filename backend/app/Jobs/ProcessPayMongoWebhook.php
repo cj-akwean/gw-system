@@ -2,11 +2,13 @@
 
 namespace App\Jobs;
 
+use App\Filament\Resources\PaymentResource;
 use App\Models\Invoice;
 use App\Models\ProcessedWebhookEvent;
 use App\Models\SavedPaymentMethod;
 use App\Models\User;
 use App\Services\PaymentService;
+use App\Support\AdminNotifier;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Queue\Queueable;
@@ -82,8 +84,12 @@ class ProcessPayMongoWebhook implements ShouldQueue
             return;
         }
 
+        $invoice = null;
+        $payment = null;
+        $paymongoSource = null;
+
         try {
-            DB::transaction(function () use ($eventId, $type, $data): void {
+            DB::transaction(function () use ($eventId, $type, $data, &$invoice, &$payment, &$paymongoSource): void {
                 $this->recordProcessedEvent($eventId, $type);
 
                 $attributes = $data['attributes']['data']['attributes'] ?? [];
@@ -126,7 +132,7 @@ class ProcessPayMongoWebhook implements ShouldQueue
                     return;
                 }
 
-                app(PaymentService::class)->markPaidFromWebhook(
+                $payment = app(PaymentService::class)->markPaidFromWebhook(
                     $invoice,
                     $paymentId,
                     $amountCentavos,
@@ -150,6 +156,19 @@ class ProcessPayMongoWebhook implements ShouldQueue
             Log::channel('paymongo')->info('PayMongo webhook skipped: event already processed', [
                 'event_id' => $eventId,
             ]);
+        }
+
+        // Only a newly created Payment row (markPaidFromWebhook returns null for
+        // already-paid / not-payable / amount-mismatch) gets a hub entry — replay
+        // of the same event rolls back, so this never duplicates.
+        if ($payment !== null) {
+            $channel = PaymentResource::channelLabel($paymongoSource);
+
+            AdminNotifier::notify(
+                'Payment received',
+                'Invoice '.($invoice?->invoice_number ?? '—').' — ₱'.number_format((float) $payment->amount, 2)
+                    .($channel !== '—' ? ' via '.$channel : '').'.',
+            );
         }
     }
 
