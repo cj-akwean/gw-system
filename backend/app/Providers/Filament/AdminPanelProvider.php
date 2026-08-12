@@ -31,6 +31,7 @@ class AdminPanelProvider extends PanelProvider
             ->path('admin')
             ->login(Login::class)
             ->authGuard('admin')
+            ->profile(\App\Filament\Pages\EditProfile::class)
             ->spa()
             // FileUpload pages race Alpine's entangle under SPA swaps (Livewire
             // Entangle Error on data.csvFile) — keep them as plain reloads.

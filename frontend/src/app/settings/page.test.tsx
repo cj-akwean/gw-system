@@ -86,6 +86,9 @@ function seedFetch(links: unknown[]): void {
     if (init?.method === "DELETE") {
       return Promise.resolve(jsonResponse({ message: "Link revoked" }));
     }
+    if (init?.method === "POST" && url.includes("/api/password")) {
+      return Promise.resolve(jsonResponse({ message: "Password updated." }));
+    }
     return Promise.resolve(jsonResponse(links));
   });
   vi.stubGlobal("fetch", fetchSpy);
@@ -196,5 +199,134 @@ describe("SettingsPage", () => {
 
     expect(await screen.findByText("Profile saved.")).toBeInTheDocument();
     expect(mockUpdateProfile).toHaveBeenCalledWith("AquaFan", 3);
+  });
+
+  it("renders the security section with password fields", async () => {
+    seedFetch([]);
+    mockUseAuth = () => authedUser();
+
+    render(<SettingsPage />);
+
+    expect(screen.getByText("Change password")).toBeInTheDocument();
+    expect(screen.getByLabelText("Current password")).toBeInTheDocument();
+    expect(screen.getByLabelText("New password")).toBeInTheDocument();
+    expect(screen.getByLabelText("Confirm new password")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Update password" })
+    ).toBeInTheDocument();
+  });
+
+  it("shows a client-side error when the new passwords do not match", async () => {
+    seedFetch([]);
+    mockUseAuth = () => authedUser();
+
+    render(<SettingsPage />);
+
+    fireEvent.change(screen.getByLabelText("Current password"), {
+      target: { value: "old-password-1" },
+    });
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "new-password-1" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "different-1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Update password" }));
+
+    expect(
+      await screen.findByText("New passwords do not match.")
+    ).toBeInTheDocument();
+    expect(fetchSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining("/api/password"),
+      expect.anything()
+    );
+  });
+
+  it("shows a client-side error for a short new password", async () => {
+    seedFetch([]);
+    mockUseAuth = () => authedUser();
+
+    render(<SettingsPage />);
+
+    fireEvent.change(screen.getByLabelText("Current password"), {
+      target: { value: "old-password-1" },
+    });
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "short" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "short" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Update password" }));
+
+    expect(
+      await screen.findByText("New password must be at least 8 characters.")
+    ).toBeInTheDocument();
+  });
+
+  it("changes the password and shows a confirmation", async () => {
+    seedFetch([]);
+    mockUseAuth = () => authedUser();
+
+    render(<SettingsPage />);
+
+    fireEvent.change(screen.getByLabelText("Current password"), {
+      target: { value: "old-password-1" },
+    });
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "new-password-1" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "new-password-1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Update password" }));
+
+    expect(await screen.findByText("Password updated.")).toBeInTheDocument();
+
+    const passwordCall = fetchSpy.mock.calls.find(
+      ([url, init]) =>
+        String(url).includes("/api/password") && init?.method === "POST"
+    );
+    expect(passwordCall).toBeDefined();
+    const body = JSON.parse(String(passwordCall?.[1]?.body));
+    expect(body).toEqual({
+      current_password: "old-password-1",
+      password: "new-password-1",
+      password_confirmation: "new-password-1",
+    });
+  });
+
+  it("surfaces a server error from the password endpoint", async () => {
+    fetchSpy = vi.fn((url: string, init?: RequestInit) => {
+      if (init?.method === "POST" && String(url).includes("/api/password")) {
+        return Promise.resolve(
+          jsonResponse(
+            { message: "The current password is incorrect." },
+            false,
+            422
+          )
+        );
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+    mockUseAuth = () => authedUser();
+
+    render(<SettingsPage />);
+
+    fireEvent.change(screen.getByLabelText("Current password"), {
+      target: { value: "wrong-password" },
+    });
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "new-password-1" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "new-password-1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Update password" }));
+
+    expect(
+      await screen.findByText("The current password is incorrect.")
+    ).toBeInTheDocument();
   });
 });

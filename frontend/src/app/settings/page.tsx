@@ -2,14 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Link2, Loader2 } from "lucide-react";
+import { KeyRound, Link2, Loader2 } from "lucide-react";
 import HoldButton from "@/components/kokonutui/hold-button";
 import ProfileSetup from "@/components/kokonutui/avatar-picker";
 import { DashboardHeader } from "@/components/portal/dashboard-header";
 import { PageLoader } from "@/components/portal/page-loader";
 import { LinkMeterForm } from "@/components/portal/link-meter-form";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth-context";
-import { getLinks, unlinkApi, type PortalLink } from "@/lib/api";
+import {
+  changePasswordApi,
+  getLinks,
+  unlinkApi,
+  type PortalLink,
+} from "@/lib/api";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -23,6 +30,12 @@ export default function SettingsPage() {
   const [unlinkError, setUnlinkError] = useState("");
   const [unlinkingId, setUnlinkingId] = useState<number | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordSaved, setPasswordSaved] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
 
   useEffect(() => {
     if (!ready || !isAuthenticated) return;
@@ -56,6 +69,37 @@ export default function SettingsPage() {
       setUnlinkError(err instanceof Error ? err.message : "Couldn't unlink the meter.");
     } finally {
       setUnlinkingId(null);
+    }
+  };
+
+  const handlePasswordChange = async () => {
+    setPasswordError("");
+    setPasswordSaved(false);
+
+    if (newPassword.length < 8) {
+      setPasswordError("New password must be at least 8 characters.");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError("New passwords do not match.");
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      await changePasswordApi(currentPassword, newPassword);
+      setPasswordSaved(true);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err) {
+      setPasswordSaved(false);
+      setPasswordError(
+        err instanceof Error ? err.message : "Couldn't change your password."
+      );
+    } finally {
+      setChangingPassword(false);
     }
   };
 
@@ -125,6 +169,100 @@ export default function SettingsPage() {
                 {profileError}
               </p>
             )}
+          </section>
+
+          <section className="space-y-4">
+            <h2 className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">
+              Security
+            </h2>
+
+            <div className="rounded-xl border border-border bg-card p-8">
+              <div className="flex items-center gap-2">
+                <KeyRound aria-hidden className="size-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold">Change password</h3>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Use at least 8 characters. You'll stay signed in on this device; other
+                sessions will be signed out.
+              </p>
+
+              <form
+                className="mt-6 space-y-4"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void handlePasswordChange();
+                }}
+              >
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Current password
+                  </span>
+                  <Input
+                    aria-label="Current password"
+                    autoComplete="current-password"
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    required
+                    type="password"
+                    value={currentPassword}
+                  />
+                </label>
+
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    New password
+                  </span>
+                  <Input
+                    aria-label="New password"
+                    autoComplete="new-password"
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                    type="password"
+                    value={newPassword}
+                  />
+                </label>
+
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Confirm new password
+                  </span>
+                  <Input
+                    aria-label="Confirm new password"
+                    autoComplete="new-password"
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                    type="password"
+                    value={confirmPassword}
+                  />
+                </label>
+
+                {passwordSaved && (
+                  <p className="text-sm text-primary" role="status">
+                    Password updated.
+                  </p>
+                )}
+                {passwordError && (
+                  <p className="text-sm text-destructive" role="alert">
+                    {passwordError}
+                  </p>
+                )}
+
+                <Button
+                  aria-disabled={changingPassword}
+                  className="h-10 px-6 text-xs"
+                  disabled={changingPassword}
+                  type="submit"
+                >
+                  {changingPassword ? (
+                    <>
+                      <Loader2 aria-hidden className="size-3.5 animate-spin" />
+                      Saving…
+                    </>
+                  ) : (
+                    "Update password"
+                  )}
+                </Button>
+              </form>
+            </div>
           </section>
 
           <section className="space-y-4">

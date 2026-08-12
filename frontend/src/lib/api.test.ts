@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   buildReturnUrl,
+  changePasswordApi,
   clearPendingInvoice,
   createLink,
   formatPeso,
@@ -335,6 +336,59 @@ describe("updateProfileApi", () => {
     expect(url).toBe("http://127.0.0.1:8000/api/profile");
     expect(init.method).toBe("PATCH");
     expect(JSON.parse(String(init.body))).toEqual({ name: "AquaFan", avatar_id: 3 });
+  });
+});
+
+describe("changePasswordApi", () => {
+  beforeEach(() => {
+    seedAuthToken();
+  });
+
+  afterEach(() => {
+    localStorage.removeItem("auth");
+    vi.unstubAllGlobals();
+  });
+
+  it("posts current and new password to the password endpoint", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ message: "Password updated." }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await changePasswordApi("old-password-1", "new-password-1");
+
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:8000/api/password");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({
+      current_password: "old-password-1",
+      password: "new-password-1",
+      password_confirmation: "new-password-1",
+    });
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      "Bearer token-1"
+    );
+  });
+
+  it("throws ApiError with the server message on failure", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse(
+          { message: "The current password is incorrect." },
+          false,
+          422
+        )
+      )
+    );
+
+    await expect(
+      changePasswordApi("wrong", "new-password-1")
+    ).rejects.toMatchObject({
+      name: "ApiError",
+      message: "The current password is incorrect.",
+      status: 422,
+    });
   });
 });
 

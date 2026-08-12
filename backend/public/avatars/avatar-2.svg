@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" fill="none" height="40" viewBox="0 0 36 36" width="40" role="img" aria-label="Avatar 2">
+  <title>Avatar 2</title>
+  <mask id="m2" height="36" maskUnits="userSpaceOnUse" width="36" x="0" y="0"><rect fill="#FFFFFF" height="36" rx="72" width="36"/></mask>
+  <g mask="url(#m2)">
+    <rect fill="#ff7d10" height="36" width="36"/>
+    <rect fill="#0a0310" height="36" rx="6" transform="translate(5 -1) rotate(55 18 18) scale(1.1)" width="36" x="0" y="0"/>
+    <g transform="translate(7 -6) rotate(-5 18 18)">
+      <path d="M15 20c2 1 4 1 6 0" fill="none" stroke="#FFFFFF" strokeLinecap="round"/>
+      <rect fill="#FFFFFF" height="2" rx="1" stroke="none" width="1.5" x="14" y="14"/>
+      <rect fill="#FFFFFF" height="2" rx="1" stroke="none" width="1.5" x="20" y="14"/>
+    </g>
+  </g>
+</svg>

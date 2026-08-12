@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\ConnectionLinkController;
+use App\Http\Controllers\Api\ChangePasswordController;
 use App\Http\Controllers\Api\HealthController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\InvoicePaymentController;
@@ -47,6 +48,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/links/{link}', [ConnectionLinkController::class, 'destroy'])->middleware('throttle:30,1,links-destroy');
     Route::patch('/profile', [ProfileController::class, 'update'])
         ->middleware('throttle:30,1,profile-update');
+    Route::post('/password', [ChangePasswordController::class, 'store'])
+        ->middleware('throttle:10,1,password-change');
     Route::get('/invoices', [InvoiceController::class, 'index'])->middleware('throttle:30,1,invoices-index');
     Route::get('/invoices/{invoice}', [InvoiceController::class, 'show'])->middleware('throttle:30,1,invoices-index');
     Route::post('/invoices/{invoice}/pay', [InvoicePaymentController::class, 'store'])

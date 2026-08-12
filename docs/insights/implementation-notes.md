@@ -641,6 +641,28 @@ All surfaces now update on their own, no page reload:
   updates, no matter the poll interval. AGENTS.md queue-worker line now lists admin
   notifications explicitly.
 
+### 8. Admin profile settings + frontend password change *(2026-08-11)*
+- **Admin profile page** (`/admin/profile`): custom `App\Filament\Pages\EditProfile`
+  extends Filament's `EditProfile` (name/email/password + built-in rate limiting 5/min
+  and hashing) and prepends an **avatar Select** (`allowHtml`, the shared 1–4 avatar set
+  as static SVGs in `backend/public/avatars/avatar-{1..4}.svg`, exported from the
+  frontend's `avatars.tsx` with React-generated mask ids fixed). Filament's progressive
+  disclosure keeps Confirm/Current-password hidden until a new password is typed.
+  `User` now implements `HasAvatar` (`getFilamentAvatarUrl()` → static SVG, null →
+  initials fallback) so the topbar user-menu avatar shows the choice.
+- **Password-changed email**: `App\Mail\PasswordChanged` (queued) sent by the admin
+  profile `afterSave()` hook and the portal endpoint; mobile-friendly hybrid template
+  (`password-changed-html/text`), same shell as the other emails.
+- **Portal `POST /api/password`** (`ChangePasswordController` + `ChangePasswordRequest`,
+  `throttle:10,1,password-change`): validates `current_password` via `Hash::check`
+  (generic 422), `Password::min(8)` + confirmed; on success updates the hash, **revokes
+  all tokens except the current session's** (other devices signed out) and queues the
+  email. Frontend `/settings` gained a **Security** section (current/new/confirm, client-
+  side length + match checks, busy state, server errors surfaced). Note: `Sanctum::actingAs`
+  uses a transient token, so token-survival tests must use `withToken()` with a real
+  persisted token. Frontend build on this machine needs `NODE_OPTIONS=--max-old-space-size=4096`
+  (build worker crashed at default heap).
+
 ## Infra / Ops
 
 ### 1. Graphify graph rebuilt vendor-free

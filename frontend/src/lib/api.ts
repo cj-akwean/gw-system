@@ -98,6 +98,20 @@ export async function updateProfileApi(
   return res.json();
 }
 
+export async function changePasswordApi(
+  currentPassword: string,
+  newPassword: string
+): Promise<void> {
+  await authFetch("/api/password", {
+    method: "POST",
+    body: JSON.stringify({
+      current_password: currentPassword,
+      password: newPassword,
+      password_confirmation: newPassword,
+    }),
+  });
+}
+
 export interface PortalLink {
   id: number;
   status: "active" | "revoked";
