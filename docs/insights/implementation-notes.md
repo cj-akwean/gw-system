@@ -663,6 +663,43 @@ All surfaces now update on their own, no page reload:
   persisted token. Frontend build on this machine needs `NODE_OPTIONS=--max-old-space-size=4096`
   (build worker crashed at default heap).
 
+### 9. Email-OTP: password changes + forgot password (admin + portal) *(2026-08-12)*
+Every password change now requires a 6-digit email OTP; forgot-password exists on
+both sites with an OTP email.
+- **OTP broker for forgot-password**: `OtpTokenRepository` (6-digit tokens) +
+  `OtpPasswordBrokerManager`, replacing `auth.password` in `AppServiceProvider`
+  (the framework's `PasswordResetServiceProvider` is **deferred** — it re-registers
+  `auth.password` on first resolution, so it must be forced eager BEFORE the rebind;
+  do not "fix" by moving the rebind to `boot()`). Broker config: 15-min expiry. The
+  emailed code IS the broker token: hashed, single-use, 60s resend throttle.
+- **Admin forgot-password**: custom `RequestPasswordReset` (queues `PasswordResetOtp`,
+  keeps the canAccessPanel gate) + `ResetPassword` (email + OTP + new password) at
+  **`/admin/password-reset/reset-code`** — the vendor's `/reset` route is
+  `signed`-middlewared (reset-link flow) and same-URI registration overwrites, so the
+  OTP page gets its own unsigned slug via `->routes()`. Login page shows "Forgot
+  password?" automatically once `->passwordReset()` is registered. Gotchas hit:
+  (a) `#[Locked] $email` on the vendor page rejects client email updates → redeclare
+  the property unlocked in the subclass; (b) `otp` must be stripped from broker
+  credentials (`getCredentialsFromFormData`) or the broker queries a `users.otp`
+  column; (c) form fields need backing public properties.
+- **Password-change OTP**: `OtpService` (6-digit, database cache, 5-min expiry, 5
+  attempts, single-use, constant-time hash compare). Admin profile: "Send verification
+  code" action + OTP field (progressive disclosure); `save()` verifies before
+  `parent::save()` and returns early on failure (a plain return, NOT `Halt` — Halt
+  escapes direct method calls in tests). Portal: `POST /api/password/send-code`
+  (5/min) + `/api/password` now requires `otp`.
+- **Portal forgot/reset**: `POST /api/forgot-password` (generic response, no account
+  enumeration, 5/min) + `POST /api/reset-password` (email + otp + new password,
+  revokes all tokens, 5/min). Frontend `/forgot-password` + `/reset-password` pages
+  (mobile-first) with a "Forgot password?" link on the sign-in card.
+- **Emails**: `PasswordResetOtp` + `PasswordChangeOtp` mailables with the hybrid
+  mobile shell (600px tables, media query, large mono OTP block, bulletproof contact
+  button) — verified at 390px.
+- **Test gotcha**: the sanctum guard caches the authenticated user (with its token)
+  across requests in one test — `auth()->forgetGuards()` between requests or the
+  second request runs with the first request's token. `Sanctum::actingAs` uses a
+  transient token, so token-survival assertions need `withToken()` + real tokens.
+
 ## Infra / Ops
 
 ### 1. Graphify graph rebuilt vendor-free

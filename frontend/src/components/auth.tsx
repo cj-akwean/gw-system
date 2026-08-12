@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { GithubIcon } from "@/components/github-icon";
 import { GoogleIcon } from "@/components/google-icon";
@@ -121,6 +122,15 @@ export function AuthPage({ mode, onToggleMode }: AuthPageProps) {
               ? "Don't have an account? Sign Up"
               : "Already have an account? Login"}
           </button>
+
+          {isLogin && (
+            <Link
+              href="/forgot-password"
+              className="block w-full text-center text-sm text-muted-foreground underline underline-offset-4 hover:text-primary transition-colors"
+            >
+              Forgot your password?
+            </Link>
+          )}
 
           <AuthDivider>OR</AuthDivider>
 

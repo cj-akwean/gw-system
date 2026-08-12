@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Mail\PasswordChangeOtp;
 use App\Mail\PasswordChanged;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -14,15 +15,43 @@ class ChangePasswordTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_user_can_change_password_and_other_tokens_are_revoked(): void
+    private function user(array $overrides = []): User
     {
-        $user = User::factory()->create(['password' => 'old-password-1']);
+        return User::factory()->create([
+            'email' => 'customer@example.com',
+            'password' => 'old-password-1',
+            ...$overrides,
+        ]);
+    }
+
+    private function requestCode(User $user): string
+    {
+        Mail::fake();
+        $token = $user->createToken('code-request')->plainTextToken;
+
+        $this->withToken($token)->postJson('/api/password/send-code')->assertOk();
+
+        // The sanctum guard caches the authenticated user (with the token used
+        // above) across requests in one test — drop it so the next request
+        // authenticates with its own token.
+        $this->app['auth']->forgetGuards();
+
+        $mailable = Mail::queued(PasswordChangeOtp::class)->first();
+
+        return $mailable->code;
+    }
+
+    public function test_user_can_change_password_with_otp_and_other_tokens_are_revoked(): void
+    {
+        $user = $this->user();
         $currentToken = $user->createToken('current-device');
         $otherToken = $user->createToken('other-device');
+        $code = $this->requestCode($user);
 
         $this->withToken($currentToken->plainTextToken)
             ->postJson('/api/password', [
                 'current_password' => 'old-password-1',
+                'otp' => $code,
                 'password' => 'new-password-1',
                 'password_confirmation' => 'new-password-1',
             ])->assertOk()
@@ -30,10 +59,8 @@ class ChangePasswordTest extends TestCase
 
         $this->assertTrue(Hash::check('new-password-1', $user->fresh()->password));
         $this->assertNull($otherToken->accessToken->fresh());
-        // The current session's token survives; everything else is revoked.
         $this->assertNotNull($currentToken->accessToken->fresh());
         $this->assertSame(1, $user->fresh()->tokens()->count());
-        // The current session still works after the change.
         $this->withToken($currentToken->plainTextToken)->getJson('/api/user')->assertOk();
     }
 
@@ -41,11 +68,13 @@ class ChangePasswordTest extends TestCase
     {
         Mail::fake();
 
-        $user = User::factory()->create(['password' => 'old-password-1']);
+        $user = $this->user();
+        $code = $this->requestCode($user);
         Sanctum::actingAs($user);
 
         $this->postJson('/api/password', [
             'current_password' => 'old-password-1',
+            'otp' => $code,
             'password' => 'new-password-1',
             'password_confirmation' => 'new-password-1',
         ])->assertOk();
@@ -55,11 +84,12 @@ class ChangePasswordTest extends TestCase
 
     public function test_wrong_current_password_is_rejected(): void
     {
-        $user = User::factory()->create(['password' => 'old-password-1']);
-        Sanctum::actingAs($user);
+        $user = $this->user();
+        $code = $this->requestCode($user);
 
         $this->postJson('/api/password', [
             'current_password' => 'wrong-password',
+            'otp' => $code,
             'password' => 'new-password-1',
             'password_confirmation' => 'new-password-1',
         ])->assertStatus(422)
@@ -68,13 +98,55 @@ class ChangePasswordTest extends TestCase
         $this->assertTrue(Hash::check('old-password-1', $user->fresh()->password));
     }
 
-    public function test_short_password_is_rejected(): void
+    public function test_missing_or_wrong_otp_is_rejected(): void
     {
-        $user = User::factory()->create(['password' => 'old-password-1']);
+        $user = $this->user();
         Sanctum::actingAs($user);
 
         $this->postJson('/api/password', [
             'current_password' => 'old-password-1',
+            'password' => 'new-password-1',
+            'password_confirmation' => 'new-password-1',
+        ])->assertStatus(422)
+            ->assertJsonValidationErrors(['otp']);
+
+        $this->postJson('/api/password', [
+            'current_password' => 'old-password-1',
+            'otp' => '000000',
+            'password' => 'new-password-1',
+            'password_confirmation' => 'new-password-1',
+        ])->assertStatus(422)
+            ->assertJsonValidationErrors(['otp']);
+
+        $this->assertTrue(Hash::check('old-password-1', $user->fresh()->password));
+    }
+
+    public function test_otp_is_single_use(): void
+    {
+        $user = $this->user();
+        $code = $this->requestCode($user);
+
+        $payload = [
+            'current_password' => 'old-password-1',
+            'otp' => $code,
+            'password' => 'new-password-1',
+            'password_confirmation' => 'new-password-1',
+        ];
+
+        $this->postJson('/api/password', $payload)->assertOk();
+
+        $this->postJson('/api/password', $payload)->assertStatus(422)
+            ->assertJsonValidationErrors(['otp']);
+    }
+
+    public function test_short_password_is_rejected(): void
+    {
+        $user = $this->user();
+        $code = $this->requestCode($user);
+
+        $this->postJson('/api/password', [
+            'current_password' => 'old-password-1',
+            'otp' => $code,
             'password' => 'short',
             'password_confirmation' => 'short',
         ])->assertStatus(422)
@@ -83,11 +155,12 @@ class ChangePasswordTest extends TestCase
 
     public function test_mismatched_confirmation_is_rejected(): void
     {
-        $user = User::factory()->create(['password' => 'old-password-1']);
-        Sanctum::actingAs($user);
+        $user = $this->user();
+        $code = $this->requestCode($user);
 
         $this->postJson('/api/password', [
             'current_password' => 'old-password-1',
+            'otp' => $code,
             'password' => 'new-password-1',
             'password_confirmation' => 'different-1',
         ])->assertStatus(422)
@@ -98,19 +171,35 @@ class ChangePasswordTest extends TestCase
     {
         $this->postJson('/api/password', [
             'current_password' => 'x',
+            'otp' => '123456',
             'password' => 'new-password-1',
             'password_confirmation' => 'new-password-1',
         ])->assertStatus(401);
+
+        $this->postJson('/api/password/send-code')->assertStatus(401);
+    }
+
+    public function test_send_code_endpoint_is_rate_limited(): void
+    {
+        $user = $this->user();
+        Sanctum::actingAs($user);
+
+        for ($i = 0; $i < 5; $i++) {
+            $this->postJson('/api/password/send-code');
+        }
+
+        $this->postJson('/api/password/send-code')->assertStatus(429);
     }
 
     public function test_endpoint_is_rate_limited(): void
     {
-        $user = User::factory()->create(['password' => 'old-password-1']);
+        $user = $this->user();
         Sanctum::actingAs($user);
 
         for ($i = 0; $i < 10; $i++) {
             $this->postJson('/api/password', [
                 'current_password' => 'wrong-password',
+                'otp' => '000000',
                 'password' => 'new-password-1',
                 'password_confirmation' => 'new-password-1',
             ]);
@@ -118,6 +207,7 @@ class ChangePasswordTest extends TestCase
 
         $this->postJson('/api/password', [
             'current_password' => 'old-password-1',
+            'otp' => '000000',
             'password' => 'new-password-1',
             'password_confirmation' => 'new-password-1',
         ])->assertStatus(429);
@@ -125,9 +215,9 @@ class ChangePasswordTest extends TestCase
 
     public function test_password_changed_email_is_mobile_friendly(): void
     {
-        $user = User::factory()->create(['email' => 'customer@example.com']);
+        $user = $this->user(['email' => 'customer@example.com']);
 
-        $html = (new PasswordChanged($user))->render();
+        $html = (new \App\Mail\PasswordChanged($user))->render();
 
         $this->assertStringContainsString('@media screen and (max-width: 600px)', $html);
         $this->assertStringContainsString('width="600"', $html);
@@ -135,5 +225,18 @@ class ChangePasswordTest extends TestCase
         $this->assertStringContainsString('Guinobatan Waterworks', $html);
         $this->assertStringContainsString('customer@example.com', $html);
         $this->assertStringContainsString('Contact us', $html);
+    }
+
+    public function test_change_otp_email_is_mobile_friendly(): void
+    {
+        $user = $this->user(['email' => 'customer@example.com']);
+
+        $html = (new \App\Mail\PasswordChangeOtp($user, '123456'))->render();
+
+        $this->assertStringContainsString('@media screen and (max-width: 600px)', $html);
+        $this->assertStringContainsString('width="600"', $html);
+        $this->assertStringNotContainsString('min-width: 560px', $html);
+        $this->assertStringContainsString('123456', $html);
+        $this->assertStringContainsString('Guinobatan Waterworks', $html);
     }
 }

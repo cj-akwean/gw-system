@@ -86,7 +86,12 @@ function seedFetch(links: unknown[]): void {
     if (init?.method === "DELETE") {
       return Promise.resolve(jsonResponse({ message: "Link revoked" }));
     }
-    if (init?.method === "POST" && url.includes("/api/password")) {
+    if (init?.method === "POST" && String(url).includes("/api/password/send-code")) {
+      return Promise.resolve(
+        jsonResponse({ message: "Verification code sent to your email." })
+      );
+    }
+    if (init?.method === "POST" && String(url).includes("/api/password")) {
       return Promise.resolve(jsonResponse({ message: "Password updated." }));
     }
     return Promise.resolve(jsonResponse(links));
@@ -264,7 +269,59 @@ describe("SettingsPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("changes the password and shows a confirmation", async () => {
+  it("changes the password with an OTP and shows a confirmation", async () => {
+    seedFetch([]);
+    mockUseAuth = () => authedUser();
+
+    render(<SettingsPage />);
+
+    fireEvent.change(screen.getByLabelText("Current password"), {
+      target: { value: "old-password-1" },
+    });
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "new-password-1" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "new-password-1" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Send verification code" })
+    );
+
+    expect(
+      await screen.findByLabelText("Verification code")
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Verification code"), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Update password" }));
+
+    expect(await screen.findByText("Password updated.")).toBeInTheDocument();
+
+    const sendCodeCall = fetchSpy.mock.calls.find(
+      ([url, init]) =>
+        String(url).includes("/api/password/send-code") && init?.method === "POST"
+    );
+    expect(sendCodeCall).toBeDefined();
+
+    const passwordCall = fetchSpy.mock.calls.find(
+      ([url, init]) =>
+        String(url).includes("/api/password") &&
+        !String(url).includes("send-code") &&
+        init?.method === "POST"
+    );
+    expect(passwordCall).toBeDefined();
+    const body = JSON.parse(String(passwordCall?.[1]?.body));
+    expect(body).toEqual({
+      current_password: "old-password-1",
+      password: "new-password-1",
+      password_confirmation: "new-password-1",
+      otp: "123456",
+    });
+  });
+
+  it("requires a verification code before submitting", async () => {
     seedFetch([]);
     mockUseAuth = () => authedUser();
 
@@ -281,23 +338,22 @@ describe("SettingsPage", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Update password" }));
 
-    expect(await screen.findByText("Password updated.")).toBeInTheDocument();
-
-    const passwordCall = fetchSpy.mock.calls.find(
-      ([url, init]) =>
-        String(url).includes("/api/password") && init?.method === "POST"
+    expect(
+      await screen.findByText("Send a verification code first.")
+    ).toBeInTheDocument();
+    expect(fetchSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining("/api/password"),
+      expect.anything()
     );
-    expect(passwordCall).toBeDefined();
-    const body = JSON.parse(String(passwordCall?.[1]?.body));
-    expect(body).toEqual({
-      current_password: "old-password-1",
-      password: "new-password-1",
-      password_confirmation: "new-password-1",
-    });
   });
 
   it("surfaces a server error from the password endpoint", async () => {
     fetchSpy = vi.fn((url: string, init?: RequestInit) => {
+      if (init?.method === "POST" && String(url).includes("/api/password/send-code")) {
+        return Promise.resolve(
+          jsonResponse({ message: "Verification code sent to your email." })
+        );
+      }
       if (init?.method === "POST" && String(url).includes("/api/password")) {
         return Promise.resolve(
           jsonResponse(
@@ -323,6 +379,12 @@ describe("SettingsPage", () => {
     fireEvent.change(screen.getByLabelText("Confirm new password"), {
       target: { value: "new-password-1" },
     });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Send verification code" })
+    );
+
+    const otpInput = await screen.findByLabelText("Verification code");
+    fireEvent.change(otpInput, { target: { value: "123456" } });
     fireEvent.click(screen.getByRole("button", { name: "Update password" }));
 
     expect(

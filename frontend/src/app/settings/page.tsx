@@ -10,10 +10,12 @@ import { PageLoader } from "@/components/portal/page-loader";
 import { LinkMeterForm } from "@/components/portal/link-meter-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AnimatedOTPInput } from "@/components/smoothui/otp-input";
 import { useAuth } from "@/lib/auth-context";
 import {
   changePasswordApi,
   getLinks,
+  sendPasswordChangeOtp,
   unlinkApi,
   type PortalLink,
 } from "@/lib/api";
@@ -33,6 +35,9 @@ export default function SettingsPage() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [sendingOtp, setSendingOtp] = useState(false);
   const [passwordError, setPasswordError] = useState("");
   const [passwordSaved, setPasswordSaved] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
@@ -72,6 +77,39 @@ export default function SettingsPage() {
     }
   };
 
+  const handleSendOtp = async () => {
+    setPasswordError("");
+    setPasswordSaved(false);
+    setOtpSent(false);
+
+    if (newPassword.length < 8) {
+      setPasswordError("New password must be at least 8 characters.");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError("New passwords do not match.");
+      return;
+    }
+
+    if (!currentPassword) {
+      setPasswordError("Enter your current password first.");
+      return;
+    }
+
+    setSendingOtp(true);
+    try {
+      await sendPasswordChangeOtp();
+      setOtpSent(true);
+    } catch (err) {
+      setPasswordError(
+        err instanceof Error ? err.message : "Couldn't send the code."
+      );
+    } finally {
+      setSendingOtp(false);
+    }
+  };
+
   const handlePasswordChange = async () => {
     setPasswordError("");
     setPasswordSaved(false);
@@ -86,13 +124,25 @@ export default function SettingsPage() {
       return;
     }
 
+    if (!otpSent) {
+      setPasswordError("Send a verification code first.");
+      return;
+    }
+
+    if (!/^\d{6}$/.test(otp)) {
+      setPasswordError("Enter the 6-digit code from your email.");
+      return;
+    }
+
     setChangingPassword(true);
     try {
-      await changePasswordApi(currentPassword, newPassword);
+      await changePasswordApi(currentPassword, newPassword, otp);
       setPasswordSaved(true);
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
+      setOtp("");
+      setOtpSent(false);
     } catch (err) {
       setPasswordSaved(false);
       setPasswordError(
@@ -244,6 +294,42 @@ export default function SettingsPage() {
                   <p className="text-sm text-destructive" role="alert">
                     {passwordError}
                   </p>
+                )}
+
+                <Button
+                  aria-disabled={sendingOtp}
+                  className="h-10 px-6 text-xs"
+                  disabled={sendingOtp}
+                  onClick={() => void handleSendOtp()}
+                  type="button"
+                  variant="outline"
+                >
+                  {sendingOtp ? (
+                    <>
+                      <Loader2 aria-hidden className="size-3.5 animate-spin" />
+                      Sending…
+                    </>
+                  ) : otpSent ? (
+                    "Resend code"
+                  ) : (
+                    "Send verification code"
+                  )}
+                </Button>
+
+                {otpSent && (
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      Verification code
+                    </span>
+                    <AnimatedOTPInput
+                      aria-label="Verification code"
+                      onChange={setOtp}
+                      value={otp}
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      Check your email — the code expires in 5 minutes.
+                    </span>
+                  </label>
                 )}
 
                 <Button

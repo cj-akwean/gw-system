@@ -107,7 +107,9 @@ return [
         'users' => [
             'provider' => 'users',
             'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
-            'expire' => 60,
+            // OTPs: 15 minutes is long enough to type a 6-digit code, short
+            // enough to stay useful if one leaks.
+            'expire' => 15,
             'throttle' => 60,
         ],
     ],

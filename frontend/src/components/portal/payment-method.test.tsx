@@ -24,6 +24,8 @@ const mockRouter = { replace: mockReplace, push: vi.fn() };
 const mockGetSavedPaymentMethods = vi.fn().mockResolvedValue([]);
 const mockPayWithSaved = vi.fn();
 const mockDeleteSavedPaymentMethod = vi.fn();
+const mockCheckPaymentHealth = vi.fn().mockResolvedValue({ healthy: true });
+const mockReconcileInvoice = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   getInvoices: (...args: unknown[]) => mockGetInvoices(...args),
@@ -35,6 +37,8 @@ vi.mock("@/lib/api", () => ({
   getSavedPaymentMethods: (...args: unknown[]) => mockGetSavedPaymentMethods(...args),
   payWithSaved: (...args: unknown[]) => mockPayWithSaved(...args),
   deleteSavedPaymentMethod: (...args: unknown[]) => mockDeleteSavedPaymentMethod(...args),
+  checkPaymentHealth: (...args: unknown[]) => mockCheckPaymentHealth(...args),
+  reconcileInvoice: (...args: unknown[]) => mockReconcileInvoice(...args),
   formatPeso: (n: number) => `₱${Number(n).toFixed(2)}`,
   buildReturnUrl: (id: number | string) =>
     `http://localhost/dashboard/pay?id=${id}&from=redirect`,

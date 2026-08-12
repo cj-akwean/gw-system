@@ -9,7 +9,10 @@ import {
   getLinks,
   readPendingInvoice,
   registerApi,
+  resetPasswordApi,
   resolveIntentStatus,
+  sendPasswordChangeOtp,
+  sendPasswordResetOtp,
   startPayment,
   unlinkApi,
   updateProfileApi,
@@ -349,13 +352,13 @@ describe("changePasswordApi", () => {
     vi.unstubAllGlobals();
   });
 
-  it("posts current and new password to the password endpoint", async () => {
+  it("posts current, new password and otp to the password endpoint", async () => {
     const fetchSpy = vi
       .fn()
       .mockResolvedValue(jsonResponse({ message: "Password updated." }));
     vi.stubGlobal("fetch", fetchSpy);
 
-    await changePasswordApi("old-password-1", "new-password-1");
+    await changePasswordApi("old-password-1", "new-password-1", "123456");
 
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("http://127.0.0.1:8000/api/password");
@@ -364,6 +367,7 @@ describe("changePasswordApi", () => {
       current_password: "old-password-1",
       password: "new-password-1",
       password_confirmation: "new-password-1",
+      otp: "123456",
     });
     expect((init.headers as Record<string, string>).Authorization).toBe(
       "Bearer token-1"
@@ -383,10 +387,102 @@ describe("changePasswordApi", () => {
     );
 
     await expect(
-      changePasswordApi("wrong", "new-password-1")
+      changePasswordApi("wrong", "new-password-1", "123456")
     ).rejects.toMatchObject({
       name: "ApiError",
       message: "The current password is incorrect.",
+      status: 422,
+    });
+  });
+
+  it("posts to the send-code endpoint", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ message: "Verification code sent to your email." }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await sendPasswordChangeOtp();
+
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:8000/api/password/send-code");
+    expect(init.method).toBe("POST");
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      "Bearer token-1"
+    );
+  });
+});
+
+describe("forgot / reset password api", () => {
+  beforeEach(() => {
+    seedAuthToken();
+  });
+
+  afterEach(() => {
+    localStorage.removeItem("auth");
+    vi.unstubAllGlobals();
+  });
+
+  it("posts the email to the forgot-password endpoint", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse({ message: "If an account exists for that email, a verification code is on its way." })
+      );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await sendPasswordResetOtp("lost@example.com");
+
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:8000/api/forgot-password");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({ email: "lost@example.com" });
+  });
+
+  it("throws ApiError with the server message when forgot-password fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse({ message: "Couldn't send the code." }, false, 422))
+    );
+
+    await expect(sendPasswordResetOtp("lost@example.com")).rejects.toMatchObject({
+      name: "ApiError",
+      message: "Couldn't send the code.",
+      status: 422,
+    });
+  });
+
+  it("posts email, otp and password to the reset endpoint", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ message: "Password reset. You can now sign in." }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await resetPasswordApi("lost@example.com", "123456", "new-password-1");
+
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:8000/api/reset-password");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({
+      email: "lost@example.com",
+      otp: "123456",
+      password: "new-password-1",
+      password_confirmation: "new-password-1",
+    });
+  });
+
+  it("throws ApiError with the server message when reset fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({ message: "That code is invalid or has expired." }, false, 422)
+      )
+    );
+
+    await expect(
+      resetPasswordApi("lost@example.com", "000000", "new-password-1")
+    ).rejects.toMatchObject({
+      name: "ApiError",
+      message: "That code is invalid or has expired.",
       status: 422,
     });
   });

@@ -32,6 +32,23 @@ class AdminPanelProvider extends PanelProvider
             ->login(Login::class)
             ->authGuard('admin')
             ->profile(\App\Filament\Pages\EditProfile::class)
+            ->passwordReset(
+                \App\Filament\Auth\RequestPasswordReset::class,
+                \App\Filament\Auth\ResetPassword::class,
+            )
+            // The vendor registers the reset route with the `signed` middleware
+            // (for the emailed reset-link flow). The OTP flow navigates to the
+            // page directly, so register an unsigned route first — it wins over
+            // the signed one (same URI, earlier registration order).
+            // The vendor registers the reset route with the `signed` middleware
+            // (for the emailed reset-link flow) and same-URI registration
+            // overwrites ours. The OTP flow navigates directly, so it gets its
+            // own unsigned slug; the signed vendor route stays dead (nothing
+            // generates reset-link URLs anymore).
+            ->routes(fn (Panel $panel): \Illuminate\Routing\Route => \Illuminate\Support\Facades\Route::get(
+                'password-reset/reset-code',
+                \App\Filament\Auth\ResetPassword::class,
+            )->name('auth.password-reset.reset-code'))
             ->spa()
             // FileUpload pages race Alpine's entangle under SPA swaps (Livewire
             // Entangle Error on data.csvFile) — keep them as plain reloads.

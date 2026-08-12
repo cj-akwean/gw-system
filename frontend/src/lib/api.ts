@@ -100,7 +100,8 @@ export async function updateProfileApi(
 
 export async function changePasswordApi(
   currentPassword: string,
-  newPassword: string
+  newPassword: string,
+  otp: string
 ): Promise<void> {
   await authFetch("/api/password", {
     method: "POST",
@@ -108,8 +109,52 @@ export async function changePasswordApi(
       current_password: currentPassword,
       password: newPassword,
       password_confirmation: newPassword,
+      otp,
     }),
   });
+}
+
+export async function sendPasswordChangeOtp(): Promise<void> {
+  await authFetch("/api/password/send-code", { method: "POST" });
+}
+
+export async function sendPasswordResetOtp(email: string): Promise<void> {
+  const res = await fetch(`${API_URL}/api/forgot-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(
+      (body as { message?: string }).message ?? "Couldn't send the code.",
+      res.status
+    );
+  }
+}
+
+export async function resetPasswordApi(
+  email: string,
+  otp: string,
+  newPassword: string
+): Promise<void> {
+  const res = await fetch(`${API_URL}/api/reset-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      email,
+      otp,
+      password: newPassword,
+      password_confirmation: newPassword,
+    }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(
+      (body as { message?: string }).message ?? "Couldn't reset your password.",
+      res.status
+    );
+  }
 }
 
 export interface PortalLink {

@@ -93,6 +93,30 @@ class AdminEditProfileTest extends TestCase
         Mail::fake();
 
         $admin = $this->admin();
+        $code = $this->requestChangeCode($admin);
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(EditProfile::class)
+            ->fillForm([
+                'name' => 'Office Admin',
+                'email' => 'admin@example.com',
+                'currentPassword' => 'old-password-1',
+                'password' => 'new-password-1',
+                'passwordConfirmation' => 'new-password-1',
+                'otp' => $code,
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertTrue(Hash::check('new-password-1', $admin->fresh()->password));
+        Mail::assertQueued(\App\Mail\PasswordChanged::class);
+    }
+
+    public function test_password_change_without_otp_is_halted(): void
+    {
+        Mail::fake();
+
+        $admin = $this->admin();
 
         Livewire::actingAs($admin, 'admin')
             ->test(EditProfile::class)
@@ -104,15 +128,73 @@ class AdminEditProfileTest extends TestCase
                 'passwordConfirmation' => 'new-password-1',
             ])
             ->call('save')
-            ->assertHasNoFormErrors();
+            ->assertNotified();
 
-        $this->assertTrue(Hash::check('new-password-1', $admin->fresh()->password));
-        Mail::assertQueued(\App\Mail\PasswordChanged::class);
+        $this->assertTrue(Hash::check('old-password-1', $admin->fresh()->password));
+        Mail::assertNothingQueued();
+    }
+
+    public function test_password_change_with_a_wrong_otp_is_halted(): void
+    {
+        Mail::fake();
+
+        $admin = $this->admin();
+        $this->requestChangeCode($admin);
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(EditProfile::class)
+            ->fillForm([
+                'name' => 'Office Admin',
+                'email' => 'admin@example.com',
+                'currentPassword' => 'old-password-1',
+                'password' => 'new-password-1',
+                'passwordConfirmation' => 'new-password-1',
+                'otp' => '000000',
+            ])
+            ->call('save')
+            ->assertNotified();
+
+        $this->assertTrue(Hash::check('old-password-1', $admin->fresh()->password));
+        // The OTP mailable from requestChangeCode is expected; the change
+        // itself must never fire.
+        Mail::assertNotQueued(\App\Mail\PasswordChanged::class);
+    }
+
+    public function test_send_code_action_emails_the_otp(): void
+    {
+        Mail::fake();
+
+        $admin = $this->admin();
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(EditProfile::class)
+            ->fillForm([
+                'password' => 'new-password-1',
+            ])
+            ->call('sendPasswordChangeCode')
+            ->assertNotified();
+
+        Mail::assertQueued(\App\Mail\PasswordChangeOtp::class);
+    }
+
+    private function requestChangeCode(User $admin): string
+    {
+        Mail::fake();
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(EditProfile::class)
+            ->fillForm(['password' => 'new-password-1'])
+            ->call('sendPasswordChangeCode');
+
+        return Mail::queued(\App\Mail\PasswordChangeOtp::class)->first()->code;
     }
 
     public function test_wrong_current_password_is_rejected(): void
     {
+        Mail::fake();
+
         $admin = $this->admin();
+        $code = $this->requestChangeCode($admin);
 
         Livewire::actingAs($admin, 'admin')
             ->test(EditProfile::class)
@@ -122,6 +204,7 @@ class AdminEditProfileTest extends TestCase
                 'currentPassword' => 'wrong-password',
                 'password' => 'new-password-1',
                 'passwordConfirmation' => 'new-password-1',
+                'otp' => $code,
             ])
             ->call('save')
             ->assertHasFormErrors(['currentPassword']);

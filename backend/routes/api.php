@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\ConnectionLinkController;
 use App\Http\Controllers\Api\ChangePasswordController;
+use App\Http\Controllers\Api\ForgotPasswordController;
 use App\Http\Controllers\Api\HealthController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\InvoicePaymentController;
@@ -10,6 +11,7 @@ use App\Http\Controllers\Api\PayMongoWebhookController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\RateController;
+use App\Http\Controllers\Api\ResetPasswordController;
 use App\Http\Controllers\Api\SavedPaymentMethodController;
 use App\Http\Controllers\AuthController;
 use Illuminate\Http\Request;
@@ -32,6 +34,11 @@ Route::post('/register', [AuthController::class, 'register'])
 Route::post('/logout', [AuthController::class, 'logout'])
     ->middleware(['auth:sanctum', 'throttle:30,1,auth-logout']);
 
+Route::post('/forgot-password', [ForgotPasswordController::class, 'store'])
+    ->middleware(['guest', 'throttle:5,1,forgot-password']);
+Route::post('/reset-password', [ResetPasswordController::class, 'store'])
+    ->middleware(['guest', 'throttle:5,1,reset-password']);
+
 Route::get('/health/payment', [HealthController::class, 'check'])
     ->middleware('throttle:10,1,health-payment');
 
@@ -48,6 +55,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/links/{link}', [ConnectionLinkController::class, 'destroy'])->middleware('throttle:30,1,links-destroy');
     Route::patch('/profile', [ProfileController::class, 'update'])
         ->middleware('throttle:30,1,profile-update');
+    Route::post('/password/send-code', [ChangePasswordController::class, 'sendCode'])
+        ->middleware('throttle:5,1,password-send-code');
     Route::post('/password', [ChangePasswordController::class, 'store'])
         ->middleware('throttle:10,1,password-change');
     Route::get('/invoices', [InvoiceController::class, 'index'])->middleware('throttle:30,1,invoices-index');
