@@ -1384,3 +1384,61 @@ white so contrast actually improves. CSS override injected at
 backend runs Filament's prebuilt assets and adding a Tailwind pipeline just to set
 two colors is the wrong tool. Dark mode survived by re-declaring its exact compiled
 values *after* the light overrides (same specificity, later wins).
+## 48. Inventory: price stays in the item name; stock is a ledger, alerts fire on the crossing (2026-08-12)
+
+**Question asked:** "We want an inventory tab for supplies like water pipe and PVC. Should items carry a
+price? Also we should be able to add and decrease item numbers, and pick from a category dropdown that
+we can also add to later."
+
+**Answer + reasoning:**
+
+**a) No structured price field — price is part of the free-text item name.** A water utility buys the
+"same" pipe from different brands at different prices across purchases; a single unit_cost would be
+wrong half the time and would drag in purchase-price reporting expectations nobody asked for. Making the
+name free text ("Lion PVC Pipe 40mm × 40mm — ₱3,240") lets the office record whatever they care about —
+brand, spec, price — and lets it be anything. When (if) real cost accounting is wanted, the movement
+ledger already captures what was received; a purchase-price column can be added then without a schema
+break.
+
+**b) Quantity is a ledger, not a field.** "Add and decrease number of item" is implemented as an
+append-only movement ledger (receipt/issue/adjustment with recorded-by, reference, date) with simple
+Add Stock / Remove Stock buttons on top. The visible column (`quantity_on_hand`) is a denormalized cache
+the service updates inside a `lockForUpdate` transaction; the ledger is the audit source of truth and
+`inventory:check-low-stock --fix` can rebuild the column from it. This mirrors why payments can't be
+edited: for a utility that hands stock to crews for repairs, "who took what, when, for which work order"
+is the operational record, not bookkeeping overhead.
+
+**c) Categories are lookup data like barangays — but admin-manageable.** Same pattern as the portal
+barangay dropdown (seed once, select from a list, no typos) with one difference: barangays are municipal
+fact, but the office knows its supplies. So categories live in a CRUD resource the admin can extend
+anytime, and the item form even offers inline category creation (`createOptionForm`) so the flow never
+dead-ends. Delete is guarded (blocked while items reference it) — rename instead.
+
+**d) Low-stock alerts fire on the boundary crossing, plus a daily digest.** Immediate alerts on every
+low issue would flood the bell the moment an item sits below threshold; alerting only on the not-low →
+low crossing (and again after restock + re-cross) keeps the bell meaningful, while the daily
+`inventory:check-low-stock` digest re-surfaces every currently-low item in one aggregate notification —
+the same "immediate + safety net" shape as the PayMongo webhook vs `paymongo:reconcile` pairing.
+
+## 49. Inventory alerts must ring NOW — synchronous notifications, not queued (2026-08-12)
+
+**Question asked:** "The seeded low-stock water meter is not in the notification hub or bell."
+
+**Answer + reasoning:** Filament's database notifications implement `ShouldQueue` — `AdminNotifier`
+(`sendToDatabase`) puts the row in `jobs` and a queue worker must run before it lands in `notifications`.
+On dev (no cron, no worker) that never happens, so the bell stays silent for everything queued. The
+project deliberately queues bulk notifications (billing runs, receipt emails) where "eventually" is fine
+and the worker exists in prod. Inventory alerts are different: the office watches the bell for "we're
+about to run out of pipe" — a dropped or delayed alert defeats the feature, the volume is trivial, and
+the Notification Hub remains the audit trail regardless. So inventory alerts call
+`Notification::sendNow` — same Filament payload, same bell/hub rendering, zero worker dependency.
+Deviation is scoped to `InventoryService::notifyAdminsSync()`; `AdminNotifier` stays queued for everything
+else.
+
+**Also decided in the same pass:**
+- **Reorder level is required on the item form.** Defaulting to 0 silently meant "never alert" — the duct
+  tape test case. 0 is still allowed, but now as a deliberate choice with an explicit helper text.
+- **"No stock" is its own state** (qty 0), not a shade of "low": the office distinguishes "getting low"
+  from "already out" at a glance.
+- **Removing stock down to exactly 0 is always allowed**; only going negative is blocked — zero is a
+  legitimate state (the meter was removed / the roll finished), not an error.

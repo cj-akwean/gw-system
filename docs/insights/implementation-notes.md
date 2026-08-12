@@ -822,3 +822,120 @@ User reported: hamburger menu lags, theme toggle lags, CLS/LCP bad, scrolling pa
 5. Splash 450→350ms, hero LCP image delay 0.6→0.4s.
 
 Final A51 profile: **LCP 3369-3757ms (run variance), CLS 0.00**, smooth scrolling, instant hamburger + theme toggle. Remaining LCP floor = JS parse at 4× CPU + splash + entrance animation — cutting further means trimming initial-bundle JS (motion/Next runtime) or the splash itself. Frontend 172/172, tsc clean, lint 1 pre-existing warning (hero `backgroundImage`).
+
+## Inventory
+
+### 1. Inventory tab: categories, items, ledger, low-stock alerts (2026-08-12)
+
+Admin-only feature; no frontend/API changes. New sidebar group **Inventory** with two resources:
+`InventoryItemResource` (sort 1, heroicon-shopping-cart) and `InventoryCategoryResource` (sort 2,
+heroicon-tag).
+
+**Schema (3 migrations):**
+- `inventory_categories` — `name` with a case-insensitive unique index (`LOWER(name)`).
+- `inventory_items` — `name` (free text; brands/sizes/prices live in the name string — the office
+  records "Lion PVC Pipe 40mm × 40mm — ₱3,240" as one item, so price can be anything), required
+  `inventory_category_id` (FK, RESTRICT), `unit` (pc/m/roll/bag/set/box/kg/L select), `quantity_on_hand`
+  (decimal 12,3 — denormalized cache), `reorder_level` (decimal 12,3), `low_stock_alerted_at`; CHECK
+  constraints keep both quantities non-negative; case-insensitive unique name.
+- `inventory_transactions` — the append-only audit ledger: `inventory_item_id` (FK RESTRICT), `type`
+  (receipt/issue/adjustment), `quantity` (decimal 12,3; receipt/issue positive, adjustment signed),
+  `reference` (PO / work order, optional), `reason` (required for adjustments), `recorded_by`
+  (nullable FK, `nullOnDelete`), `moved_at` (date). CHECK `quantity <> 0`; index
+  `(inventory_item_id, moved_at)`.
+
+**`App\Services\InventoryService`** — the only path that mutates stock:
+- `recordTransaction()` runs inside a DB transaction with `lockForUpdate` on the item row and re-checks
+  stock after the lock, so two concurrent issues cannot both pass an overdraw check. Issues and negative
+  adjustments can never drive stock below zero (error message states the available qty). Validates:
+  type whitelist, qty > 0 (receipt/issue) / ≠ 0 (adjustment), ≤ 3 decimals, adjustment requires reason,
+  no future `moved_at`. Writes the ledger row + keeps `quantity_on_hand` in sync.
+- **Low-stock alerting fires only on the boundary crossing** (not-low → low): the crossing issue/receipt
+  sends one `AdminNotifier` warning with a view-item action path. An item that stays low does NOT re-alert
+  on every further issue (no bell spam); restocking above the threshold resets `low_stock_alerted_at`
+  (null) and re-crossing alerts again. Exact equality (`qty == reorder_level`) is NOT low.
+- `lowStockItems()` — `quantity_on_hand < reorder_level` via `whereColumn`.
+- `reconcileQuantities($fix)` — recomputes the column from the ledger (drift repair); the daily command
+  accepts `--fix`.
+
+**Filament UI:**
+- Item list: category/name/unit/on-hand/reorder columns + **status badge** (Low stock danger / OK
+  success, sortable via `orderByRaw('quantity_on_hand < reorder_level DESC')`), category SelectFilter +
+  "Low stock only" toggle filter.
+- Item create: category Select is searchable + has `createOptionForm` (create a category inline, no
+  round-trip to the category page), free-text name with case-insensitive duplicate rule, unit select,
+  reorder level, **Initial Quantity** (`dehydrated(false)`, create-only) — a nonzero value is recorded
+  as an "Opening stock" receipt with `recorded_by` = the admin, so the ledger never silently diverges
+  from the create form.
+- Item view: read-only quantity display + **Add Stock / Remove Stock** header actions (modal: qty +
+  optional reference + date; remove cannot go below zero; overdraw → danger toast) + the **Transactions
+  relation manager tab** (the ledger): date/type badge/±quantity/reference/reason/recorded-by, append-only
+  (no edit/delete, same rule as payments), header "Record Movement" action (receipt/issue/adjustment with
+  an inline overdraw rule on the quantity field). The RM overrides `isReadOnly()` → false because
+  **Filament 5 defaults relation managers on view pages to read-only** (panel-wide
+  `readOnlyRelationManagersOnResourceViewPagesByDefault`); after a RM create it dispatches
+  `inventoryItemRefreshed`, which the view page listens for to refresh the quantity display.
+- Item delete blocked once any transaction exists (`canDelete`); category delete blocked while items
+  reference it (RESTRICT at DB level too).
+
+**Notifications:**
+- Immediate: `InventoryService` boundary-crossing alert (above).
+- Daily safety net: `inventory:check-low-stock` command (routes/console.php, 07:00 Asia/Manila,
+  `withoutOverlapping` — pinned by `ScheduleTest`) sends ONE aggregate admin notification ("N items
+  below reorder level", body lists them, action → inventory list). `--dry-run` reports without notifying;
+  `--fix` reconciles from the ledger first.
+
+**Seeder:** `InventoryItemSeeder` (wired into `DatabaseSeeder`) — 9 categories (Pipes, Fittings, Valves,
+Meters, Sealants & Tapes, Chemicals, Tools & Equipment, Hardware & Fasteners, Misc) + 19 realistic items
+each with an opening receipt (reference "Opening stock", `recorded_by` null); Water Meter ½″ is seeded
+below its reorder level (4 of 5) so the daily digest demo has something to show.
+
+**Tests:** `InventoryServiceTest` (17 — math, overdraw, zero/negative/3-decimal, future date, bad type,
+boundary-crossing alert + no-repeat + re-cross + exact-equality + restock-reset + no-admin noop +
+`alert:false` + reconcile + lowStockItems), `InventoryItemResourceTest` (16 — list/badge, validation,
+opening-receipt on create, case-insensitive duplicate, delete guards, add/remove actions incl. overdraw
+toast + ledger rows + recorded_by, RM create stamps recorded_by, adjustment reason rule, overdraw field
+error), `InventoryCategoryResourceTest` (6), `InventoryCheckLowStockCommandTest` (5), `ScheduleTest`
+(+1). Full suite 655/655 green; `php artisan migrate` applied on dev.
+
+### 2. Fix batch after first user pass (2026-08-12)
+
+User findings: seeded low item (Water Meter 4/5) never appeared in the bell/hub; a new item's status stayed
+"OK" after stock drops (they had left reorder level at the silent default 0); removing the last unit felt
+blocked with no "No stock" state; the ledger showed a Reason column but Add/Remove modals had no Reason
+input. Root causes + fixes:
+
+1. **Notifications were queued, so nothing landed without a worker.** Filament's `DatabaseNotification`
+   implements `ShouldQueue` — `AdminNotifier` rows sit in `jobs` until a worker runs (dev has none).
+   Inventory alerts are now delivered **synchronously** via `Notification::sendNow` on the same payload
+   (`InventoryService::notifyAdminsSync()`), so the bell/hub updates immediately — no worker needed. The
+   daily command, the seeder, and every crossing alert share this path. Rationale: docs/insights/
+   product-decisions.md → §49.
+2. **Seeder never fired an alert for seeded-low items.** `InventoryItemSeeder` now ends with
+   `notifyLowStockSummary()` — seeded Water Meter lands in the bell right after `db:seed`.
+3. **Silent reorder_level default 0 = "never low" footgun.** The item form now REQUIRES reorder level
+   (helper text explains; 0 still allowed deliberately = never alert).
+4. **No "No stock" state.** `InventoryItem::status()` is now three-state: `no_stock` (qty 0) /
+   `low_stock` / `ok`; list badge shows "No stock" (danger) / "Low stock" (warning) / "OK" (success);
+   added a "No stock only" filter; status sorting uses a CASE expression.
+5. **Ledger quantity column hid the minus sign on issues.** Now renders `-5.000` for issues, `+5.000`
+   for receipts, signed for adjustments.
+6. **Add/Remove Stock modals lacked a Reason input** (the ledger showed the column). Both modals now have
+   an optional Reason field (mirrored on the ledger tab's Record Movement for receipt/issue too; still
+   required for adjustments).
+7. **View-page modal had `minValue(0.001)` while the ledger tab had none** — inconsistent removal rules.
+   Dropped the min (3-decimal rule + service guard govern both); removing exactly the available quantity
+   down to 0 is allowed on both paths, below 0 is blocked on both.
+8. **Inline category creation could 500 on a duplicate** (createOptionForm only had `required`). The name
+   field now carries the same case-insensitive duplicate rule via the shared
+   `InventoryCategory::isNameTaken()` helper (also reused by the category resource form).
+9. **`initial_quantity` with >3 decimals 500'd and left an orphan item.** Field now validates precision;
+   `CreateInventoryItem::afterCreate` rolls the item back and surfaces a `ValidationException` if the
+   opening receipt still fails.
+10. **Relation manager cached a stale parent quantity** for its overdraw rule — the RM now refreshes
+    `getOwnerRecord()` after every create (and still dispatches the view-page refresh event).
+
+Tests: +10 (remove-to-zero on both UI paths, overdraw via view action, reason recorded, initial_quantity
+precision + no orphan, reorder required, 3-state badge + model status, seeder notification, RM owner
+refresh, shared name-taken helper). Full suite 665/665 green. Dev DB re-seeded; queued-stale
+DatabaseNotification jobs purged from dev `jobs` table.

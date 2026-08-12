@@ -17,6 +17,7 @@ class DatabaseSeeder extends Seeder
         $this->call(RateScheduleSeeder::class);
         $this->call(ServiceConnectionSeeder::class);
         $this->call(DemoPortalDataSeeder::class);
+        $this->call(InventoryItemSeeder::class);
 
         User::updateOrCreate([
             'email' => 'admin@gwsystem.com',

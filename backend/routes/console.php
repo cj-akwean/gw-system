@@ -44,3 +44,14 @@ Schedule::command('paymongo:reconcile')
 Schedule::command('paymongo:auto-credit')
     ->everyFiveMinutes()
     ->withoutOverlapping();
+
+/**
+ * Daily low-stock inventory digest — one aggregate admin notification for
+ * every item below its reorder level (safety net behind the immediate
+ * boundary-crossing alerts in InventoryService). Runs at 07:00 PH before
+ * the office opens. --fix recomputes quantities from the ledger.
+ */
+Schedule::command('inventory:check-low-stock')
+    ->dailyAt('07:00')
+    ->timezone('Asia/Manila')
+    ->withoutOverlapping();

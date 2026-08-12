@@ -50,11 +50,26 @@ class ScheduleTest extends TestCase
         $this->assertTrue($reconcile->withoutOverlapping);
     }
 
-    public function test_schedule_list_shows_both_entries(): void
+    public function test_scheduler_registers_daily_inventory_low_stock_check(): void
+    {
+        $events = collect($this->scheduledEvents());
+
+        $check = $events->first(
+            fn (object $event): bool => str_contains((string) $event->command, 'inventory:check-low-stock')
+        );
+
+        $this->assertNotNull($check, 'inventory:check-low-stock must be registered on the scheduler.');
+        $this->assertSame('0 7 * * *', $check->expression, 'Low-stock check runs daily at 07:00.');
+        $this->assertSame('Asia/Manila', $check->timezone);
+        $this->assertTrue($check->withoutOverlapping);
+    }
+
+    public function test_schedule_list_shows_all_entries(): void
     {
         $this->artisan('schedule:list')
             ->expectsOutputToContain('billing:run')
             ->expectsOutputToContain('paymongo:reconcile')
+            ->expectsOutputToContain('inventory:check-low-stock')
             ->assertSuccessful();
     }
 }
