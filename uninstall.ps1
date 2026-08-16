@@ -186,7 +186,12 @@ if (Confirm-Stage "installed tools (C:\composer, PATH entries, winget packages P
     } else {
         foreach ($id in "PHP.PHP.8.5", "OpenJS.NodeJS.LTS", "PostgreSQL.PostgreSQL.18") {
             Write-Host "    winget uninstall $id ..."
-            winget uninstall --id $id --source winget --accept-source-agreements --accept-package-agreements --silent
+            # PHP is a portable package: --purge also deletes its dir (php.ini + cacert.pem).
+            if ($id -eq "PHP.PHP.8.5") {
+                winget uninstall --id $id --source winget --silent --accept-source-agreements --disable-interactivity --purge
+            } else {
+                winget uninstall --id $id --source winget --silent --accept-source-agreements --disable-interactivity
+            }
             if ($LASTEXITCODE -eq 0) { Write-OK "uninstalled $id" }
             else { Write-Info "$id not uninstalled (not installed, or requires another run)" }
         }
