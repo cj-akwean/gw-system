@@ -24,6 +24,15 @@ function Refresh-Path {
     $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
                 [Environment]::GetEnvironmentVariable("Path", "User")
 }
+function Add-UserPath {
+    param([string]$dir)
+    if (-not $dir -or -not (Test-Path $dir)) { return }
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if ($userPath -notlike "*$dir*") {
+        [Environment]::SetEnvironmentVariable("Path", "$userPath;$dir", "User")
+    }
+    if ($env:Path -notlike "*$dir*") { $env:Path = "$env:Path;$dir" }
+}
 
 Write-Host ""
 Write-Host "========================================================" -ForegroundColor Cyan
@@ -44,13 +53,24 @@ Write-Step "PHP 8.5"
 $php = Get-Command php -ErrorAction SilentlyContinue
 if (-not $php) {
     Write-Host "    Installing PHP 8.5 via winget (this can take a minute)..."
-    winget install --id PHP.PHP.8.5 --accept-source-agreements --accept-package-agreements --silent
+    winget install --id PHP.PHP.8.5 --source winget --accept-source-agreements --accept-package-agreements --silent
     Refresh-Path
     $php = Get-Command php -ErrorAction SilentlyContinue
     if (-not $php) { Write-Fail "PHP install finished but php is not on PATH. Open a new terminal and re-run."; exit 1 }
     Write-OK "PHP installed: $($php.Source)"
 } else {
-    Write-Skip "PHP ($(& php -v | Select-Object -First 1))"
+    $phpVer = (& php -v | Select-Object -First 1)
+    $verMatch = [regex]::Match($phpVer, 'PHP (\d+)\.(\d+)')
+    if ($verMatch.Success) {
+        $major = [int]$verMatch.Groups[1].Value
+        $minor = [int]$verMatch.Groups[2].Value
+        if ($major -lt 8 -or ($major -eq 8 -and $minor -lt 3)) {
+            Write-Fail "Found PHP $major.$minor on PATH, but GW-System needs PHP >= 8.3 (8.5 recommended)."
+            Write-Fail "  Remove the old PHP from your PATH (or reorder it), then re-run this script."
+            exit 1
+        }
+    }
+    Write-Skip "PHP ($phpVer)"
 }
 
 # --- 3. php.ini + extensions ---------------------------------------------------
@@ -97,7 +117,13 @@ else { Write-OK "All required PHP extensions load" }
 
 # --- 4. SSL CA bundle (cURL error 60 fix) ---------------------------------------
 Write-Step "SSL CA bundle"
-$ca = ((& php -r "echo ini_get('curl.cainfo');" 2>$null) | Select-Object -Last 1).Trim()
+function Get-PhpIniValue {
+    param([string]$name)
+    $v = (& php -r "echo ini_get('$name');" 2>$null) | Select-Object -Last 1
+    if ($null -eq $v) { return "" }
+    return "$v".Trim()
+}
+$ca = Get-PhpIniValue "curl.cainfo"
 if (-not $ca) { $ca = Join-Path $phpDir "cacert.pem" }
 if (-not (Test-Path $ca)) {
     Write-Host "    Downloading Mozilla/curl CA bundle (curl.se)..."
@@ -110,33 +136,48 @@ if (-not (Test-Path $ca)) {
 } else {
     Write-Skip "CA bundle ($ca)"
 }
-$verified = ((& php -r "echo ini_get('curl.cainfo');" 2>$null) | Select-Object -Last 1).Trim()
+$verified = Get-PhpIniValue "curl.cainfo"
 Write-OK "curl.cainfo = $verified"
 
 # --- 5. Composer ----------------------------------------------------------------
 Write-Step "Composer"
-if (-not (Get-Command composer -ErrorAction SilentlyContinue)) {
+function Get-ComposerVersion {
+    $old = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $out = & cmd /c "composer --version" 2>$null
+        if ($LASTEXITCODE -eq 0) { return ($out | Select-Object -First 1) }
+        return ""
+    } catch {
+        return ""
+    } finally {
+        $ErrorActionPreference = $old
+    }
+}
+function Test-Composer {
+    return -not [string]::IsNullOrWhiteSpace((Get-ComposerVersion))
+}
+if (-not (Test-Composer)) {
+    Write-Host "    Installing Composer..."
     $composerDir = "C:\composer"
     New-Item -ItemType Directory -Path $composerDir -Force | Out-Null
     Invoke-WebRequest -Uri "https://getcomposer.org/installer" -OutFile "$env:TEMP\composer-setup.php" -UseBasicParsing
-    & php "$env:TEMP\composer-setup.php" --install-dir=$composerDir --filename=composer
+    & php "$env:TEMP\composer-setup.php" --install-dir=$composerDir --filename=composer.phar
     Remove-Item "$env:TEMP\composer-setup.php" -ErrorAction SilentlyContinue
-    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    if ($userPath -notlike "*$composerDir*") {
-        [Environment]::SetEnvironmentVariable("Path", "$userPath;$composerDir", "User")
-    }
+    @("@echo off", "@php `"%~dp0composer.phar`" %*") | Set-Content -Path (Join-Path $composerDir "composer.bat") -Encoding ASCII
+    Add-UserPath $composerDir
     Refresh-Path
-    if (-not (Get-Command composer -ErrorAction SilentlyContinue)) { Write-Fail "Composer installed but not on PATH - open a new terminal and re-run."; exit 1 }
+    if (-not (Test-Composer)) { Write-Fail "Composer not working - open a new terminal and re-run."; exit 1 }
     Write-OK "Composer installed to C:\composer and added to PATH"
 } else {
-    Write-Skip "Composer ($(& composer --version 2>$null | Select-Object -First 1))"
+    Write-Skip "Composer ($(Get-ComposerVersion))"
 }
 
 # --- 6. Node.js -------------------------------------------------------------------
 Write-Step "Node.js"
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     Write-Host "    Installing Node.js LTS via winget (this can take a minute)..."
-    winget install --id OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements --silent
+    winget install --id OpenJS.NodeJS.LTS --source winget --accept-source-agreements --accept-package-agreements --silent
     Refresh-Path
     if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Write-Fail "Node install finished but node is not on PATH - open a new terminal and re-run."; exit 1 }
     Write-OK "Node installed: $(& node -v)"
@@ -146,23 +187,74 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
 
 # --- 7. PostgreSQL ------------------------------------------------------------------
 Write-Step "PostgreSQL 18"
+function Find-PostgresBin {
+    # 1) A running PostgreSQL service tells us exactly where the binaries live.
+    $svc = Get-CimInstance Win32_Service -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -like "postgresql*" -and $_.PathName } | Select-Object -First 1
+    if ($svc) {
+        $m = [regex]::Match($svc.PathName, '"([^"]*pg_ctl\.exe)"')
+        if (-not $m.Success) { $m = [regex]::Match($svc.PathName, '([A-Za-z]:\\[^" ]*pg_ctl\.exe)') }
+        if ($m.Success) {
+            $exe = $m.Groups[1].Value
+            if (Test-Path $exe) { return (Split-Path $exe) }
+        }
+    }
+    # 2) EDB installer writes its install dir to the registry.
+    foreach ($key in "HKLM:\SOFTWARE\PostgreSQL\Installations", "HKLM:\SOFTWARE\PostgreSQL\Services") {
+        if (Test-Path $key) {
+            foreach ($sub in Get-ChildItem $key -ErrorAction SilentlyContinue) {
+                $base = (Get-ItemProperty $sub.PSPath -ErrorAction SilentlyContinue).'Base Directory'
+                if ($base) {
+                    $exe = Join-Path $base "bin\psql.exe"
+                    if (Test-Path $exe) { return (Join-Path $base "bin") }
+                }
+            }
+        }
+    }
+    # 3) Last resort: scan Program Files\PostgreSQL on every local drive.
+    foreach ($drive in (Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue)) {
+        foreach ($pf in "Program Files", "Program Files (x86)") {
+            $pgRoot = Join-Path $drive.Root $pf
+            $pgRoot = Join-Path $pgRoot "PostgreSQL"
+            if (Test-Path $pgRoot) {
+                $match = Get-ChildItem $pgRoot -Directory -ErrorAction SilentlyContinue |
+                    Sort-Object Name -Descending |
+                    ForEach-Object { Join-Path $_.FullName "bin\psql.exe" } |
+                    Where-Object { Test-Path $_ } | Select-Object -First 1
+                if ($match) { return (Split-Path $match) }
+            }
+        }
+    }
+    return ""
+}
 $psql = Get-Command psql -ErrorAction SilentlyContinue
 if (-not $psql) {
-    Write-Host "    Installing PostgreSQL 18 via winget (the installer may open a GUI)..."
-    winget install --id PostgreSQL.PostgreSQL.18 --accept-source-agreements --accept-package-agreements --silent
-    Refresh-Path
-    $psql = Get-Command psql -ErrorAction SilentlyContinue
+    $pgBin = Find-PostgresBin
+    if ($pgBin) {
+        Write-Host "    Found an existing PostgreSQL install at $pgBin (not on PATH)"
+        Add-UserPath $pgBin
+        $psql = Get-Command psql -ErrorAction SilentlyContinue
+    }
     if (-not $psql) {
-        Write-Fail "PostgreSQL not found after install. If a GUI installer opened, finish it"
-        Write-Fail "  (superuser password: $DbPassword), then open a new terminal and re-run this script."
-        exit 1
+        Write-Host "    Installing PostgreSQL 18 via winget (this can take a minute)..."
+        winget install --id PostgreSQL.PostgreSQL.18 --source winget --accept-source-agreements --accept-package-agreements --silent
+        Refresh-Path
+        $psql = Get-Command psql -ErrorAction SilentlyContinue
+        if (-not $psql) {
+            Write-Host "    psql not on PATH - looking for the install..."
+            $pgBin = Find-PostgresBin
+            if ($pgBin) {
+                Add-UserPath $pgBin
+                $psql = Get-Command psql -ErrorAction SilentlyContinue
+            }
+        }
+        if (-not $psql) {
+            Write-Fail "PostgreSQL not found after install. If a GUI installer opened, finish it"
+            Write-Fail "  (superuser password: $DbPassword), then open a new terminal and re-run this script."
+            exit 1
+        }
     }
-    $pgBin = Split-Path -Parent $psql.Source
-    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    if ($userPath -notlike "*$pgBin*") {
-        [Environment]::SetEnvironmentVariable("Path", "$userPath;$pgBin", "User")
-    }
-    Write-OK "PostgreSQL installed; bin added to PATH ($pgBin)"
+    Write-OK "PostgreSQL ready; bin added to PATH ($(Split-Path -Parent $psql.Source))"
 } else {
     Write-Skip "PostgreSQL (psql at $($psql.Source))"
 }
@@ -194,8 +286,12 @@ Set-Location $backend
 if (Test-Path "vendor") { Write-Skip "composer install" }
 else {
     Write-Host "    composer install (this can take a few minutes)..."
-    & composer install
-    if ($LASTEXITCODE -ne 0) { Write-Fail "composer install failed"; exit 1 }
+    $old = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & cmd /c "composer install"
+    $code = $LASTEXITCODE
+    $ErrorActionPreference = $old
+    if ($code -ne 0) { Write-Fail "composer install failed"; exit 1 }
     Write-OK "dependencies installed"
 }
 if (-not (Test-Path ".env")) { Copy-Item ".env.example" ".env"; Write-OK ".env created from .env.example" }
