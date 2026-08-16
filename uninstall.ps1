@@ -88,6 +88,22 @@ function Find-Psql {
     return ""
 }
 
+function Get-MsiProductCode {
+    param([string]$displayName)
+    $roots = @(
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+        "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+    )
+    foreach ($root in $roots) {
+        $hit = Get-ChildItem $root -ErrorAction SilentlyContinue |
+            ForEach-Object { Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue } |
+            Where-Object { $_.DisplayName -like "*$displayName*" } | Select-Object -First 1
+        if ($hit) { return $hit.PSChildName }
+    }
+    return ""
+}
+
 # --- 1. Project generated files ---------------------------------------------
 Write-Step "1/4 Project generated files"
 if (Confirm-Stage "generated files (vendor, .env, node_modules, .next, storage runtime)") {
@@ -193,7 +209,48 @@ if (Confirm-Stage "installed tools (C:\composer, PATH entries, winget packages P
                 winget uninstall --id $id --source winget --silent --accept-source-agreements --disable-interactivity
             }
             if ($LASTEXITCODE -eq 0) { Write-OK "uninstalled $id" }
+            elseif ($id -eq "OpenJS.NodeJS.LTS") {
+                # winget sometimes fails on the Node MSI (exit 1603) - fall back to Windows Installer.
+                Write-Host "    winget failed - trying msiexec /x..."
+                $code = Get-MsiProductCode "Node.js"
+                if ($code) {
+                    Start-Process msiexec.exe -ArgumentList "/x", $code, "/qn", "/norestart" -Wait -NoNewWindow -ErrorAction SilentlyContinue
+                    if (Test-Path "C:\Program Files\nodejs") { Write-Fail "Node MSI still failing - run this script as Administrator" }
+                    else { Write-OK "uninstalled OpenJS.NodeJS.LTS via msiexec" }
+                } else {
+                    Write-Info "Node.js product code not found (already uninstalled?)"
+                }
+            }
             else { Write-Info "$id not uninstalled (not installed, or requires another run)" }
+        }
+    }
+
+    # Leftover files/registry the installers leave behind even on success (or partial failure).
+    if ($DryRun) {
+        foreach ($p in "C:\Program Files\PostgreSQL", "C:\Program Files\nodejs") {
+            if (Test-Path $p) { Write-Info "would remove leftover: $p" }
+        }
+        $phpLeft = Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" -Directory -Filter "PHP.PHP.8.5*" -ErrorAction SilentlyContinue
+        foreach ($d in $phpLeft) { Write-Info "would remove leftover: $($d.FullName)" }
+        if (Test-Path "HKLM:\SOFTWARE\PostgreSQL") { Write-Info "would remove leftover registry key: HKLM:\SOFTWARE\PostgreSQL" }
+    } else {
+        foreach ($p in "C:\Program Files\PostgreSQL", "C:\Program Files\nodejs") {
+            if (Test-Path $p) {
+                Remove-Item -LiteralPath $p -Recurse -Force -ErrorAction SilentlyContinue
+                if (Test-Path $p) { Write-Fail "could not remove leftover $p - run this script as Administrator" }
+                else { Write-OK "removed leftover $p" }
+            }
+        }
+        $phpLeft = Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" -Directory -Filter "PHP.PHP.8.5*" -ErrorAction SilentlyContinue
+        foreach ($d in $phpLeft) {
+            Remove-Item -LiteralPath $d.FullName -Recurse -Force -ErrorAction SilentlyContinue
+            if (Test-Path $d.FullName) { Write-Fail "could not remove leftover $($d.FullName)" }
+            else { Write-OK "removed leftover $($d.Name)" }
+        }
+        if (Test-Path "HKLM:\SOFTWARE\PostgreSQL") {
+            Remove-Item "HKLM:\SOFTWARE\PostgreSQL" -Recurse -Force -ErrorAction SilentlyContinue
+            if (Test-Path "HKLM:\SOFTWARE\PostgreSQL") { Write-Fail "could not remove leftover registry key - run this script as Administrator" }
+            else { Write-OK "removed leftover registry key HKLM:\SOFTWARE\PostgreSQL" }
         }
     }
 } else {

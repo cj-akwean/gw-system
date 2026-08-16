@@ -1,5 +1,11 @@
 @echo off
 title GW-System Uninstall
+net session >nul 2>&1
+if %errorlevel% neq 0 (
+    echo Requesting administrator privileges to remove installed tools and leftovers...
+    powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs -ArgumentList '%*' -Wait"
+    exit /b
+)
 echo ============================================
 echo   GW-System - full uninstall
 echo ============================================
