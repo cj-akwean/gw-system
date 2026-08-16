@@ -95,11 +95,7 @@ if (Confirm-Stage "generated files (vendor, .env, node_modules, .next, storage r
     foreach ($p in (Join-Path $backend "vendor"),
                    (Join-Path $backend ".env"),
                    (Join-Path $frontend "node_modules"),
-                   (Join-Path $frontend ".next"),
-                   (Join-Path $backend "storage\logs"),
-                   (Join-Path $backend "storage\framework\cache"),
-                   (Join-Path $backend "storage\framework\sessions"),
-                   (Join-Path $backend "storage\framework\views")) {
+                   (Join-Path $frontend ".next")) {
         if (Test-Path $p) { $targets += $p }
     }
     if (-not $targets.Count) {
@@ -112,6 +108,22 @@ if (Confirm-Stage "generated files (vendor, .env, node_modules, .next, storage r
                 if (Test-Path $p) { Write-Fail "could not remove $p (file in use? close dev servers and re-run)" }
                 else { Write-OK "removed $p" }
             }
+        }
+    }
+    # Laravel runtime dirs: clear contents but KEEP the tracked .gitignore files.
+    $storageDirs = @()
+    foreach ($p in (Join-Path $backend "storage\logs"),
+                   (Join-Path $backend "storage\framework\cache"),
+                   (Join-Path $backend "storage\framework\sessions"),
+                   (Join-Path $backend "storage\framework\views")) {
+        if (Test-Path $p) { $storageDirs += $p }
+    }
+    foreach ($dir in $storageDirs) {
+        if ($DryRun) { Write-Info "would clear runtime contents of $dir (keep .gitignore)" }
+        else {
+            Get-ChildItem -LiteralPath $dir -Force | Where-Object { $_.Name -ne ".gitignore" } |
+                Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+            Write-OK "cleared $dir (kept .gitignore)"
         }
     }
 } else {
