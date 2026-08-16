@@ -182,14 +182,20 @@ if (Confirm-Stage "installed tools (C:\composer, PATH entries, winget packages P
         Write-Info "C:\composer not present"
     }
 
-    # PATH entries this setup added
+    # PATH entries setup (or the winget installers it invokes) added:
+    #   C:\composer                                -> Add-UserPath (setup.ps1)
+    #   C:\Program Files\PostgreSQL\<v>\bin        -> Add-UserPath (setup.ps1)
+    #   C:\Users\<u>\AppData\Local\...\WinGet\Packages\PHP.PHP.8.5_*  -> winget portable install
+    #   C:\Program Files\nodejs  +  C:\Users\<u>\AppData\Roaming\npm   -> Node.js MSI
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
     foreach ($entry in @($userPath -split ';')) {
         if (-not $entry) { continue }
         $trimmed = $entry.TrimEnd('\')
         $isOurs = ($trimmed -eq "C:\composer") -or
-                  ($trimmed -match '\\PostgreSQL\\\d+\bin$') -or
-                  ($trimmed -match 'WinGet\\Packages\\PHP\.PHP\.8\.5')
+                  ($trimmed -match '\\PostgreSQL\\\d+\\bin$') -or
+                  ($trimmed -match 'WinGet\\Packages\\PHP\.PHP\.8\.5') -or
+                  ($trimmed -ieq "C:\Program Files\nodejs") -or
+                  ($trimmed -match '\\AppData\\Roaming\\npm$')
         if ($isOurs) {
             if ($DryRun) { Write-Info "would remove PATH entry: $entry" }
             else { Remove-UserPathEntry $entry; Write-OK "removed PATH entry: $entry" }
