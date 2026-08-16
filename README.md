@@ -12,20 +12,21 @@ and manages connections from an admin panel.
 2. [How the pieces fit together](#how-the-pieces-fit-together)
 3. [Tech stack](#tech-stack)
 4. [Before you start](#before-you-start)
-5. [Option A: Automated setup (recommended)](#option-a-automated-setup-recommended)
-6. [Option B: Manual setup, step by step](#option-b-manual-setup-step-by-step)
-7. [Environment variables (`.env`)](#environment-variables-env)
-8. [External service dashboards (sites you need to sign up for)](#external-service-dashboards-sites-you-need-to-sign-up-for)
-9. [The database (PostgreSQL)](#the-database-postgresql)
-10. [Running the app every day](#running-the-app-every-day)
-11. [Payments & why ngrok is optional](#payments--why-ngrok-is-optional)
-12. [Email in development (Mailtrap)](#email-in-development-mailtrap)
-13. [Windows-specific notes](#windows-specific-notes)
-14. [Testing the customer API](#testing-the-customer-api)
-15. [Troubleshooting](#troubleshooting)
-16. [Useful commands (cheat sheet)](#useful-commands-cheat-sheet)
-17. [Project structure](#project-structure)
-18. [Further reading](#further-reading)
+5. [Installing on Linux / WSL2 / macOS / Docker](#installing-on-linux--wsl2--macos--docker)
+6. [Option A: Automated setup (recommended)](#option-a-automated-setup-recommended)
+7. [Option B: Manual setup, step by step](#option-b-manual-setup-step-by-step)
+8. [Environment variables (`.env`)](#environment-variables-env)
+9. [External service dashboards (sites you need to sign up for)](#external-service-dashboards-sites-you-need-to-sign-up-for)
+10. [The database (PostgreSQL)](#the-database-postgresql)
+11. [Running the app every day](#running-the-app-every-day)
+12. [Payments & why ngrok is optional](#payments--why-ngrok-is-optional)
+13. [Email in development (Mailtrap)](#email-in-development-mailtrap)
+14. [Windows-specific notes](#windows-specific-notes)
+15. [Testing the customer API](#testing-the-customer-api)
+16. [Troubleshooting](#troubleshooting)
+17. [Useful commands (cheat sheet)](#useful-commands-cheat-sheet)
+18. [Project structure](#project-structure)
+19. [Further reading](#further-reading)
 
 ---
 
@@ -90,8 +91,12 @@ invoice paid and emails the receipt. That email is sent by a background **queue 
 
 ## Before you start
 
-You need a Windows machine with internet access. Check that you have (or will install)
-these tools:
+You need a machine with internet access and one of: **Windows** (the recommended, fully
+automated path), **Linux**, **WSL2**, **macOS**, or **Docker**. The steps below assume
+Windows; other platforms follow the same four tools — see
+[Installing on Linux / WSL2 / macOS / Docker](#installing-on-linux--wsl2--macos--docker).
+
+Check that you have (or will install) these tools:
 
 | Tool | Version | Why |
 |---|---|---|
@@ -120,6 +125,22 @@ npm -v
 > **not** used here — this project uses PostgreSQL. If `php -v` still shows an XAMPP
 > version after exiting XAMPP, open a *new* terminal and make sure `C:\xampp\php` is
 > removed from the PATH environment variable.
+
+---
+
+## Installing on Linux / WSL2 / macOS / Docker
+
+Not on Windows? The app itself is platform-neutral — only the `setup.bat`/`start.bat`
+scripts are Windows-bound. Step-by-step recipes for installing PHP 8.5, Composer,
+Node 24, and PostgreSQL 18 on **Linux (Ubuntu/Debian)**, **WSL2**, **macOS**, and a
+**Docker**-based workflow (Postgres-in-a-container, or Laravel Sail) live in:
+
+> 📄 **`docs/installation-linux-macos-docker.md`** — same setup steps, shell commands
+> instead of PowerShell, plus platform-specific gotchas (PPA/PGDG/brew repos, the
+> `postgres:18` Docker data-path change, WSL2 localhost forwarding).
+
+The non-Windows installs do **not** need the SSL fix below — the "cURL error 60" issue
+is Windows-only (Linux/macOS ship CA bundles).
 
 ---
 
@@ -631,5 +652,6 @@ gw-system/
 |---|---|
 | `docs/showcase/README.md` | Step-by-step demo runbook (API → portal → payments → email → admin → tests) with exact commands and expected output |
 | `docs/manual-setup.md` | The full hand-run Windows install (every gotcha: php.ini, SSL, PATH) — reference only |
+| `docs/installation-linux-macos-docker.md` | Installing on Linux / WSL2 / macOS / Docker (shell commands, PGDG/brew repos, Postgres-in-Docker) |
 | `ARCHITECTURE.md` | Architecture decisions & implementation status checklist |
 | `AGENTS.md` | Development workflow rules (for AI agents and humans) |
