@@ -1,0 +1,16 @@
+.git
+.gitignore
+.editorconfig
+.env
+.env.backup
+.env.production
+.phpunit.cache
+.vscode
+.idea
+storage/*.key
+auth.json
+node_modules
+public/build
+public/hot
+vendor
+*.log

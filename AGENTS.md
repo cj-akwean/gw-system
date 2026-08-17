@@ -101,7 +101,7 @@ cd frontend && npm run dev
 ### 2. Pre-commit checks
 Run before suggesting a commit:
 - **Secret scan**: check staged files for API keys, tokens, passwords. Confirm `.env` is in `.gitignore` and NOT staged
-- **Sanity check**: `php -d memory_limit=512M vendor/phpunit/phpunit/phpunit` (or `php -l` on changed files) + `php artisan route:list` if routes changed. **Why not plain `php artisan test`:** the full suite OOMs at the default 128M `memory_limit` (dompdf font parsing in the email tests → PHPUnit reports "Premature end of PHP process"), and `artisan test` does NOT propagate `-d` to PHPUnit. The direct phpunit binary with the `-d` flag is the reliable invocation (282/282 green). **Exception**: small tasks — run only the touched test file (`--filter`) instead of the full suite.
+- **Sanity check**: `php -d memory_limit=512M vendor/phpunit/phpunit/phpunit` (or `php -l` on changed files) + `php artisan route:list` if routes changed. **Why not plain `php artisan test`:** the full suite OOMs at the default 128M `memory_limit` (dompdf font parsing in the email tests → PHPUnit reports "Premature end of PHP process"), and `artisan test` does NOT propagate `-d` to PHPUnit. The direct phpunit binary with the `-d` flag is the reliable invocation (670/670 green). In the Docker stack, use `docker compose exec backend gw-test` — same suite, with the test env pinned (compose env would otherwise override phpunit.xml). **Exception**: small tasks — run only the touched test file (`--filter`) instead of the full suite.
 - If no test suite exists for the touched area, say so explicitly
 
 ### 3. Use the knowledge graph, not just grep

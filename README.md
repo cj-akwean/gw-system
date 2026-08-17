@@ -133,7 +133,8 @@ npm -v
 Not on Windows? The app itself is platform-neutral — only the `setup.bat`/`start.bat`
 scripts are Windows-bound. Step-by-step recipes for installing PHP 8.5, Composer,
 Node 24, and PostgreSQL 18 on **Linux (Ubuntu/Debian)**, **WSL2**, **macOS**, and a
-**Docker**-based workflow (Postgres-in-a-container, or Laravel Sail) live in:
+**Docker**-based workflow (full-stack compose, Postgres-in-a-container, or Laravel Sail)
+live in:
 
 > 📄 **`docs/installation-linux-macos-docker.md`** — same setup steps, shell commands
 > instead of PowerShell, plus platform-specific gotchas (PPA/PGDG/brew repos, the
@@ -141,6 +142,19 @@ Node 24, and PostgreSQL 18 on **Linux (Ubuntu/Debian)**, **WSL2**, **macOS**, an
 
 The non-Windows installs do **not** need the SSL fix below — the "cURL error 60" issue
 is Windows-only (Linux/macOS ship CA bundles).
+
+### Full stack in Docker (fastest non-Windows option)
+
+If you have Docker (Engine + Compose v2, or Docker Desktop) but **no** PHP/Node/Postgres
+on the host, the repo now ships everything needed:
+
+```bash
+docker compose up -d     # builds images, migrates + seeds, boots backend/frontend/db/queue/scheduler
+docker compose exec backend gw-test    # run the PHPUnit suite
+```
+
+Then open http://localhost:3000 (portal) and http://localhost:8000/admin (Filament).
+Details and gotchas in `docs/installation-linux-macos-docker.md` → "Approach C".
 
 ---
 

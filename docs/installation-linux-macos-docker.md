@@ -275,11 +275,76 @@ Verify the tools, then continue with the
 
 ## Docker
 
-> **The repo ships no Docker files yet** — `setup.bat`/`start.bat` are Windows-native
-> and there is no `Dockerfile`/`docker-compose.yml`. These are the containerized
-> approaches that work today without changing the repo.
+> **The repo now ships full Docker files** (root `docker-compose.yml` +
+> `backend/Dockerfile` + `frontend/Dockerfile`) — `docker compose up` runs the entire
+> stack: Postgres, Laravel backend, Next.js frontend, queue worker, and scheduler.
+> This is the fastest way to run the project on a machine with Docker but no
+> PHP/Node/Postgres installed. Approach A (DB-only) is kept below as the lighter
+> option for people who already have PHP + Node on the host.
 
-### Approach A — PostgreSQL in Docker, everything else on the host (recommended)
+### Approach C — full stack in Docker (new, recommended)
+
+One command boots everything. Requires **Docker Engine + Compose v2** (or Docker
+Desktop); no PHP, Composer, Node, or PostgreSQL on the host.
+
+```bash
+cd <repo-root>
+docker compose up -d          # first run: builds images, migrates + seeds, boots all 5 services
+```
+
+| Service | Container | URL |
+|---|---|---|
+| PostgreSQL 18 | `gw-postgres` | localhost:5432 |
+| Laravel backend | `gw-backend` | http://localhost:8000 |
+| Filament admin | `gw-backend` | http://localhost:8000/admin |
+| Next.js frontend | `gw-frontend` | http://localhost:3000 |
+| Queue worker | `gw-queue` | — (background jobs) |
+| Scheduler | `gw-scheduler` | — (cron jobs) |
+
+Logins are the standard ones: admin `admin@gwsystem.com` / `admin123` at `/admin`,
+portal `test@example.com` / `password` at `http://localhost:3000`.
+
+**Common commands:**
+
+```bash
+docker compose ps            # all 5 services Up (db shows healthy)
+docker compose logs -f backend
+docker compose exec backend php artisan tinker
+docker compose exec backend gw-test        # full PHPUnit suite (670 tests)
+docker compose down          # stop; add -v to also wipe the pgdata volume
+```
+
+**How it works / what to know:**
+
+- **Dev-style bind mounts.** The repo root is mounted into the backend at
+  `/var/www/gw-system` (code edits apply instantly, no image rebuild) and into the
+  frontend at `/app`. Composer/npm installs run inside the container at startup.
+- **`gw-setup` is a one-shot job.** It migrates the database and seeds demo data
+  (idempotent — re-running is safe). It also auto-creates `backend/.env` from
+  `.env.example` on first boot.
+- **Test database is auto-created.** An initdb script makes `gw_system_testing`, and
+  `gw-test` runs PHPUnit against it with the test env pinned (compose env vars would
+  otherwise override `phpunit.xml`). `APP_ENV=testing`, `DB_DATABASE=gw_system_testing`,
+  `QUEUE_CONNECTION=sync`, `CACHE_STORE=array`, `SESSION_DRIVER=array`,
+  `MAIL_MAILER=array`.
+- **Services are named per container**: `backend`, `frontend`, `db`, `queue`,
+  `scheduler`, plus the `setup` one-shot. Image names are `gw-system-<service>`.
+- **UIDs.** Containers run as uid/gid 1000 (`app` in PHP, `node` in Node) so files
+  they create match your host user.
+- **Backend command.** The API runs via `php -S 0.0.0.0:8000 -t public server.php`, not
+  `php artisan serve`. Two reasons: `artisan serve`'s env filter would strip variables the
+  app needs (`$_ENV`), and routing through `public/index.php` directly would hand *every*
+  request (including `.css`/`.js`) to the front controller, so static assets returned the
+  landing-page HTML and the admin panel rendered unstyled. The `server.php` router serves
+  existing files as-is and only falls back to `index.php` (same emulation `artisan serve`
+  uses). PHP is configured with `variables_order=EGPCS` for the same env reason.
+- **Rebuild after editing Docker files**: `docker compose build backend frontend` then
+  `docker compose up -d`.
+- **Windows note:** still needs the PHP CA-bundle fix from the README for *outbound*
+  HTTPS (PayMongo/Resend) if you also run PHP on the host — the containers use their
+  own image CA bundle and are unaffected.
+
+### Approach A — PostgreSQL in Docker, everything else on the host (lighter option)
 
 The most common need is "I don't want to install PostgreSQL natively." Run **just the
 database** in a container; the backend and frontend run on the host exactly as above.
@@ -352,10 +417,9 @@ The queue worker runs inside Sail too — start it with
 
 ### What's not covered
 
-A full "everything in containers" stack (backend + frontend + DB + queue worker behind
-one `docker compose up`) is not in this repo. If you need it, it would be a real
-infrastructure contribution — recommend opening a separate issue/task to add the
-Dockerfiles and compose file.
+A full "everything in containers" stack is now in the repo (Approach C above). What's
+still not covered: production-grade container images (Nginx + FPM + compiled frontend)
+and CI/CD. The shipped images are for local dev only.
 
 ---
 
@@ -367,6 +431,7 @@ Dockerfiles and compose file.
 | WSL2 | `apt` | same as Linux | `sudo systemctl ...` (or `sudo service ...`) | same as Linux |
 | macOS | `brew` | `brew install postgresql@18` | `brew services start postgresql@18` | `createdb` |
 | Docker | — | `postgres:18` image | `docker start gw-postgres` | `docker exec ... psql` |
+| Docker (full stack) | — | `postgres:18` via compose | `docker compose up -d` | auto-created by initdb + `gw-test` |
 
 ---
 

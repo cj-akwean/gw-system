@@ -53,6 +53,7 @@ Payment Gateway (PayMongo) ───────── webhook → marks invoice
 
 - Postgres for both dev and prod (avoid SQLite dev / MySQL prod surprises)
 - Local dev: **native PostgreSQL 18 install** (via winget on Windows) — no Docker/Sail needed
+- **Docker dev stack (2026-08-17):** root `docker-compose.yml` + `backend/Dockerfile` + `frontend/Dockerfile` boot Postgres, Laravel API, Next.js frontend, queue worker, and scheduler via `docker compose up` — the way to run the repo where no native PHP/Node/Postgres exists. Dev-style (bind mounts at `/var/www/gw-system` and `/app`, uid 1000). Backend runs `php -S 0.0.0.0:8000 -t public server.php` (not `artisan serve` — its env filter breaks `$_ENV`, and routing via `public/index.php` would stop static assets from being served; the `server.php` router returns existing files as-is); image sets `variables_order=EGPCS`. Tests via `docker compose exec backend gw-test` (pins `APP_ENV=testing` + pgsql `gw_system_testing` + sync/array drivers against compose env leakage into phpunit.xml). Not a production image — prod remains native (deployment-runbook.md).
 - Postgres is stricter about constraints — catches bugs earlier for a billing system where data integrity matters
 
 ## Queue & Background Jobs

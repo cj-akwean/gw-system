@@ -1,0 +1,99 @@
+name: gw-system
+
+services:
+  db:
+    image: postgres:18
+    container_name: gw-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: gw_system
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./backend/docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d gw_system"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # One-shot DB setup: migrate + seed only on an empty database, then exit.
+  setup:
+    build: ./backend
+    container_name: gw-setup
+    command: /usr/local/bin/gw-setup
+    environment: &backend_env
+      APP_ENV: local
+      APP_URL: http://localhost:8000
+      DB_CONNECTION: pgsql
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_DATABASE: gw_system
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      QUEUE_CONNECTION: database
+      CACHE_STORE: database
+      SESSION_DRIVER: database
+      MAIL_MAILER: log
+    volumes:
+      - ./:/var/www/gw-system
+    depends_on:
+      db:
+        condition: service_healthy
+
+  backend:
+    build: ./backend
+    container_name: gw-backend
+    command: php -S 0.0.0.0:8000 -t public server.php
+    environment: *backend_env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./:/var/www/gw-system
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  queue:
+    build: ./backend
+    container_name: gw-queue
+    command: php artisan queue:work --tries=3 --timeout=120 --sleep=3
+    environment: *backend_env
+    volumes:
+      - ./:/var/www/gw-system
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  scheduler:
+    build: ./backend
+    container_name: gw-scheduler
+    command: php artisan schedule:work
+    environment: *backend_env
+    volumes:
+      - ./:/var/www/gw-system
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: gw-frontend
+    command: sh -c '[ -d node_modules/.bin/next ] || npm ci; npm run dev -- -H 0.0.0.0'
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_PAYMONGO_PUBLIC_KEY: ${NEXT_PUBLIC_PAYMONGO_PUBLIC_KEY:-}
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+    restart: unless-stopped
+
+volumes:
+  pgdata:

@@ -1487,3 +1487,47 @@ pages re-declare the trait's `tableFilters` property with `#[Url(as: 'filters')]
 does not, so filter links (from dashboard stat cards, shared bookmarks) would silently show unfiltered
 data. The reconciliation table re-declares it. Ledger filters are independent of the module's date
 range on purpose: the range drives the statement/exports, the ledger is a separate audit tool.
+
+---
+
+## 50. Docker is the fourth first-class dev path; it's dev-style (bind mounts), not a production artifact (2026-08-17)
+
+**Question asked:** "The project officially targets Windows (`setup.bat`/`start.bat`), but
+this machine has Docker and nothing else — no PHP, Composer, Node, or Postgres. How do we
+run the full stack here, and how does that choice shape the repo?"
+
+**Answer + reasoning:**
+
+**a) Ship real Docker files instead of a one-off container recipe.** The install doc
+previously promised "the repo ships no Docker files yet" and only offered workarounds
+(DB-in-a-container, Laravel Sail). We went the other way: a root `docker-compose.yml`
+plus `backend/Dockerfile` and `frontend/Dockerfile` that boot Postgres, the Laravel API,
+the Next.js frontend, the queue worker, and the scheduler with one `docker compose up`.
+The containers are named per service (`gw-system-backend`, `gw-system-setup`, ...) —
+compose derives a distinct image per service even when they share a build context, so
+every image must be rebuilt together (`docker compose build`), not just `backend`.
+
+**b) Dev-style images: bind mounts, not build-time artifacts.** The repo is bind-mounted
+into the backend at `/var/www/gw-system` and the frontend at `/app`; code edits apply
+instantly and composer/npm installs run inside the container on boot. UIDs are pinned to
+1000 (`app`/`node`) so container-created files match the host user. This makes the images
+a *dev environment*, deliberately not a production deployment (no Nginx/FPM/frontend
+build step) — that's a separate future task, and the shipped images shouldn't be mistaken
+for it.
+
+**c) Two container gotchas that would have looked like app bugs.** (1) `php artisan
+serve` whitelists which env vars it passes to its child `php -S` process, so `$_ENV`-driven
+config silently breaks — fixed by running `php -S 0.0.0.0:8000 -t public
+public/index.php` directly, plus `variables_order=EGPCS` in the image. (2) Compose
+`environment:` values leak into PHPUnit and *override* `phpunit.xml` (which doesn't force),
+so the suite fails with 60 errors on a fresh container until the test env is pinned via
+`APP_ENV=testing DB_DATABASE=gw_system_testing QUEUE_CONNECTION=sync CACHE_STORE=array
+SESSION_DRIVER=array MAIL_MAILER=array` — wrapped into a `gw-test` entrypoint so a plain
+`docker compose exec backend gw-test` just works.
+
+**d) Seeder ordering bug surfaced by a fresh DB.** `DatabaseSeeder` ran
+`DemoPortalDataSeeder` *before* creating the test user, so on an empty database the demo
+data (paid/overdue/unpaid invoices) silently never appeared — a latent bug that only
+shows on a genuinely fresh install, which Docker is. Users now get created before the
+demo-data call. The related AGENTS.md "282/282 green" figure was also stale; the suite is
+670 tests.
