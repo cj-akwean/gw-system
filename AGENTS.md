@@ -115,7 +115,7 @@ Run before suggesting a commit:
 
 ### 4. Documentation workflow (product-decisions.md + session summaries)
 
-This project keeps several kinds of running documentation, in addition to ARCHITECTURE.md's checklist. All are living documents — append to them, don't rewrite history. **Exception**: small tasks (CLAUDE.md Rule 6) skip the documentation workflow entirely — no session summary, no product-decisions entry. Only significant tasks (≥50 lines, multi-file, money-critical) trigger this rule.
+This project keeps several kinds of running documentation, in addition to ARCHITECTURE.md's checklist. All are living documents — append to them, don't rewrite history. **Exception**: small tasks (global AGENTS.md Rule 6) skip the documentation workflow entirely — no session summary, no product-decisions entry. Only significant tasks (≥50 lines, multi-file, money-critical) trigger this rule.
 
 **`docs/insights/implementation-notes.md`** — the detail archive for ARCHITECTURE.md's Implementation Status checklist (same sections, `§N` items). When a checklist item is completed, its full implementation note goes HERE as a new `###` item — ARCHITECTURE.md bullets stay one-liners with `(details: … → §Section-N)` pointers.
 
@@ -128,7 +128,7 @@ Format: mirror the existing structure — **Question asked** → **Answer + reas
 
 **`docs/summary/YYYY-MM-DD-topic.md`** — one file per work session. Write this:
 - At the end of any session that completed real work (not every tiny edit — one meaningful session = one file)
-- Proactively **before** hitting the ~80% context/compaction threshold (CLAUDE.md Rule 8), so nothing gets lost to summarization
+- Proactively **before** hitting the ~80% context/compaction threshold (global AGENTS.md Rule 9), so nothing gets lost to summarization
 - Must include: goal, files created/modified, bugs found & fixed (with root cause, not just symptom), test results (what was actually verified vs. not), known gaps / next step, git commit hash
 
 **At the start of every session**, read the most recent `docs/summary/*.md` file and skim `docs/insights/product-decisions.md` — not just `ARCHITECTURE.md`/`AGENTS.md` — before continuing work. The summary carries context ARCHITECTURE.md's checklist alone doesn't (what was tried, what broke, what's still unverified).
