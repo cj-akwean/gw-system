@@ -6,7 +6,7 @@ title GW-System Setup
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo Requesting administrator privileges...
-    echo If a User Account Control (UAC) prompt appears, click "Yes".
+    echo If a User Account Control prompt appears, click "Yes".
     powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
     exit /b
 )
