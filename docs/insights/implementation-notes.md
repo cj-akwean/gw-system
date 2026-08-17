@@ -447,22 +447,50 @@ invoice no, account no, meter no, customer name, status, billing period start/en
 date, previous balance, base, penalty, total, rate schedule, cu.m. used, reading entered
 at, formula-injection sanitized *(2026-08-07)*.
 
-### 4. Financial report page + Excel/PDF export *(2026-08-11)*
-`FinancialReport` page (`/admin/financial-report`, sidebar "Financial Report") shows
-the dashboard metrics as stat cards + a 12-month revenue table (the revenue-graph data).
-**Data source of truth:** `App\Services\FinancialReportService::build()` — the page,
-the Excel export and the PDF all consume the same array, so numbers can't drift.
-Header actions: "Export Excel" (`App\Exports\FinancialReportExport`, maatwebsite
-WithMultipleSheets → Summary sheet + Revenue by Month sheet, `financial-report-*.xlsx`)
-and "Export PDF" (dompdf `pdfs/financial-report` blade, mirrors the invoice PDF look).
-**Gotcha:** a plain `Pdf::loadHTML()->download()` response cannot be returned from a
-Filament action — Livewire tries to JSON-serialize it → "Malformed UTF-8 characters"
-500. Excel works because Filament intercepts `BinaryFileResponse`. Fix: write the PDF
-bytes to a temp file and return `response()->download($temp)` with
-`deleteFileAfterSend(true)` — same BinaryFileResponse path. Zero-revenue months stay
-zero-filled via `revenueLastMonths()` (no gaps in the table). Tests:
-`tests/Feature/FinancialReportTest.php` (service shape, page render + auth guard, both
-export sheets, PDF template, action registration).
+### 4. Accounting & Finance module (replaces the financial report) *(2026-08-17)*
+`FinancialReport` page (`/admin/financial-report`, sidebar label **"Accounting & Finance"**,
+title "Accounting & Financial Management", `protected static ?int $navigationSort = 100` so it
+sorts below all resources — the old sort tied it into the top cluster next to Dashboard and
+Notification Hub) is now formal accounting content only; the Dashboard owns the operational KPIs
+and revenue graph. **Data source of truth:** `App\Services\FinancialReportService::build(?from, ?to)`
+— page, Excel and PDF all consume the same array, so numbers can't drift.
+
+Sections:
+- **Date range picker** — `preset` (monthly/quarterly/yearly/custom) + `from`/`to`, all `#[Url]`
+  Livewire state (`updatedPreset()` maps presets to ranges; invalid/partial ranges default to the
+  current month; a reversed `from > to` is swapped). Drives collections, income statement and exports.
+- **Receivables vs Collections** — total receivables (all unpaid+overdue, as of today, always equal
+  to the aging total) vs collections for the range (`paid_at`).
+- **AR aging** — unpaid/overdue invoices bucketed by whole days past `due_date` (not-yet-due =
+  Current; inclusive edges: ≤30 current, 31–60, 61–90, >90). Each bucket: count, outstanding
+  (`total_amount`), penalties = stored `penalty_amount` sum (auditable billed figure; the income
+  statement uses the same value).
+- **Statement of income** — Gross billed (accrual: `billing_period_end` in range, all statuses),
+  Actual cash collections (`paid_at` in range), Miscellaneous income (penalty charges only;
+  reconnection/setup fees not tracked → ₱0 with a footnote), **NOI = gross billed + misc − collections**.
+- **Payment Breakdown** — read-only `InteractsWithTable` EmbeddedTable (`{{ $this->table }}` in the
+  custom view) over payments: Transaction ID, Invoice #, Customer Name, Payment Date, Method
+  (`PaymentResource::methodLabel`), Amount, Reference #. Own `method` (cash/online/bank) + `paid_at`
+  range filters, independent of the module range. **Gotcha:** a plain Filament `Page` does NOT bind
+  `tableFilters` to the `filters` query param — the trait property must be re-declared with
+  `#[Url(as: 'filters')]` (ListRecords does this) or URL filters silently do nothing.
+
+Exports stay header actions, now range-bound. Excel = 4 sheets (Summary, AR Aging, Income Statement,
+Payments Ledger via `FinancialReportLedgerSheet`, a FromQuery range-bounded ledger). PDF =
+`pdfs/financial-report` (landscape, renders the same sections + full ledger). Both keep the
+**BinaryFileResponse rule** (PDF written to a temp file → `response()->download($temp)->deleteFileAfterSend(true)`).
+Tests: `tests/Feature/FinancialReportTest.php` (11 tests: dataset shape, aging boundary days 30/31/60/61/90/91,
+per-bucket penalty sums, range clamp/swap, page render + removed dashboard metrics + auth guard, 4-sheet
+Excel, PDF template, ledger method filter via query params, sidebar label/sort).
+
+**UI gotcha (custom Filament page views): the backend has NO Tailwind pipeline.** `public/css/filament/filament/app.css`
+is Filament's prebuilt bundle; stock utilities (`.flex`, `.grid`, `.text-gray-500`, `.bg-gray-50`, `.px-4`, ...)
+are NOT compiled, so a hand-rolled view styled with them renders as plain text. Custom views must style with
+(1) Filament's own Blade components (`x-filament::section` w/ `icon`+`icon-color`, `x-filament::badge`,
+`x-filament::callout`, `x-filament::input.*`) and (2) inline styles referencing the theme CSS variables that DO
+exist and follow dark mode: `--gray-50..950`, `--primary-600`, `--success-600`, `--warning-600`, `--danger-600`,
+`--info-600`. Applied to the Accounting page: section icons, stat cards (icon chip + number), aging badges +
+share-of-receivables progress bars, NOI callout. (2026-08-17 UI pass)
 
 ## Branding *(2026-08-11)*
 

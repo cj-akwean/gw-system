@@ -3,19 +3,24 @@
 namespace App\Exports;
 
 use App\Services\FinancialReportService;
-use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 
-class FinancialReportExport implements WithMultipleSheets
+class FinancialReportExport implements \Maatwebsite\Excel\Concerns\WithMultipleSheets
 {
-    public function __construct(protected FinancialReportService $service) {}
+    public function __construct(
+        protected FinancialReportService $service,
+        protected ?string $from = null,
+        protected ?string $to = null,
+    ) {}
 
     public function sheets(): array
     {
-        $data = $this->service->build();
+        $data = $this->service->build($this->from, $this->to);
 
         return [
-            new FinancialReportSummarySheet($data['summary'], $data['generatedAt']),
-            new FinancialReportRevenueSheet($data['monthlyRevenue']),
+            new FinancialReportSummarySheet($data),
+            new FinancialReportAgingSheet($data['aging']),
+            new FinancialReportIncomeSheet($data['income']),
+            new FinancialReportLedgerSheet($this->from, $this->to),
         ];
     }
 }

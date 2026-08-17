@@ -9,12 +9,15 @@ use Maatwebsite\Excel\Concerns\WithTitle;
 class FinancialReportSummarySheet implements FromArray, WithHeadings, WithTitle
 {
     /**
-     * @param  array<string, int|float>  $summary
+     * @param  array{
+     *     generatedAt: string,
+     *     range: array{from: string, to: string, label: string},
+     *     summary: array{total_receivables: float, total_collections: float},
+     *     aging: \Illuminate\Support\Collection,
+     *     income: array<string, float>,
+     * }  $data
      */
-    public function __construct(
-        protected array $summary,
-        protected string $generatedAt,
-    ) {}
+    public function __construct(protected array $data) {}
 
     public function title(): string
     {
@@ -29,12 +32,10 @@ class FinancialReportSummarySheet implements FromArray, WithHeadings, WithTitle
     public function array(): array
     {
         return [
-            ['Generated', $this->generatedAt],
-            ['Active customers', $this->summary['active_connections']],
-            ['Unpaid bills', $this->summary['unpaid_bills']],
-            ['Overdue bills', $this->summary['overdue_bills']],
-            ['Outstanding amount (PHP)', number_format((float) $this->summary['outstanding_amount'], 2, '.', '')],
-            ['Revenue this month (PHP)', number_format((float) $this->summary['revenue_this_month'], 2, '.', '')],
+            ['Generated', $this->data['generatedAt']],
+            ['Period', $this->data['range']['label']],
+            ['Total receivables (PHP)', number_format((float) $this->data['summary']['total_receivables'], 2, '.', '')],
+            ['Total collections (PHP)', number_format((float) $this->data['summary']['total_collections'], 2, '.', '')],
         ];
     }
 }

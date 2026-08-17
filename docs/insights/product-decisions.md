@@ -1442,3 +1442,48 @@ else.
   from "already out" at a glance.
 - **Removing stock down to exactly 0 is always allowed**; only going negative is blocked — zero is a
   legitimate state (the meter was removed / the roll finished), not an error.
+
+---
+
+## 49. Financial report becomes a formal Accounting & Finance module; NOI is the accrued-vs-collected spread (2026-08-17)
+
+**Question asked:** "Refactor the Financial Report tab into a dedicated accounting & financial
+management module — AR aging, cash vs accrual income, payment reconciliation ledger, exports.
+Remove the operational metrics (Active Customers, etc.) and move it out of the top with the
+Dashboard and Notification Hub."
+
+**Answer + reasoning:**
+
+**a) The Dashboard owns daily ops; the financial module owns formal accounting.** The old page
+just re-graphed dashboard KPIs (active customers, unpaid/overdue counts, revenue by month). A
+statement of income and an aging schedule are different artefacts — nobody computes an aging
+schedule from "active customers". Keeping both on one page blurred the two audiences (office
+manager vs. bookkeeper). So the Dashboard keeps the KPIs and the revenue chart untouched, and the
+financial page shows only accounting content. "Move it out of the top" → sidebar: the page sorted
+into the same top cluster as Dashboard/Notification Hub (all Filament nav items default to sort -1,
+stable order); a `navigationSort = 100` deterministically drops it below every resource.
+
+**b) NOI = (gross billed + misc) − cash collections.** The textbook "revenue − expenses" is
+impossible here: no expense records exist and nobody asked to add procurement/G&A tracking. The
+number that actually matters to a water utility is the spread between what was billed on accrual
+and what actually came in — it quantifies the cash-flow hole. The income statement states the
+formula in-line so nobody mistakes it for a GAAP P&L.
+
+**c) Miscellaneous income is penalty charges only, for now.** Reconnection fees, setup fees, etc.
+are not recorded anywhere in the data model; inventing a fee ledger (migration + CRUD + wiring) was
+out of scope and would have fabricated income. The statement shows reconnection/setup at ₱0 with an
+explicit "(not tracked)" label and a footnote — honest zeros instead of implied completeness. When
+the office starts charging fees, that's a separate feature (a fees ledger feeding this line).
+
+**d) AR aging uses stored penalty amounts, not recomputed interest.** `invoice.penalty_amount` is
+the auditable figure charged at billing time. Recomputing "interest as of today" with the penalty
+rule would produce a number nobody recorded — an estimate dressed as a balance. Both the aging table
+and the income statement use the stored value, so the two sections reconcile. Aging buckets by whole
+days past `due_date` (not-yet-due = Current, inclusive edges ≤30/31–60/61–90/>90) — the standard
+collection convention.
+
+**e) One subtle Filament gotcha: a plain Page's table filters are not URL-bound.** Resource list
+pages re-declare the trait's `tableFilters` property with `#[Url(as: 'filters')]`; a bare `Page`
+does not, so filter links (from dashboard stat cards, shared bookmarks) would silently show unfiltered
+data. The reconciliation table re-declares it. Ledger filters are independent of the module's date
+range on purpose: the range drives the statement/exports, the ledger is a separate audit tool.
