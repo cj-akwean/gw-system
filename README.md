@@ -160,6 +160,13 @@ No manual PHP/Postgres/Composer installation needed. Two files at the project ro
 .\start.bat    # then open http://localhost:3000 and http://127.0.0.1:8000/admin
 ```
 
+> **⚙️ Run `setup.bat` as Administrator.** The script self-elevates: if you launch it
+> from a normal user terminal (or double-click it), it reopens itself with a **UAC
+> prompt** — click **Yes**. Elevation is required because setup installs machine-wide
+> software (PHP, Node.js, PostgreSQL via winget), writes to `php.ini` inside `Program
+> Files`, and creates `C:\composer`. Running it unelevated fails mid-way on those steps.
+> The script is safe to re-run — every step detects what's already done and skips it.
+
 **What you should see after `setup.bat`:** a green "Setup complete!" screen. The
 migrations and seed also create two ready-made accounts:
 
