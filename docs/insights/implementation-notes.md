@@ -26,6 +26,80 @@ instead of 500ing. REST clients (Thunder Client) inject `Accept: */*` by default
 duplicate `Accept` headers make the first one win and produce the 500 (see README →
 Testing the customer API).
 
+### 3. Password change signs the user out (portal + admin) *(2026-08-18)*
+Portal Settings: a successful change now calls `await logout()` (revokes the Sanctum
+token server-side via `POST /api/logout` and clears local auth state) then
+`router.push("/auth?notice=password_changed")`. `setLoggingOut(true)` runs BEFORE
+`logout()` so the existing unauth-redirect effect (`settings/page.tsx`) cannot
+`router.replace("/auth")` and drop the query param. The notice key is a shared constant
+`AUTH_NOTICE_PASSWORD_CHANGED` in `auth-context.tsx` (page + settings can't drift);
+`auth/page.tsx` reads it inside `<Suspense>` (static-export requirement for
+`useSearchParams`) and renders a `role="status"` banner above the `FlippingCard` (fixed
+400×520 card — a banner inside would overflow). Failures (validation 422, wrong OTP)
+keep the inline error and never log out. SMS-with-no-phone is guarded client-side in
+`handleSendOtp` before the API call ("Add a phone number in the profile section to get
+codes by SMS.") — the passive hint and the backend 422 stay as backstops.
+
+Admin (Filament): `App\Filament\Pages\EditProfile::save()` captures
+`$passwordWasChanged` BEFORE `parent::save()` — the base `save()` nulls
+`$this->data['password']` after persisting, so the flag must be captured first. On a
+successful password change it logs out the admin guard
+(`Filament::auth()->logout()`), invalidates + regenerates the session token, and
+redirects to `filament()->getLoginUrl()` with `navigate: false` (SPA mode needs a full
+page load after session invalidation; `request()->hasSession()` guards the test
+harness). The `PasswordChanged` email stays in `afterSave()` — not duplicated. Failed
+OTP / invalid current password return early or throw validation — never log out.
+Non-password saves are untouched (asserted in the Livewire test). `AdminPanelProvider`
+gains `->revealablePasswords()` to lock in Filament's default reveal toggle explicitly.
+
+**Review hardening (2026-08-18, code review #2):** the logout/redirect block is gated on
+`$passwordWasChanged && blank($this->data['password'])` — the vendor base `save()` clears
+`$this->data['password']` only after a *committed* save, while its two rate-limit
+early-returns (the `WithRateLimiting` trait keyed by class+method+IP and the per-admin
+`filament-edit-profile:` limiter) return without throwing, leaving the field filled. The
+gate therefore prevents logging an admin out when the save was throttled and nothing was
+persisted (OTP already consumed). Regression-tested:
+`test_rate_limited_save_does_not_log_out_or_redirect` pre-exhausts both limiter keys and
+asserts the admin stays authenticated with no redirect and no `PasswordChanged` mail.
+
+Livewire test: `test_password_change_updates_hash_and_queues_email` now asserts
+`assertRedirectToRoute('filament.admin.auth.login')` + `assertGuest(guard: 'admin')`;
+the non-password save asserts `assertAuthenticated`.
+
+### 4. Reveal toggle, forgot-password picker, error placement, onboarding phone *(2026-08-18)*
+- **Reveal toggle lives in the base `Input`** (`components/ui/input.tsx`, now a client
+  component): `type="password"` renders a `relative` wrapper `<div>` (gets `flex-1` when
+  `data-slot="input-group-control"`, else `w-full`) around the input — which keeps
+  `pr-9` and every passed prop — plus an eye/eye-off toggle. The toggle is a `<span
+  role="button">` (tabIndex 0, Enter/Space handled), deliberately NOT a real `<button>`:
+  a `<button>` inside a wrapping `<label>` is labelable, so Testing Library's
+  `getByLabelText("...")` matches both the input and the button. `onMouseDown`
+  preventDefault keeps input focus. Auto-covers settings ×3, reset-password ×2, and
+  login/signup via `InputGroupInput`.
+- **Forgot Password channel picker**: the "Send by SMS instead" checkbox is an explicit
+  Email/SMS segmented radiogroup, Email default, hidden entirely when
+  `checkSmsHealth().available` is false. Shared `OtpChannelPicker`
+  (`components/portal/otp-channel-picker.tsx`) is used by both settings and
+  forgot-password so the two cannot drift (review hardening 2026-08-18). Helper copy is
+  capability-level only: "SMS codes require a phone number saved on the account;
+  otherwise the code is sent by email." `hasPhone` is never surfaced on the guest page —
+  the backend's silent email fallback and generic success message are untouched
+  (anti-enumeration).
+- **Login/signup error placement**: the form-level error block moved from between the
+  password field and submit button to the top of the `<form>`, above the email field,
+  with `role="alert"` — reads as a form-level failure, not email-specific validation.
+- **Onboarding phone**: Step 1 `ProfileSetup` gets `withPhone` + `initialPhone={user?.phone
+  ?? ""}`; `onComplete` threads `phone` into `updateProfile(username, avatarId, phone)`.
+  `avatar-picker.tsx` already rendered the "(optional)" field.
+- **Shared logout flow (review hardening 2026-08-18)**: `useLogoutRedirect`
+  (`lib/use-logout-redirect.ts`) owns the `loggingOut` flag + `logout()` + redirect, used
+  by the settings password-change success path and by both settings/onboarding header
+  logout — one copy of the load-bearing guard that suppresses each page's
+  unauth-redirect effect. The /auth banner reads `useSearchParams` in its own
+  `PasswordChangedNotice` component wrapped in `<Suspense fallback={null}>` (auth page
+  itself stays outside the boundary, so nothing but the optional notice is deferred at
+  static build).
+
 ## Meter Readings
 
 ### 1. Manual entry form in Filament
@@ -767,10 +841,11 @@ itself generates (password-change + password-reset codes).
   profile, login and register user payloads.
 - **Frontend**: settings page gains a channel segmented toggle (hidden when
   `available` is false) + a hint linking to the profile phone field when SMS is
-  chosen without a phone; helper text is channel-aware. Forgot-password gains a
-  "Send by SMS instead" checkbox (hidden when unavailable; no phone → backend falls
-  back to email). `ProfileSetup` gained an opt-in `withPhone`/`initialPhone` phone
-  field — onboarding never renders it.
+  chosen without a phone; helper text is channel-aware. Forgot-password gains an
+  explicit Email/SMS picker (hidden when unavailable; no phone → backend falls
+  back to email; capability-level helper copy only). `ProfileSetup` gained an
+  opt-in `withPhone`/`initialPhone` phone field — onboarding also renders it since
+  2026-08-18.
 - **Tests**: `SmsServiceTest` (normalization, payload, Failed-status throw, HTTP
   error throw, `available()` gating); SMS-path tests in `OtpServiceTest`,
   `ChangePasswordTest`, `ForgotPasswordApiTest` (incl. the SMS token actually

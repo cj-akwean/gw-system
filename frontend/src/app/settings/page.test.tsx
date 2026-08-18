@@ -25,6 +25,7 @@ let mockUseAuth: () => {
 };
 
 vi.mock("@/lib/auth-context", () => ({
+  AUTH_NOTICE_PASSWORD_CHANGED: "password_changed",
   useAuth: () => mockUseAuth(),
 }));
 
@@ -290,9 +291,10 @@ describe("SettingsPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("changes the password with an OTP and shows a confirmation", async () => {
+  it("signs out and redirects to the auth page after changing the password", async () => {
     seedFetch([]);
     mockUseAuth = () => authedUser();
+    mockLogout.mockResolvedValue(undefined);
 
     render(<SettingsPage />);
 
@@ -318,7 +320,11 @@ describe("SettingsPage", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Update password" }));
 
-    expect(await screen.findByText("Password updated.")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(mockLogout).toHaveBeenCalled();
+      expect(mockPush).toHaveBeenCalledWith("/auth?notice=password_changed");
+    });
+    expect(screen.queryByText("Password updated.")).not.toBeInTheDocument();
 
     const sendCodeCall = fetchSpy.mock.calls.find(
       ([url, init]) =>
@@ -411,6 +417,85 @@ describe("SettingsPage", () => {
     expect(
       await screen.findByText("The current password is incorrect.")
     ).toBeInTheDocument();
+  });
+
+  it("does not log out or redirect when the password change fails on the server", async () => {
+    fetchSpy = vi.fn((url: string, init?: RequestInit) => {
+      if (init?.method === "POST" && String(url).includes("/api/password/send-code")) {
+        return Promise.resolve(
+          jsonResponse({ message: "Verification code sent to your email." })
+        );
+      }
+      if (init?.method === "POST" && String(url).includes("/api/password")) {
+        return Promise.resolve(
+          jsonResponse(
+            { message: "The current password is incorrect." },
+            false,
+            422
+          )
+        );
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+    mockUseAuth = () => authedUser();
+
+    render(<SettingsPage />);
+
+    fireEvent.change(screen.getByLabelText("Current password"), {
+      target: { value: "wrong-password" },
+    });
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "new-password-1" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "new-password-1" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Send verification code" })
+    );
+
+    const otpInput = await screen.findByLabelText("Verification code");
+    fireEvent.change(otpInput, { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: "Update password" }));
+
+    expect(
+      await screen.findByText("The current password is incorrect.")
+    ).toBeInTheDocument();
+    expect(mockLogout).not.toHaveBeenCalled();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("blocks sending an SMS code when the user has no phone", async () => {
+    seedFetch([], { available: true, hasPhone: false });
+    mockUseAuth = () => authedUser(null);
+
+    render(<SettingsPage />);
+
+    await screen.findByRole("radiogroup", { name: "Verification channel" });
+    fireEvent.click(screen.getByRole("radio", { name: "SMS" }));
+
+    fireEvent.change(screen.getByLabelText("Current password"), {
+      target: { value: "old-password-1" },
+    });
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "new-password-1" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "new-password-1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send verification code" }));
+
+    expect(
+      await screen.findByText(
+        "Add a phone number in the profile section above to get codes by SMS."
+      )
+    ).toBeInTheDocument();
+    const sendCodeCall = fetchSpy.mock.calls.find(
+      ([url, init]) =>
+        String(url).includes("/api/password/send-code") && init?.method === "POST"
+    );
+    expect(sendCodeCall).toBeUndefined();
   });
 
   it("hides the SMS channel toggle when SMS is unavailable", async () => {

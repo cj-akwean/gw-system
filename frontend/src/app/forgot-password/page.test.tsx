@@ -127,14 +127,14 @@ describe("ForgotPasswordPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("sends the code by SMS when the SMS toggle is checked", async () => {
+  it("sends the code by SMS when the SMS radio is chosen", async () => {
     const fetchSpy = seedFetch({ available: true, hasPhone: false });
     mockUseAuth = () => ({ isAuthenticated: false, ready: true });
 
     render(<ForgotPasswordPage />);
 
-    const toggle = await screen.findByLabelText("Send by SMS instead");
-    fireEvent.click(toggle);
+    const smsRadio = await screen.findByRole("radio", { name: "SMS" });
+    fireEvent.click(smsRadio);
 
     fireEvent.change(screen.getByLabelText("Email"), {
       target: { value: "lost@example.com" },
@@ -150,7 +150,46 @@ describe("ForgotPasswordPage", () => {
     });
   });
 
-  it("hides the SMS toggle when SMS delivery is unavailable", async () => {
+  it("sends the code by email by default when SMS is available", async () => {
+    const fetchSpy = seedFetch({ available: true, hasPhone: false });
+    mockUseAuth = () => ({ isAuthenticated: false, ready: true });
+
+    render(<ForgotPasswordPage />);
+
+    const emailRadio = await screen.findByRole("radio", { name: "Email" });
+    expect(emailRadio).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "lost@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send code" }));
+
+    await screen.findByText(/a verification code is on its way/i);
+
+    const [, init] = forgotCall(fetchSpy);
+    expect(JSON.parse(String(init.body))).toEqual({
+      email: "lost@example.com",
+      channel: "email",
+    });
+  });
+
+  it("shows the channel picker with capability-level helper text when SMS is available", async () => {
+    seedFetch({ available: true, hasPhone: false });
+    mockUseAuth = () => ({ isAuthenticated: false, ready: true });
+
+    render(<ForgotPasswordPage />);
+
+    expect(
+      await screen.findByRole("radiogroup", { name: "Reset code channel" })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /SMS codes require a phone number saved on the account; otherwise the code is sent by email/i
+      )
+    ).toBeInTheDocument();
+  });
+
+  it("hides the channel picker when SMS delivery is unavailable", async () => {
     seedFetch({ available: false, hasPhone: false });
     mockUseAuth = () => ({ isAuthenticated: false, ready: true });
 
@@ -158,7 +197,7 @@ describe("ForgotPasswordPage", () => {
 
     expect(screen.getByLabelText("Email")).toBeInTheDocument();
     expect(
-      screen.queryByLabelText("Send by SMS instead")
+      screen.queryByRole("radiogroup", { name: "Reset code channel" })
     ).not.toBeInTheDocument();
   });
 

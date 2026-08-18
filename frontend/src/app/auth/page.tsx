@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FlippingCard } from "@/components/ui/flipping-card";
@@ -8,6 +8,8 @@ import { AuthPage } from "@/components/auth";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+
+import PasswordChangedNotice from "@/components/portal/password-changed-notice";
 
 function AuthContent() {
   const [isFlipped, setIsFlipped] = useState(false);
@@ -42,6 +44,9 @@ function AuthContent() {
         <div className="fixed top-6 right-6 z-50">
           <ThemeToggle />
         </div>
+        <Suspense fallback={null}>
+          <PasswordChangedNotice />
+        </Suspense>
         {!ready ? (
           <div className="flex h-[520px] w-[400px] max-w-full items-center justify-center">
             <Loader2 aria-hidden className="size-6 animate-spin text-primary" />

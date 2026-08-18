@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\RateLimiter;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -51,6 +52,7 @@ class AdminEditProfileTest extends TestCase
         $this->assertSame('Office Admin', $admin->fresh()->name);
         $this->assertSame(2, $admin->fresh()->avatar_id);
         Mail::assertNothingQueued();
+        $this->assertAuthenticated(guard: 'admin');
     }
 
     public function test_avatar_outside_the_shared_set_is_rejected(): void
@@ -106,10 +108,56 @@ class AdminEditProfileTest extends TestCase
                 'otp' => $code,
             ])
             ->call('save')
-            ->assertHasNoFormErrors();
+            ->assertHasNoFormErrors()
+            ->assertRedirectToRoute('filament.admin.auth.login');
 
         $this->assertTrue(Hash::check('new-password-1', $admin->fresh()->password));
         Mail::assertQueued(\App\Mail\PasswordChanged::class);
+        $this->assertGuest(guard: 'admin');
+    }
+
+    public function test_rate_limited_save_does_not_log_out_or_redirect(): void
+    {
+        Mail::fake();
+
+        $admin = $this->admin();
+        $code = $this->requestChangeCode($admin);
+
+        // The vendor's base save() rate-limits with two non-throwing early
+        // returns (the WithRateLimiting trait keyed by class+method+IP and the
+        // per-admin 'filament-edit-profile:' limiter). Both leave the password
+        // form data filled, so the post-save logout must be skipped when
+        // nothing was actually persisted.
+        $traitKey = 'livewire-rate-limiter:'.sha1(EditProfile::class.'|save|'.request()->ip());
+        $adminKey = 'filament-edit-profile:'.$admin->id;
+        foreach ([$traitKey, $adminKey] as $key) {
+            for ($i = 0; $i < 5; $i++) {
+                RateLimiter::hit($key);
+            }
+        }
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(EditProfile::class)
+            ->fillForm([
+                'name' => 'Office Admin',
+                'email' => 'admin@example.com',
+                'currentPassword' => 'old-password-1',
+                'password' => 'new-password-1',
+                'passwordConfirmation' => 'new-password-1',
+                'otp' => $code,
+            ])
+            ->call('save')
+            ->assertNotified()
+            ->assertNoRedirect();
+
+        RateLimiter::clear($traitKey);
+        RateLimiter::clear($adminKey);
+
+        $this->assertAuthenticated(guard: 'admin');
+        $this->assertTrue(Hash::check('old-password-1', $admin->fresh()->password));
+        // The OTP mailable from requestChangeCode is expected; a throttled save
+        // must never fire the password-changed email.
+        Mail::assertNotQueued(\App\Mail\PasswordChanged::class);
     }
 
     public function test_password_change_without_otp_is_halted(): void

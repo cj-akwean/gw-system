@@ -11,6 +11,8 @@ import {
 } from "react";
 import { loginApi, logoutApi, registerApi, updateProfileApi, type PortalUser } from "./api";
 
+export const AUTH_NOTICE_PASSWORD_CHANGED = "password_changed";
+
 interface AuthContextValue {
   user: PortalUser | null;
   token: string | null;

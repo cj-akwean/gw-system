@@ -1614,3 +1614,52 @@ box cannot degrade into "codes silently written to a file nobody reads" (the exa
 One real gotcha surfaced implementing this: pp()->environment() cannot run inside a
 config file (Laravel binds env only *after* config files load), so the default derives
 from APP_ENV directly — same as config/app.php.
+
+---
+
+## 53. Password change forces re-login; toggles, pickers and error placement follow the user's existing mental model (2026-08-18)
+
+**Question asked:** "We have password changes (portal + admin) and several other auth
+nudges queued up. What's the *right* UX for each, and which trade-offs are deliberate?"
+
+**Answer + reasoning:**
+
+**a) Password change signs you out — you see the change take effect.** The naive UX
+("Password updated." inline) leaves the user wondering whether the change even applied,
+and keeps a session alive with a credential they've just replaced. Forcing a re-login
+makes the effect tangible: portal redirects to `/auth` with a "sign in with your new
+password" banner; the admin gets bounced to the Filament login. The token is revoked
+server-side (portal `logout()` ? `POST /api/logout`), so the old credential dies
+immediately instead of lingering until expiry. Edge asymmetry is accepted: if the logout
+call itself fails, the token may survive to expiry — out of scope, and the redirect still
+happens.
+
+**b) The reveal toggle lives in the base `Input`, and Filament's equivalent is locked in
+explicitly.** Putting the toggle in one shared component means every password field gets
+it with zero per-field work, and new fields inherit it automatically — no future
+audit of "did we remember the eye icon?" The cost is a little wrapper complexity in one
+component, paid once. On the admin side Filament already defaults `arePasswordsRevealable`
+to true; `->revealablePasswords()` is a one-liner that pins the intent so a future panel
+refactor can't silently flip it. The toggle is a `<span role="button">`, not a `<button>`
+— a real button inside a wrapping `<label>` becomes labelable and breaks
+`getByLabelText`, and a span keeps keyboard semantics with Enter/Space.
+
+**c) Forgot Password mirrors Settings' explicit picker because the checkbox hid the
+email default.** The old "Send by SMS instead" checkbox implied email-by-default but made
+SMS the attended choice; the segmented Email/SMS picker makes email visibly the default
+and SMS a first-class alternative, consistent with the Settings channel toggle — one
+mental model across both pages. When SMS is impossible (no driver) the picker disappears
+and it's an email-only flow, so the page never offers a channel it can't deliver.
+
+**d) Form-level errors sit above the fields.** The login/signup error ("Incorrect email
+or password.", "An account with this email already exists.") is a form-level failure,
+not a critique of the email field. Placed between the fields it reads as email-specific
+validation; placed above the email field it reads as "something about this login is
+wrong." Same component, same message, one reorder.
+
+**e) Forgot-password stays deliberately opaque (anti-enumeration).** The copy only ever
+describes capability ("SMS codes require a phone number saved on the account; otherwise
+the code is sent by email") — it never confirms whether a specific email has an account
+or a phone. The backend's silent email fallback and its generic success message are
+untouched. A guest who picks SMS for an account without a phone still gets their code,
+by email, with zero signal about what exists.

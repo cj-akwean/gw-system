@@ -9,6 +9,7 @@ import { DashboardHeader } from "@/components/portal/dashboard-header";
 import { LinkMeterForm } from "@/components/portal/link-meter-form";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
+import { useLogoutRedirect } from "@/lib/use-logout-redirect";
 import { getLinks, type PortalLink } from "@/lib/api";
 
 const STEP_PROFILE = 1;
@@ -21,7 +22,7 @@ function buildSteps(step: number, avatarDone: boolean, linkedDone: boolean): Onb
       id: 1,
       type: avatarDone || step > STEP_PROFILE ? "done" : step === STEP_PROFILE ? "in progress" : "open",
       title: "Create your profile",
-      description: "Pick an avatar and a display name",
+      description: "Pick an avatar, a display name and an optional phone number",
     },
     {
       id: 2,
@@ -71,13 +72,13 @@ function AllSetStep({
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const { isAuthenticated, ready, user, logout, updateProfile } = useAuth();
+  const { isAuthenticated, ready, user, updateProfile } = useAuth();
+  const { loggingOut, logoutAndRedirect } = useLogoutRedirect();
 
   const [step, setStep] = useState(STEP_PROFILE);
   const [links, setLinks] = useState<PortalLink[]>([]);
   const [linksLoaded, setLinksLoaded] = useState(false);
   const [profileError, setProfileError] = useState("");
-  const [loggingOut, setLoggingOut] = useState(false);
   const initialStepSet = useRef(false);
 
   useEffect(() => {
@@ -106,10 +107,8 @@ export default function OnboardingPage() {
     }
   }, [ready, isAuthenticated, loggingOut, router]);
 
-  const handleLogout = async () => {
-    setLoggingOut(true);
-    await logout();
-    router.push("/");
+  const handleLogout = () => {
+    void logoutAndRedirect("/");
   };
 
   if (!ready || !isAuthenticated) {
@@ -160,9 +159,10 @@ export default function OnboardingPage() {
 
               {step === STEP_PROFILE && (
                 <ProfileSetup
-                  onComplete={async ({ username, avatarId }) => {
+                  initialPhone={user?.phone ?? ""}
+                  onComplete={async ({ username, avatarId, phone }) => {
                     try {
-                      await updateProfile(username, avatarId);
+                      await updateProfile(username, avatarId, phone);
                       setProfileError("");
                       setStep(STEP_LINK);
                     } catch (err) {
@@ -171,6 +171,7 @@ export default function OnboardingPage() {
                       );
                     }
                   }}
+                  withPhone
                 />
               )}
 

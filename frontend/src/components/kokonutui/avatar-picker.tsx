@@ -29,7 +29,7 @@ interface ProfileSetupProps {
   className?: string;
   initialUsername?: string;
   initialAvatarId?: number;
-  /** Show an optional phone field (settings only — onboarding stays untouched). */
+  /** Show an optional phone field (settings + onboarding). */
   initialPhone?: string;
   withPhone?: boolean;
   heading?: string;

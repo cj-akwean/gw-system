@@ -78,6 +78,12 @@ export function AuthPage({ mode, onToggleMode }: AuthPageProps) {
 
         <div className="space-y-4">
           <form className="space-y-2" onSubmit={handleSubmit}>
+            {error && (
+              <p className="text-sm text-red-500 text-center" role="alert">
+                {error}
+              </p>
+            )}
+
             <InputGroup>
               <InputGroupInput
                 placeholder="your.email@example.com"
@@ -103,10 +109,6 @@ export function AuthPage({ mode, onToggleMode }: AuthPageProps) {
                 <LockIcon />
               </InputGroupAddon>
             </InputGroup>
-
-            {error && (
-              <p className="text-sm text-red-500 text-center">{error}</p>
-            )}
 
             <Button className="w-full" size="sm" type="submit" disabled={isLoading}>
               {isLoading ? "Signing in..." : isLogin ? "Login with Email" : "Create Account"}

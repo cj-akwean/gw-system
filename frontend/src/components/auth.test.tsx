@@ -61,6 +61,14 @@ describe("AuthPage signup mode", () => {
     expect(
       await screen.findByText("An account with this email already exists.")
     ).toBeInTheDocument();
+    const error = screen.getByText(
+      "An account with this email already exists."
+    );
+    const emailInput = screen.getByPlaceholderText("your.email@example.com");
+    expect(
+      error.compareDocumentPosition(emailInput) &
+        Node.DOCUMENT_POSITION_PRECEDING
+    ).toBeTruthy();
   });
 
   it("keeps calling login in login mode", async () => {

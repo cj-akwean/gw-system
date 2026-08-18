@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { sendPasswordResetOtp, checkSmsHealth } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { PageLoader } from "@/components/portal/page-loader";
+import { OtpChannelPicker } from "@/components/portal/otp-channel-picker";
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
@@ -19,7 +20,7 @@ export default function ForgotPasswordPage() {
   const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
   const [smsAvailable, setSmsAvailable] = useState(false);
-  const [useSms, setUseSms] = useState(false);
+  const [otpChannel, setOtpChannel] = useState<"email" | "sms">("email");
 
   useEffect(() => {
     if (ready && isAuthenticated) {
@@ -46,7 +47,7 @@ export default function ForgotPasswordPage() {
     setError("");
     setSending(true);
     try {
-      await sendPasswordResetOtp(email, useSms ? "sms" : "email");
+      await sendPasswordResetOtp(email, otpChannel);
       setSent(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't send the code.");
@@ -67,7 +68,8 @@ export default function ForgotPasswordPage() {
         <div className="rounded-2xl border border-border bg-card p-8">
           <h1 className="text-2xl font-bold tracking-wide">Forgot your password?</h1>
           <p className="mt-2 text-base text-muted-foreground">
-            Enter your email and we'll send you a 6-digit code to reset your password.
+            Enter your email and we&apos;ll send you a 6-digit code by email or SMS to
+            reset your password.
           </p>
 
           {sent ? (
@@ -97,18 +99,18 @@ export default function ForgotPasswordPage() {
               </label>
 
               {smsAvailable && (
-                <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <input
-                    aria-label="Send by SMS instead"
-                    checked={useSms}
-                    onChange={(e) => setUseSms(e.target.checked)}
-                    type="checkbox"
+                <div className="space-y-1.5">
+                  <OtpChannelPicker
+                    ariaLabel="Reset code channel"
+                    label="Send the code via"
+                    onChange={setOtpChannel}
+                    value={otpChannel}
                   />
-                  Send the code by SMS instead
-                  <span className="text-xs text-muted-foreground/70">
-                    (only if your account has a phone number)
-                  </span>
-                </label>
+                  <p className="text-xs text-muted-foreground">
+                    SMS codes require a phone number saved on the account; otherwise
+                    the code is sent by email.
+                  </p>
+                </div>
               )}
 
               {error && (

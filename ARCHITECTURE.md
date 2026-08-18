@@ -208,6 +208,7 @@ All payments are offline (cash). Portal: `test@example.com` / `password`.
 - [x] Filament admin auth guard set up separately from API guard (is_admin flag + filter)
 - [x] Login failure handling per site — admin differentiates wrong-creds vs valid-but-not-admin (custom `App\Filament\Auth\Login`); customer `/api/login` one generic message (no email enumeration) + `throttle:10,1`; friendly frontend error when the server is unreachable (details: docs/insights/implementation-notes.md → Auth §1)
 - [x] API unauthenticated responses — `/api/login` named `login` so auth:sanctum failures never `RouteNotFoundException`; clean `401` JSON with `Accept: application/json`; Thunder Client's duplicate-`Accept` 500 gotcha (details: docs/insights/implementation-notes.md → Auth §2)
+- [x] Password UX & feedback *(2026-08-18)* — password change (portal Settings + admin EditProfile) signs the user out and forces a fresh sign-in (portal adds a `/auth?notice=password_changed` banner; admin redirects to the Filament login, `navigate: false`); show/hide password toggle on every password input (portal via base `Input`, Filament locked in via `->revealablePasswords()`); onboarding profile step gains an optional phone field; Forgot Password uses an explicit Email/SMS segmented picker (email default, capability-level helper copy — never leaks account/phone state); login/signup form errors render above the email field (details: docs/insights/implementation-notes.md → Auth §3–4)
 
 ### Core Data Models
 - [x] `Barangay` model + migration (seed 15 real Guinobatan barangays)

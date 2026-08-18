@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use App\Mail\PasswordChanged;
 use App\Services\OtpService;
 use Filament\Auth\Pages\EditProfile as BaseEditProfile;
+use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
@@ -102,7 +103,9 @@ class EditProfile extends BaseEditProfile
 
     public function save(): void
     {
-        if (filled($this->data['password'] ?? null)) {
+        $passwordWasChanged = filled($this->data['password'] ?? null);
+
+        if ($passwordWasChanged) {
             $valid = app(OtpService::class)->verify(
                 $this->getUser(),
                 OtpService::PASSWORD_CHANGE,
@@ -121,6 +124,20 @@ class EditProfile extends BaseEditProfile
         }
 
         parent::save();
+
+        // The base `save()` clears `$this->data['password']` only after a
+        // committed save — its rate-limit early-returns leave it filled, so this
+        // gate prevents logging the admin out when nothing was persisted.
+        if ($passwordWasChanged && blank($this->data['password'])) {
+            Filament::auth()->logout();
+
+            if (request()->hasSession()) {
+                request()->session()->invalidate();
+                request()->session()->regenerateToken();
+            }
+
+            $this->redirect(filament()->getLoginUrl(), navigate: false);
+        }
     }
 
     protected function afterSave(): void

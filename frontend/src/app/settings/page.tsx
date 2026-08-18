@@ -11,8 +11,9 @@ import { LinkMeterForm } from "@/components/portal/link-meter-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AnimatedOTPInput } from "@/components/smoothui/otp-input";
-import { useAuth } from "@/lib/auth-context";
-import { cn } from "@/lib/utils";
+import { OtpChannelPicker } from "@/components/portal/otp-channel-picker";
+import { AUTH_NOTICE_PASSWORD_CHANGED, useAuth } from "@/lib/auth-context";
+import { useLogoutRedirect } from "@/lib/use-logout-redirect";
 import {
   changePasswordApi,
   checkSmsHealth,
@@ -22,9 +23,14 @@ import {
   type PortalLink,
 } from "@/lib/api";
 
+const NO_PHONE_SMS_MESSAGE =
+  "Add a phone number in the profile section above to get codes by SMS.";
+const NO_PHONE_SMS_PARTS = NO_PHONE_SMS_MESSAGE.split("profile section");
+
 export default function SettingsPage() {
   const router = useRouter();
-  const { isAuthenticated, ready, user, logout, updateProfile } = useAuth();
+  const { isAuthenticated, ready, user, updateProfile } = useAuth();
+  const { loggingOut, logoutAndRedirect } = useLogoutRedirect();
 
   const [links, setLinks] = useState<PortalLink[]>([]);
   const [linksLoaded, setLinksLoaded] = useState(false);
@@ -33,7 +39,6 @@ export default function SettingsPage() {
   const [profileError, setProfileError] = useState("");
   const [unlinkError, setUnlinkError] = useState("");
   const [unlinkingId, setUnlinkingId] = useState<number | null>(null);
-  const [loggingOut, setLoggingOut] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -41,7 +46,6 @@ export default function SettingsPage() {
   const [otpSent, setOtpSent] = useState(false);
   const [sendingOtp, setSendingOtp] = useState(false);
   const [passwordError, setPasswordError] = useState("");
-  const [passwordSaved, setPasswordSaved] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
   const [otpChannel, setOtpChannel] = useState<"email" | "sms">("email");
   const [smsAvailable, setSmsAvailable] = useState(false);
@@ -66,10 +70,8 @@ export default function SettingsPage() {
     }
   }, [ready, isAuthenticated, loggingOut, router]);
 
-  const handleLogout = async () => {
-    setLoggingOut(true);
-    await logout();
-    router.push("/");
+  const handleLogout = () => {
+    void logoutAndRedirect("/");
   };
 
   const handleUnlink = async (linkId: number) => {
@@ -87,7 +89,6 @@ export default function SettingsPage() {
 
   const handleSendOtp = async () => {
     setPasswordError("");
-    setPasswordSaved(false);
     setOtpSent(false);
 
     if (newPassword.length < 8) {
@@ -102,6 +103,11 @@ export default function SettingsPage() {
 
     if (!currentPassword) {
       setPasswordError("Enter your current password first.");
+      return;
+    }
+
+    if (otpChannel === "sms" && !user?.phone) {
+      setPasswordError(NO_PHONE_SMS_MESSAGE);
       return;
     }
 
@@ -120,7 +126,6 @@ export default function SettingsPage() {
 
   const handlePasswordChange = async () => {
     setPasswordError("");
-    setPasswordSaved(false);
 
     if (newPassword.length < 8) {
       setPasswordError("New password must be at least 8 characters.");
@@ -149,14 +154,10 @@ export default function SettingsPage() {
     setChangingPassword(true);
     try {
       await changePasswordApi(currentPassword, newPassword, otp);
-      setPasswordSaved(true);
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-      setOtp("");
-      setOtpSent(false);
+      await logoutAndRedirect(
+        `/auth?notice=${AUTH_NOTICE_PASSWORD_CHANGED}`
+      );
     } catch (err) {
-      setPasswordSaved(false);
       setPasswordError(
         err instanceof Error ? err.message : "Couldn't change your password."
       );
@@ -246,8 +247,9 @@ export default function SettingsPage() {
                 <h3 className="text-sm font-semibold">Change password</h3>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                Use at least 8 characters. You'll stay signed in on this device; other
-                sessions will be signed out.
+                Use at least 8 characters. After your password is changed,
+                you&apos;ll be signed out and asked to sign in again with your new
+                password.
               </p>
 
               <form
@@ -299,11 +301,6 @@ export default function SettingsPage() {
                   />
                 </label>
 
-                {passwordSaved && (
-                  <p className="text-sm text-primary" role="status">
-                    Password updated.
-                  </p>
-                )}
                 {passwordError && (
                   <p className="text-sm text-destructive" role="alert">
                     {passwordError}
@@ -312,46 +309,19 @@ export default function SettingsPage() {
 
                 {smsAvailable && (
                   <div className="space-y-1.5">
-                    <span className="text-xs font-medium text-muted-foreground">
-                      Send verification code via
-                    </span>
-                    <div className="flex gap-2" role="radiogroup" aria-label="Verification channel">
-                      <button
-                        aria-checked={otpChannel === "email"}
-                        className={cn(
-                          "h-9 rounded-lg border px-4 text-xs font-medium transition-colors",
-                          otpChannel === "email"
-                            ? "border-foreground/20 bg-muted text-foreground"
-                            : "border-border text-muted-foreground hover:text-foreground"
-                        )}
-                        onClick={() => setOtpChannel("email")}
-                        role="radio"
-                        type="button"
-                      >
-                        Email
-                      </button>
-                      <button
-                        aria-checked={otpChannel === "sms"}
-                        className={cn(
-                          "h-9 rounded-lg border px-4 text-xs font-medium transition-colors",
-                          otpChannel === "sms"
-                            ? "border-foreground/20 bg-muted text-foreground"
-                            : "border-border text-muted-foreground hover:text-foreground"
-                        )}
-                        onClick={() => setOtpChannel("sms")}
-                        role="radio"
-                        type="button"
-                      >
-                        SMS
-                      </button>
-                    </div>
+                    <OtpChannelPicker
+                      ariaLabel="Verification channel"
+                      label="Send verification code via"
+                      onChange={setOtpChannel}
+                      value={otpChannel}
+                    />
                     {otpChannel === "sms" && !user?.phone && (
                       <p className="text-xs text-destructive" role="alert">
-                        Add a phone number in the{" "}
+                        {NO_PHONE_SMS_PARTS[0]}
                         <a href="#phone" className="underline underline-offset-2">
                           profile section
-                        </a>{" "}
-                        above to get codes by SMS.
+                        </a>
+                        {NO_PHONE_SMS_PARTS[1]}
                       </p>
                     )}
                   </div>

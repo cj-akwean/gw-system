@@ -171,7 +171,7 @@ describe("OnboardingPage wizard", () => {
     fireEvent.click(submitButton);
 
     await waitFor(() => {
-      expect(mockUpdateProfile).toHaveBeenCalledWith("AquaFan", 1);
+      expect(mockUpdateProfile).toHaveBeenCalledWith("AquaFan", 1, null);
     });
     expect(await screen.findByText("Link Your Meter")).toBeInTheDocument();
   });

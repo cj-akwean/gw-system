@@ -36,6 +36,7 @@ class AdminPanelProvider extends PanelProvider
                 \App\Filament\Auth\RequestPasswordReset::class,
                 \App\Filament\Auth\ResetPassword::class,
             )
+            ->revealablePasswords()
             // The vendor registers the reset route with the `signed` middleware
             // (for the emailed reset-link flow). The OTP flow navigates to the
             // page directly, so register an unsigned route first — it wins over
