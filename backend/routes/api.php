@@ -42,6 +42,9 @@ Route::post('/reset-password', [ResetPasswordController::class, 'store'])
 Route::get('/health/payment', [HealthController::class, 'check'])
     ->middleware('throttle:10,1,health-payment');
 
+Route::get('/health/sms', [HealthController::class, 'sms'])
+    ->middleware('throttle:10,1,health-sms');
+
 Route::get('/rates', [RateController::class, 'index'])
     ->middleware('throttle:60,1,rates-index');
 

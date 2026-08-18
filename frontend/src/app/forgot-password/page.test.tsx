@@ -35,6 +35,32 @@ function jsonResponse(body: unknown, ok = true, status = 200): Response {
   } as unknown as Response;
 }
 
+function seedFetch(
+  health: { available: boolean; hasPhone: boolean },
+  forgotResponse: unknown = {
+    message: "If an account exists for that email, a verification code is on its way.",
+  }
+): ReturnType<typeof vi.fn> {
+  const fetchSpy = vi.fn((url: string) => {
+    if (String(url).includes("/api/health/sms")) {
+      return Promise.resolve(
+        jsonResponse({ available: health.available, hasPhone: health.hasPhone })
+      );
+    }
+    return Promise.resolve(jsonResponse(forgotResponse));
+  });
+  vi.stubGlobal("fetch", fetchSpy);
+  return fetchSpy;
+}
+
+function forgotCall(fetchSpy: ReturnType<typeof vi.fn>): [string, RequestInit] {
+  const call = fetchSpy.mock.calls.find(([url]: [string]) =>
+    String(url).includes("/api/forgot-password")
+  ) as [string, RequestInit];
+  expect(call).toBeDefined();
+  return call;
+}
+
 describe("ForgotPasswordPage", () => {
   beforeEach(() => {
     mockReplace.mockReset();
@@ -53,12 +79,7 @@ describe("ForgotPasswordPage", () => {
   });
 
   it("sends the code and shows the success state", async () => {
-    const fetchSpy = vi.fn().mockResolvedValue(
-      jsonResponse({
-        message: "If an account exists for that email, a verification code is on its way.",
-      })
-    );
-    vi.stubGlobal("fetch", fetchSpy);
+    const fetchSpy = seedFetch({ available: false, hasPhone: false });
     mockUseAuth = () => ({ isAuthenticated: false, ready: true });
 
     render(<ForgotPasswordPage />);
@@ -72,20 +93,26 @@ describe("ForgotPasswordPage", () => {
       await screen.findByText(/a verification code is on its way/i)
     ).toBeInTheDocument();
 
-    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    const [url, init] = forgotCall(fetchSpy);
     expect(url).toBe("http://127.0.0.1:8000/api/forgot-password");
-    expect(JSON.parse(String(init.body))).toEqual({ email: "lost@example.com" });
+    expect(JSON.parse(String(init.body))).toEqual({
+      email: "lost@example.com",
+      channel: "email",
+    });
   });
 
   it("surfaces a server error", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockResolvedValue(
-          jsonResponse({ message: "Couldn't send the code." }, false, 422)
-        )
-    );
+    const fetchSpy = vi.fn((url: string) => {
+      if (String(url).includes("/api/health/sms")) {
+        return Promise.resolve(
+          jsonResponse({ available: false, hasPhone: false })
+        );
+      }
+      return Promise.resolve(
+        jsonResponse({ message: "Couldn't send the code." }, false, 422)
+      );
+    });
+    vi.stubGlobal("fetch", fetchSpy);
     mockUseAuth = () => ({ isAuthenticated: false, ready: true });
 
     render(<ForgotPasswordPage />);
@@ -98,6 +125,41 @@ describe("ForgotPasswordPage", () => {
     expect(
       await screen.findByText("Couldn't send the code.")
     ).toBeInTheDocument();
+  });
+
+  it("sends the code by SMS when the SMS toggle is checked", async () => {
+    const fetchSpy = seedFetch({ available: true, hasPhone: false });
+    mockUseAuth = () => ({ isAuthenticated: false, ready: true });
+
+    render(<ForgotPasswordPage />);
+
+    const toggle = await screen.findByLabelText("Send by SMS instead");
+    fireEvent.click(toggle);
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "lost@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send code" }));
+
+    await screen.findByText(/a verification code is on its way/i);
+
+    const [, init] = forgotCall(fetchSpy);
+    expect(JSON.parse(String(init.body))).toEqual({
+      email: "lost@example.com",
+      channel: "sms",
+    });
+  });
+
+  it("hides the SMS toggle when SMS delivery is unavailable", async () => {
+    seedFetch({ available: false, hasPhone: false });
+    mockUseAuth = () => ({ isAuthenticated: false, ready: true });
+
+    render(<ForgotPasswordPage />);
+
+    expect(screen.getByLabelText("Email")).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Send by SMS instead")
+    ).not.toBeInTheDocument();
   });
 
   it("links to the reset page and back to sign in", async () => {

@@ -49,6 +49,8 @@ sudo cp .env.example .env && sudo chmod 640 .env
 # edit .env: APP_ENV=production, APP_DEBUG=false, APP_URL=https://<domain>,
 # DB_*  (Postgres above), MAIL_MAILER=resend + RESEND_API_KEY,
 # PAYMONGO_LIVEMODE=true + live keys + PAYMONGO_WEBHOOK_SECRET,
+# SMS_DRIVER=semaphore + SEMAPHORE_API_KEY (real OTP texts — prod must NOT
+# default to the log driver; without a key SMS is simply unavailable),
 # QUEUE_CONNECTION=database (default anyway)
 
 composer install --no-dev --optimize-autoloader

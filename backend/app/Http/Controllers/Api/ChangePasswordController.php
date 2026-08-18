@@ -13,13 +13,30 @@ use Illuminate\Support\Facades\Mail;
 class ChangePasswordController extends Controller
 {
     /**
-     * Emails a 6-digit code that must accompany the password change.
+     * Sends a 6-digit code (email by default, SMS when chosen) that must
+     * accompany the password change.
      */
     public function sendCode(Request $request): JsonResponse
     {
-        app(OtpService::class)->send($request->user(), OtpService::PASSWORD_CHANGE);
+        $channel = $request->validate([
+            'channel' => ['sometimes', 'string', 'in:email,sms'],
+        ])['channel'] ?? 'email';
 
-        return response()->json(['message' => 'Verification code sent to your email.']);
+        $user = $request->user();
+
+        if ($channel === 'sms' && (! is_string($user->phone) || trim($user->phone) === '')) {
+            return response()->json([
+                'message' => 'Add a phone number in Settings first.',
+            ], 422);
+        }
+
+        app(OtpService::class)->send($user, OtpService::PASSWORD_CHANGE, $channel);
+
+        return response()->json([
+            'message' => $channel === 'sms'
+                ? 'Verification code sent to your phone ('.$user->phone.').'
+                : 'Verification code sent to your email.',
+        ]);
     }
 
     public function store(ChangePasswordRequest $request): JsonResponse

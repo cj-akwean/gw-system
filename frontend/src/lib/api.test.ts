@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   buildReturnUrl,
   changePasswordApi,
+  checkSmsHealth,
   clearPendingInvoice,
   createLink,
   formatPeso,
@@ -321,24 +322,49 @@ describe("updateProfileApi", () => {
     vi.unstubAllGlobals();
   });
 
-  it("patches name and avatar_id", async () => {
+  it("patches name, avatar_id and phone", async () => {
     const fetchSpy = vi.fn().mockResolvedValue(
       jsonResponse({
         id: 1,
         name: "AquaFan",
         email: "fan@example.com",
         avatar_id: 3,
+        phone: "09171234567",
       })
     );
     vi.stubGlobal("fetch", fetchSpy);
 
-    const user = await updateProfileApi("AquaFan", 3);
+    const user = await updateProfileApi("AquaFan", 3, "09171234567");
 
-    expect(user).toMatchObject({ name: "AquaFan", avatar_id: 3 });
+    expect(user).toMatchObject({
+      name: "AquaFan",
+      avatar_id: 3,
+      phone: "09171234567",
+    });
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("http://127.0.0.1:8000/api/profile");
     expect(init.method).toBe("PATCH");
-    expect(JSON.parse(String(init.body))).toEqual({ name: "AquaFan", avatar_id: 3 });
+    expect(JSON.parse(String(init.body))).toEqual({
+      name: "AquaFan",
+      avatar_id: 3,
+      phone: "09171234567",
+    });
+  });
+
+  it("sends null phone when the field is empty", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      jsonResponse({ id: 1, name: "AquaFan", email: "f@e.com", avatar_id: 3, phone: null })
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await updateProfileApi("AquaFan", 3, null);
+
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({
+      name: "AquaFan",
+      avatar_id: 3,
+      phone: null,
+    });
   });
 });
 
@@ -395,17 +421,18 @@ describe("changePasswordApi", () => {
     });
   });
 
-  it("posts to the send-code endpoint", async () => {
+  it("posts to the send-code endpoint with the channel", async () => {
     const fetchSpy = vi
       .fn()
       .mockResolvedValue(jsonResponse({ message: "Verification code sent to your email." }));
     vi.stubGlobal("fetch", fetchSpy);
 
-    await sendPasswordChangeOtp();
+    await sendPasswordChangeOtp("sms");
 
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("http://127.0.0.1:8000/api/password/send-code");
     expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({ channel: "sms" });
     expect((init.headers as Record<string, string>).Authorization).toBe(
       "Bearer token-1"
     );
@@ -422,7 +449,26 @@ describe("forgot / reset password api", () => {
     vi.unstubAllGlobals();
   });
 
-  it("posts the email to the forgot-password endpoint", async () => {
+  it("posts the email and channel to the forgot-password endpoint", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse({ message: "If an account exists for that email, a verification code is on its way." })
+      );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await sendPasswordResetOtp("lost@example.com", "sms");
+
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:8000/api/forgot-password");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({
+      email: "lost@example.com",
+      channel: "sms",
+    });
+  });
+
+  it("defaults the forgot-password channel to email", async () => {
     const fetchSpy = vi
       .fn()
       .mockResolvedValue(
@@ -432,10 +478,11 @@ describe("forgot / reset password api", () => {
 
     await sendPasswordResetOtp("lost@example.com");
 
-    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("http://127.0.0.1:8000/api/forgot-password");
-    expect(init.method).toBe("POST");
-    expect(JSON.parse(String(init.body))).toEqual({ email: "lost@example.com" });
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({
+      email: "lost@example.com",
+      channel: "email",
+    });
   });
 
   it("throws ApiError with the server message when forgot-password fails", async () => {
@@ -585,6 +632,64 @@ describe("links api", () => {
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("http://127.0.0.1:8000/api/links/5");
     expect(init?.method).toBe("DELETE");
+  });
+});
+
+describe("checkSmsHealth", () => {
+  beforeEach(() => {
+    seedAuthToken();
+  });
+
+  afterEach(() => {
+    localStorage.removeItem("auth");
+    vi.unstubAllGlobals();
+  });
+
+  it("returns availability and hasPhone for a signed-in user", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ available: true, hasPhone: true }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(checkSmsHealth()).resolves.toEqual({
+      available: true,
+      hasPhone: true,
+    });
+
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:8000/api/health/sms");
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      "Bearer token-1"
+    );
+  });
+
+  it("treats a server failure as unavailable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse({ message: "boom" }, false, 500))
+    );
+
+    await expect(checkSmsHealth()).resolves.toEqual({
+      available: false,
+      hasPhone: false,
+    });
+  });
+
+  it("still works for a guest (no token)", async () => {
+    localStorage.removeItem("auth");
+
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ available: true, hasPhone: false }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(checkSmsHealth()).resolves.toEqual({
+      available: true,
+      hasPhone: false,
+    });
+
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
   });
 });
 

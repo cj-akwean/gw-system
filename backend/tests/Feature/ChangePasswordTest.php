@@ -2,12 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\SendOtpSms;
 use App\Mail\PasswordChangeOtp;
 use App\Mail\PasswordChanged;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Queue;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -189,6 +191,60 @@ class ChangePasswordTest extends TestCase
         }
 
         $this->postJson('/api/password/send-code')->assertStatus(429);
+    }
+
+    public function test_send_code_with_sms_channel_dispatches_sms_and_returns_phone_message(): void
+    {
+        Queue::fake();
+
+        $user = $this->user(['phone' => '09171234567']);
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/password/send-code', ['channel' => 'sms'])
+            ->assertOk()
+            ->assertJson(['message' => 'Verification code sent to your phone (09171234567).']);
+
+        Queue::assertPushed(SendOtpSms::class, fn (SendOtpSms $job): bool => $job->phone === '09171234567');
+    }
+
+    public function test_send_code_with_sms_channel_without_a_phone_returns_422(): void
+    {
+        Queue::fake();
+
+        $user = $this->user(['phone' => null]);
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/password/send-code', ['channel' => 'sms'])
+            ->assertStatus(422)
+            ->assertJson(['message' => 'Add a phone number in Settings first.']);
+
+        Queue::assertNothingPushed();
+    }
+
+    public function test_send_code_defaults_to_email_and_returns_email_message(): void
+    {
+        Mail::fake();
+        Queue::fake();
+
+        $user = $this->user(['phone' => '09171234567']);
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/password/send-code')
+            ->assertOk()
+            ->assertJson(['message' => 'Verification code sent to your email.']);
+
+        Mail::assertQueued(PasswordChangeOtp::class);
+        Queue::assertNotPushed(SendOtpSms::class);
+    }
+
+    public function test_send_code_rejects_an_invalid_channel(): void
+    {
+        $user = $this->user();
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/password/send-code', ['channel' => 'fax'])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['channel']);
     }
 
     public function test_endpoint_is_rate_limited(): void

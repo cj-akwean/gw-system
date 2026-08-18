@@ -1531,3 +1531,86 @@ data (paid/overdue/unpaid invoices) silently never appeared â€” a latent bug tha
 shows on a genuinely fresh install, which Docker is. Users now get created before the
 demo-data call. The related AGENTS.md "282/282 green" figure was also stale; the suite is
 670 tests.
+
+---
+
+## 51. Why SMS is an optional OTP channel, not primary — and what it will never carry (2026-08-18)
+
+**Question asked:** "Add SMS notifications — send the verification codes by text so
+customers without reliable email can still use the portal."
+
+**Answer + reasoning:**
+
+**a) Email stays primary; SMS is a user-selectable choice beside it.** A customer with
+only a phone gets a working path, but every customer with an email keeps today's
+experience. Making SMS primary would cost ~2 credits per message and buy nothing for the
+majority who use email fine. The portal hides the SMS option until the office sets
+SEMAPHORE_API_KEY, so a half-set-up account never advertises a broken channel.
+
+**b) The app can only send the OTPs it generates itself.** That's the password-change
+code (OtpService) and the password-reset code (the broker token). **Card 3DS OTPs are
+a hard exclusion:** when a customer pays by Visa/Mastercard, the *bank* sends the 3DS
+challenge/OTP to the cardholder through the card network. PayMongo and this app never
+see or control it — no amount of app-side SMS work can deliver, resend, or influence
+those codes. Any future pitch or plan that implies "SMS OTPs for card payments" is
+category error, not a feature gap.
+
+**c) Semaphore over Twilio.** Both work, but every number this utility will text is a PH
+mobile — Twilio adds a global platform and per-SMS fees in USD for reach the office
+doesn't need. Semaphore is PH-native (? credits, local support, an OTP-dedicated route
+that stays routing even when telco generic traffic is congested). No abstraction layer
+over multiple providers: that's speculative generality here — one provider, one
+service class, and the config swap (whenever a real second provider appears) is a small,
+contained refactor.
+
+**d) SMS is OTPs only — no receipts, no billing reminders, no admin alerts.** Those were
+explicitly deferred. Receipts/reminders are bulk-or-intermittent and already handled by
+email + the admin bell; mixing them into a channel that costs money per message and
+exists to unblock verification would blur the channel's purpose and its failure
+monitoring. Phone numbers are also self-asserted (no OTP-verify-on-save): the customer
+types a number, we validate the format, done — verifying the phone would need another
+SMS per user just to trust data that only gates *their own* choice of channel.
+
+**e) Design consequence of "optional": the backend falls back quietly.** The
+forgot-password page lets a guest tick "Send by SMS instead" without knowing whether
+that email has a phone stored (checking would leak account existence). When SMS is
+picked but the account has no phone, delivery silently falls back to email — the
+anti-enumeration generic response is unchanged and a user who picked SMS by accident
+still gets their code, just by email.
+
+---
+
+## 52. Semaphore has no sandbox — so dev/test uses a log driver, exactly like MAIL_MAILER=log (2026-08-18, amendment)
+
+**Question asked:** "The SMS flow is implemented but there is no way to try it — Semaphore
+has no test/sandbox mode, every real call costs 2 credits and needs a real PH number. How
+do we develop and demo this?"
+
+**Answer + reasoning:**
+
+**a) Reuse the project's email convention rather than inventing a new one.** This app
+already ships MAIL_MAILER=log: dev writes emails to a file instead of delivering them.
+SMS gets the same switch — SMS_DRIVER=log writes phone + code + interpolated body to
+storage/logs/sms.log and returns without calling Semaphore; SMS_DRIVER=semaphore is the
+real API path. A developer with no Semaphore account can now run the entire portal flow
+(settings ? add phone ? Change password SMS ? read the code from the log ? submit) offline.
+Same mental model, same developer legacy: "no account? read the log file."
+
+**b) Why not test keys / a Twilio trial sandbox instead?** Twilio has a real sandbox
+(Trial), but adopting it means adopting a *second* provider for a niche flow — a second
+account, a second service class, a second cost/currency — just to demo something the log
+driver already covers at zero infrastructure. And portal SMS usage drops sharply after
+launch (it only exists to unblock customers without reliable email), so a sandbox-driven
+second provider would be permanent operational debt for a thin use case. The log driver is
+not a provider abstraction (out of scope for this plan); it is a transport, exactly like
+MAIL_MAILER=log is not a mail provider.
+
+**c) The switch defaults by environment, and production can never silently log.** Out of
+the box the driver is log outside production and semaphore in production. In
+semaphore mode without a key, SmsService throws a clear "SEMAPHORE_API_KEY is not
+configured" error (the vailable() gate also stays false) — so a forgotten key on a prod
+box cannot degrade into "codes silently written to a file nobody reads" (the exact
+'accidentally-on' failure MAIL_MAILER=log avoids by being part of the deploy checklist).
+One real gotcha surfaced implementing this: pp()->environment() cannot run inside a
+config file (Laravel binds env only *after* config files load), so the default derives
+from APP_ENV directly — same as config/app.php.

@@ -728,6 +728,66 @@ both sites with an OTP email.
   second request runs with the first request's token. `Sanctum::actingAs` uses a
   transient token, so token-survival assertions need `withToken()` + real tokens.
 
+### 10. SMS OTP delivery (Semaphore) *(2026-08-18)*
+Email stays the default/primary OTP channel; SMS is a user-selectable option for
+customers who have a phone but no reliable email. Covers only the OTPs the app
+itself generates (password-change + password-reset codes).
+- **Scope guardrail (repeated from the plan): card 3DS OTPs are NOT in scope.**
+  Paying by card triggers the *bank's* 3DS challenge to the cardholder via the card
+  network — PayMongo and this app never see or control those codes. No app-side SMS
+  work can change that; docs/insights/product-decisions.md §51.
+- **Provider + API**: Semaphore (`POST https://api.semaphore.co/api/v4/otp`,
+  form-params `apikey`/`number`/`message`/`code`/`sendername`; 2 credits per
+  160-char SMS; response is a JSON array of message objects, `status` `Failed` =
+  rejected). The app always sends its own `code` + a message containing the `{otp}`
+  placeholder — Semaphore substitutes, so the cache-hashed code and the SMS code
+  always match. Verified against semaphore.co/docs on 2026-08-18.
+- **`SmsService`**: mirrors the `PayMongoService` HTTP pattern (15s connect
+  timeout, 3× retry on 5xx/ConnectionException, dedicated `sms` log channel).
+  `sendOtp()` normalizes the phone to `639XXXXXXXXX` (accepts `09…`/`639…`/`+639…`,
+  throws on anything else), posts, logs, throws `RuntimeException` on rejection.
+  `available()` gates on `SEMAPHORE_API_KEY` — empty key = SMS disabled everywhere
+  and nothing ever calls Semaphore.
+- **`SendOtpSms` job**: `ShouldQueue`, `tries=3`, `backoff [10,30,60]`. Permanent
+  failure → `sms` log + `AdminNotifier::notify('SMS delivery failed', …)`.
+- **`OtpService`**: `send($user, $purpose, $channel = 'email')` — `sms` requires a
+  stored phone (throws `InvalidArgumentException`), stores the channel in the cache
+  payload, dispatches `SendOtpSms` with `SmsService::OTP_MESSAGE`; `verify()` is
+  unchanged and channel-agnostic.
+- **API**: `POST /api/password/send-code` accepts `channel` (`email` default |
+  `sms`; 422 "Add a phone number in Settings first." without a phone; response
+  message channel-aware). `POST /api/forgot-password` accepts `channel` — SMS only
+  when the account has a phone, else silent email fallback; the generic
+  anti-enumeration response is unchanged either way. `GET /api/health/sms`
+  (public, throttled `10,1,health-sms`) returns `{available, hasPhone}` — `hasPhone`
+  only reflects a signed-in request (`$request->user('sanctum')`), so the guest
+  forgot-password page can gate its toggle on `available` alone.
+- **Profile**: `PATCH /api/profile` accepts optional `phone` (nullable,
+  max:20, loose PH-mobile regex; null clears it; trimmed on save); returned in the
+  profile, login and register user payloads.
+- **Frontend**: settings page gains a channel segmented toggle (hidden when
+  `available` is false) + a hint linking to the profile phone field when SMS is
+  chosen without a phone; helper text is channel-aware. Forgot-password gains a
+  "Send by SMS instead" checkbox (hidden when unavailable; no phone → backend falls
+  back to email). `ProfileSetup` gained an opt-in `withPhone`/`initialPhone` phone
+  field — onboarding never renders it.
+- **Tests**: `SmsServiceTest` (normalization, payload, Failed-status throw, HTTP
+  error throw, `available()` gating); SMS-path tests in `OtpServiceTest`,
+  `ChangePasswordTest`, `ForgotPasswordApiTest` (incl. the SMS token actually
+  resetting the password and no-double-send fallbacks) and `ProfileUpdateApiTest`
+  (phone save/clear/invalid).
+- **Dev/test sandbox (amendment 2026-08-18): Semaphore has no sandbox.** `SMS_DRIVER`
+  defaults to `log` outside production / `semaphore` in production. Log driver writes
+  phone + code + interpolated body to `storage/logs/sms.log` and returns — same
+  convention as `MAIL_MAILER=log`; `available()` is true in log mode so the full portal
+  flow is exercisable offline. Semaphore mode without a key throws a clear
+  "SEMAPHORE_API_KEY is not configured" (so prod can never silently log), and
+  `php artisan sms:test {number?} {--code=}` sends one OTP through the active driver
+  (log hint vs real-send), mirroring `paymongo:simulate-payment`. Gotcha: the driver
+  default cannot use `app()->environment()` inside a config file (Laravel binds `env`
+  only after config loads) — it derives from `APP_ENV` directly. See
+  product-decisions.md §52.
+
 ## Infra / Ops
 
 ### 1. Graphify graph rebuilt vendor-free

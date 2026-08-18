@@ -5,6 +5,7 @@ export interface PortalUser {
   name: string | null;
   email: string;
   avatar_id: number | null;
+  phone: string | null;
 }
 
 interface LoginResponse {
@@ -89,11 +90,12 @@ export async function registerApi(
 
 export async function updateProfileApi(
   name: string,
-  avatarId: number
+  avatarId: number,
+  phone?: string | null
 ): Promise<PortalUser> {
   const res = await authFetch("/api/profile", {
     method: "PATCH",
-    body: JSON.stringify({ name, avatar_id: avatarId }),
+    body: JSON.stringify({ name, avatar_id: avatarId, phone: phone ?? null }),
   });
   return res.json();
 }
@@ -114,15 +116,23 @@ export async function changePasswordApi(
   });
 }
 
-export async function sendPasswordChangeOtp(): Promise<void> {
-  await authFetch("/api/password/send-code", { method: "POST" });
+export async function sendPasswordChangeOtp(
+  channel: "email" | "sms" = "email"
+): Promise<void> {
+  await authFetch("/api/password/send-code", {
+    method: "POST",
+    body: JSON.stringify({ channel }),
+  });
 }
 
-export async function sendPasswordResetOtp(email: string): Promise<void> {
+export async function sendPasswordResetOtp(
+  email: string,
+  channel: "email" | "sms" = "email"
+): Promise<void> {
   const res = await fetch(`${API_URL}/api/forgot-password`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ email, channel }),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -569,6 +579,41 @@ export async function checkPaymentHealth(): Promise<PaymentHealthStatus> {
   return {
     healthy: false,
     reason: (body as { reason?: string }).reason ?? "Payment system unavailable.",
+  };
+}
+
+export interface SmsHealthStatus {
+  available: boolean;
+  hasPhone: boolean;
+}
+
+/**
+ * Reports whether SMS OTP delivery is available (Semaphore API key configured
+ * on the backend) and whether the signed-in user has a phone stored. Works for
+ * guests too — `hasPhone` is simply false without a valid token.
+ */
+export async function checkSmsHealth(): Promise<SmsHealthStatus> {
+  let res: Response;
+  try {
+    const token = getToken();
+    res = await fetch(`${API_URL}/api/health/sms`, {
+      headers: {
+        Accept: "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+  } catch {
+    return { available: false, hasPhone: false };
+  }
+
+  if (!res.ok) {
+    return { available: false, hasPhone: false };
+  }
+
+  const body = (await res.json().catch(() => ({}))) as Partial<SmsHealthStatus>;
+  return {
+    available: body.available === true,
+    hasPhone: body.hasPhone === true,
   };
 }
 

@@ -296,7 +296,7 @@ All payments are offline (cash). Portal: `test@example.com` / `password`.
 - [x] Host-agnostic notification tagging/resolution — resend actions stored as relative route paths; matched by `data.payment_id` + URL path-suffix fallback; resolution stamps `payment_id`/`invoice_id` — 2026-08-07 (details: docs/insights/implementation-notes.md → Notifications §5)
 - [x] Bell unread badge restored + hub nav badge — custom bell must extend the panel-aware `Filament\Livewire\DatabaseNotifications` (regression hit 2026-08-07); hub sidebar shows unread-count badge — 2026-08-07 (details: docs/insights/implementation-notes.md → Notifications §6)
 - [x] Live badge refresh (10s) + hub search + refresh button — bell polls 10s (`databaseNotificationsPolling`); sidebar badge follows via `refresh-sidebar` dispatched from the bell's `render()`; hub table polls 10s; Refresh header action; title/body search on the hub — 2026-08-11 (details: docs/insights/implementation-notes.md → Notifications §7)
-- [ ] SMS notifications wired up (Semaphore/Twilio) — optional, later
+- [x] SMS OTP delivery as an optional channel (Semaphore, PH) — app-generated OTPs only (password-change + password-reset); email stays primary; gated on `SEMAPHORE_API_KEY`; card 3DS OTPs explicitly out of scope *(2026-08-18)* (details: docs/insights/implementation-notes.md → Notifications §10)
 
 **Ops notes (Notifications):** worker-generated URLs have no request host → action URLs stored host-independent, matched by path suffix (stuck dev rows purged; pre-tag rows still resolved via stored action URL). Full detail: docs/insights/implementation-notes.md → Notifications · Ops notes.
 

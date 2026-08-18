@@ -78,4 +78,75 @@ class ProfileUpdateApiTest extends TestCase
             'avatar_id' => 1,
         ])->assertStatus(401);
     }
+
+    public function test_user_can_save_and_retrieve_a_phone(): void
+    {
+        $user = User::factory()->create([
+            'name' => null,
+            'avatar_id' => null,
+            'phone' => null,
+        ]);
+
+        Sanctum::actingAs($user);
+
+        $this->patchJson('/api/profile', [
+            'name' => 'AquaFan',
+            'avatar_id' => 2,
+            'phone' => '09171234567',
+        ])->assertOk()
+            ->assertJson([
+                'id' => $user->id,
+                'name' => 'AquaFan',
+                'email' => $user->email,
+                'avatar_id' => 2,
+                'phone' => '09171234567',
+            ]);
+
+        $this->assertDatabaseHas('users', ['id' => $user->id, 'phone' => '09171234567']);
+    }
+
+    public function test_international_prefixed_phone_is_accepted(): void
+    {
+        $user = User::factory()->create(['phone' => null]);
+        Sanctum::actingAs($user);
+
+        $this->patchJson('/api/profile', [
+            'name' => 'ValidName',
+            'avatar_id' => 1,
+            'phone' => '+639171234567',
+        ])->assertOk()
+            ->assertJson(['phone' => '+639171234567']);
+    }
+
+    public function test_phone_can_be_cleared_to_null(): void
+    {
+        $user = User::factory()->create([
+            'name' => 'ValidName',
+            'avatar_id' => 1,
+            'phone' => '09171234567',
+        ]);
+        Sanctum::actingAs($user);
+
+        $this->patchJson('/api/profile', [
+            'name' => 'ValidName',
+            'avatar_id' => 1,
+            'phone' => null,
+        ])->assertOk()
+            ->assertJson(['phone' => null]);
+
+        $this->assertDatabaseHas('users', ['id' => $user->id, 'phone' => null]);
+    }
+
+    public function test_invalid_phone_is_rejected(): void
+    {
+        $user = User::factory()->create();
+        Sanctum::actingAs($user);
+
+        $this->patchJson('/api/profile', [
+            'name' => 'ValidName',
+            'avatar_id' => 1,
+            'phone' => '091717',
+        ])->assertStatus(422)
+            ->assertJsonValidationErrors(['phone']);
+    }
 }

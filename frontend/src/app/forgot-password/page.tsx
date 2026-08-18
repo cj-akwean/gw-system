@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { sendPasswordResetOtp } from "@/lib/api";
+import { sendPasswordResetOtp, checkSmsHealth } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { PageLoader } from "@/components/portal/page-loader";
 
@@ -18,12 +18,20 @@ export default function ForgotPasswordPage() {
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
+  const [smsAvailable, setSmsAvailable] = useState(false);
+  const [useSms, setUseSms] = useState(false);
 
   useEffect(() => {
     if (ready && isAuthenticated) {
       router.replace("/dashboard");
     }
   }, [ready, isAuthenticated, router]);
+
+  useEffect(() => {
+    checkSmsHealth()
+      .then((health) => setSmsAvailable(health.available))
+      .catch(() => setSmsAvailable(false));
+  }, []);
 
   if (!ready) {
     return <PageLoader />;
@@ -38,7 +46,7 @@ export default function ForgotPasswordPage() {
     setError("");
     setSending(true);
     try {
-      await sendPasswordResetOtp(email);
+      await sendPasswordResetOtp(email, useSms ? "sms" : "email");
       setSent(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't send the code.");
@@ -87,6 +95,21 @@ export default function ForgotPasswordPage() {
                   value={email}
                 />
               </label>
+
+              {smsAvailable && (
+                <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <input
+                    aria-label="Send by SMS instead"
+                    checked={useSms}
+                    onChange={(e) => setUseSms(e.target.checked)}
+                    type="checkbox"
+                  />
+                  Send the code by SMS instead
+                  <span className="text-xs text-muted-foreground/70">
+                    (only if your account has a phone number)
+                  </span>
+                </label>
+              )}
 
               {error && (
                 <p className="text-sm text-destructive" role="alert">

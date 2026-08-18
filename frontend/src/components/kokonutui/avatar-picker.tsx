@@ -10,7 +10,7 @@
  * @github: https://github.com/kokonut-labs/kokonutui
  */
 
-import { Check, ChevronRight, User2 } from "lucide-react";
+import { Check, ChevronRight, Phone, User2 } from "lucide-react";
 import type { Variants } from "motion/react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
@@ -21,10 +21,17 @@ import { AVATARS, AVATAR_RGB, getAvatar, type Avatar } from "@/lib/avatars";
 import { cn } from "@/lib/utils";
 
 interface ProfileSetupProps {
-  onComplete?: (data: { username: string; avatarId: number }) => void;
+  onComplete?: (data: {
+    username: string;
+    avatarId: number;
+    phone: string | null;
+  }) => void;
   className?: string;
   initialUsername?: string;
   initialAvatarId?: number;
+  /** Show an optional phone field (settings only — onboarding stays untouched). */
+  initialPhone?: string;
+  withPhone?: boolean;
   heading?: string;
   subtitle?: string;
   submitLabel?: string;
@@ -52,6 +59,8 @@ export default function ProfileSetup({
   className,
   initialUsername = "",
   initialAvatarId,
+  initialPhone = "",
+  withPhone = false,
   heading = "Pick Your Avatar",
   subtitle = "Choose one to get started",
   submitLabel = "Get Started",
@@ -60,6 +69,7 @@ export default function ProfileSetup({
     initialAvatarId ? getAvatar(initialAvatarId) : AVATARS[0]
   );
   const [username, setUsername] = useState(initialUsername);
+  const [phone, setPhone] = useState(initialPhone);
   const [isFocused, setIsFocused] = useState(false);
   const shouldReduceMotion = useReducedMotion();
 
@@ -73,6 +83,7 @@ export default function ProfileSetup({
       onComplete({
         username: username.trim(),
         avatarId: selectedAvatar.id,
+        phone: withPhone ? phone.trim() || null : null,
       });
     }
   };
@@ -270,6 +281,36 @@ export default function ProfileSetup({
                 )}
               </AnimatePresence>
             </div>
+
+            {withPhone && (
+              <div className="space-y-2">
+                <label className="font-medium text-sm" htmlFor="phone">
+                  Phone <span className="font-normal text-muted-foreground">(optional)</span>
+                </label>
+                <div className="relative">
+                  <Input
+                    autoComplete="tel"
+                    className="h-10 pl-9 text-sm"
+                    id="phone"
+                    inputMode="tel"
+                    maxLength={20}
+                    name="phone"
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="09XXXXXXXXX"
+                    spellCheck={false}
+                    type="tel"
+                    value={phone}
+                  />
+                  <Phone
+                    aria-hidden="true"
+                    className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                  />
+                </div>
+                <p className="ml-0.5 text-xs text-muted-foreground">
+                  Used to receive verification codes by SMS. Leave empty to keep using email.
+                </p>
+              </div>
+            )}
 
             <Button
               className="group h-10 w-full text-sm"

@@ -14,9 +14,14 @@ vi.mock("next/navigation", () => ({
 let mockUseAuth: () => {
   isAuthenticated: boolean;
   ready: boolean;
-  user: { name: string | null; email: string; avatar_id: number | null } | null;
+  user: {
+    name: string | null;
+    email: string;
+    avatar_id: number | null;
+    phone: string | null;
+  } | null;
   logout: () => Promise<void>;
-  updateProfile: (name: string, avatarId: number) => Promise<void>;
+  updateProfile: (name: string, avatarId: number, phone?: string | null) => Promise<void>;
 };
 
 vi.mock("@/lib/auth-context", () => ({
@@ -37,17 +42,27 @@ vi.mock("@/components/kokonutui/avatar-picker", () => ({
     onComplete,
     initialUsername,
     initialAvatarId,
+    initialPhone,
+    withPhone,
   }: {
-    onComplete?: (data: { username: string; avatarId: number }) => void;
+    onComplete?: (data: {
+      username: string;
+      avatarId: number;
+      phone: string | null;
+    }) => void;
     initialUsername?: string;
     initialAvatarId?: number;
+    initialPhone?: string;
+    withPhone?: boolean;
   }) => (
     <div data-testid="profile-setup">
       <span>{initialUsername}</span>
       <span>{initialAvatarId}</span>
+      <span data-testid="profile-phone">{initialPhone}</span>
+      <span data-testid="profile-withphone">{String(withPhone)}</span>
       <button
         type="button"
-        onClick={() => onComplete?.({ username: "AquaFan", avatarId: 3 })}
+        onClick={() => onComplete?.({ username: "AquaFan", avatarId: 3, phone: "09171234567" })}
       >
         save-profile
       </button>
@@ -81,8 +96,14 @@ function jsonResponse(body: unknown, ok = true, status = 200): Response {
 
 let fetchSpy: ReturnType<typeof vi.fn>;
 
-function seedFetch(links: unknown[]): void {
+function seedFetch(
+  links: unknown[],
+  sms = { available: false, hasPhone: false }
+): void {
   fetchSpy = vi.fn((url: string, init?: RequestInit) => {
+    if (String(url).includes("/api/health/sms")) {
+      return Promise.resolve(jsonResponse({ available: sms.available, hasPhone: sms.hasPhone }));
+    }
     if (init?.method === "DELETE") {
       return Promise.resolve(jsonResponse({ message: "Link revoked" }));
     }
@@ -99,11 +120,11 @@ function seedFetch(links: unknown[]): void {
   vi.stubGlobal("fetch", fetchSpy);
 }
 
-function authedUser() {
+function authedUser(phone: string | null = "09171234567") {
   return {
     isAuthenticated: true,
     ready: true,
-    user: { name: "Maria", email: "maria@example.com", avatar_id: 2 },
+    user: { name: "Maria", email: "maria@example.com", avatar_id: 2, phone },
     logout: mockLogout,
     updateProfile: mockUpdateProfile,
   };
@@ -203,7 +224,7 @@ describe("SettingsPage", () => {
     fireEvent.click(await screen.findByText("save-profile"));
 
     expect(await screen.findByText("Profile saved.")).toBeInTheDocument();
-    expect(mockUpdateProfile).toHaveBeenCalledWith("AquaFan", 3);
+    expect(mockUpdateProfile).toHaveBeenCalledWith("AquaFan", 3, "09171234567");
   });
 
   it("renders the security section with password fields", async () => {
@@ -390,5 +411,65 @@ describe("SettingsPage", () => {
     expect(
       await screen.findByText("The current password is incorrect.")
     ).toBeInTheDocument();
+  });
+
+  it("hides the SMS channel toggle when SMS is unavailable", async () => {
+    seedFetch([]);
+    mockUseAuth = () => authedUser();
+
+    render(<SettingsPage />);
+
+    expect(
+      await screen.findByText("Change password")
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: "Verification channel" })).not.toBeInTheDocument();
+  });
+
+  it("shows the channel toggle when SMS is available and hints without a phone", async () => {
+    seedFetch([], { available: true, hasPhone: false });
+    mockUseAuth = () => authedUser(null);
+
+    render(<SettingsPage />);
+
+    const radioGroup = await screen.findByRole("radiogroup", { name: "Verification channel" });
+    expect(radioGroup).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("radio", { name: "SMS" }));
+
+    expect(
+      await screen.findByText(/above to get codes by SMS/i)
+    ).toBeInTheDocument();
+  });
+
+  it("sends the code via SMS when the SMS channel is chosen", async () => {
+    seedFetch([], { available: true, hasPhone: true });
+    mockUseAuth = () => authedUser();
+
+    render(<SettingsPage />);
+
+    await screen.findByRole("radiogroup", { name: "Verification channel" });
+    fireEvent.click(screen.getByRole("radio", { name: "SMS" }));
+
+    fireEvent.change(screen.getByLabelText("Current password"), {
+      target: { value: "old-password-1" },
+    });
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "new-password-1" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "new-password-1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send verification code" }));
+
+    expect(await screen.findByLabelText("Verification code")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Check your phone — the code expires in 5 minutes\./i)
+    ).toBeInTheDocument();
+
+    const sendCodeCall = fetchSpy.mock.calls.find(
+      ([url, init]) =>
+        String(url).includes("/api/password/send-code") && init?.method === "POST"
+    ) as [string, RequestInit];
+    expect(JSON.parse(String(sendCodeCall[1].body))).toEqual({ channel: "sms" });
   });
 });

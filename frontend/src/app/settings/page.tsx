@@ -12,8 +12,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AnimatedOTPInput } from "@/components/smoothui/otp-input";
 import { useAuth } from "@/lib/auth-context";
+import { cn } from "@/lib/utils";
 import {
   changePasswordApi,
+  checkSmsHealth,
   getLinks,
   sendPasswordChangeOtp,
   unlinkApi,
@@ -41,6 +43,8 @@ export default function SettingsPage() {
   const [passwordError, setPasswordError] = useState("");
   const [passwordSaved, setPasswordSaved] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
+  const [otpChannel, setOtpChannel] = useState<"email" | "sms">("email");
+  const [smsAvailable, setSmsAvailable] = useState(false);
 
   useEffect(() => {
     if (!ready || !isAuthenticated) return;
@@ -50,6 +54,10 @@ export default function SettingsPage() {
         setLinksError(err instanceof Error ? err.message : "Couldn't load your meters.");
       })
       .finally(() => setLinksLoaded(true));
+
+    checkSmsHealth()
+      .then((health) => setSmsAvailable(health.available))
+      .catch(() => setSmsAvailable(false));
   }, [ready, isAuthenticated]);
 
   useEffect(() => {
@@ -99,7 +107,7 @@ export default function SettingsPage() {
 
     setSendingOtp(true);
     try {
-      await sendPasswordChangeOtp();
+      await sendPasswordChangeOtp(otpChannel);
       setOtpSent(true);
     } catch (err) {
       setPasswordError(
@@ -130,7 +138,11 @@ export default function SettingsPage() {
     }
 
     if (!/^\d{6}$/.test(otp)) {
-      setPasswordError("Enter the 6-digit code from your email.");
+      setPasswordError(
+        otpChannel === "sms"
+          ? "Enter the 6-digit code from your phone."
+          : "Enter the 6-digit code from your email."
+      );
       return;
     }
 
@@ -192,13 +204,15 @@ export default function SettingsPage() {
             </h2>
             <ProfileSetup
               heading="Edit your profile"
-              subtitle="Update your avatar and display name."
+              subtitle="Update your avatar, display name and phone number."
               submitLabel="Save"
               initialAvatarId={user?.avatar_id ?? undefined}
               initialUsername={user?.name ?? ""}
-              onComplete={async ({ username, avatarId }) => {
+              initialPhone={user?.phone ?? ""}
+              withPhone
+              onComplete={async ({ username, avatarId, phone }) => {
                 try {
-                  await updateProfile(username, avatarId);
+                  await updateProfile(username, avatarId, phone);
                   setProfileError("");
                   setProfileSaved(true);
                 } catch (err) {
@@ -296,6 +310,53 @@ export default function SettingsPage() {
                   </p>
                 )}
 
+                {smsAvailable && (
+                  <div className="space-y-1.5">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      Send verification code via
+                    </span>
+                    <div className="flex gap-2" role="radiogroup" aria-label="Verification channel">
+                      <button
+                        aria-checked={otpChannel === "email"}
+                        className={cn(
+                          "h-9 rounded-lg border px-4 text-xs font-medium transition-colors",
+                          otpChannel === "email"
+                            ? "border-foreground/20 bg-muted text-foreground"
+                            : "border-border text-muted-foreground hover:text-foreground"
+                        )}
+                        onClick={() => setOtpChannel("email")}
+                        role="radio"
+                        type="button"
+                      >
+                        Email
+                      </button>
+                      <button
+                        aria-checked={otpChannel === "sms"}
+                        className={cn(
+                          "h-9 rounded-lg border px-4 text-xs font-medium transition-colors",
+                          otpChannel === "sms"
+                            ? "border-foreground/20 bg-muted text-foreground"
+                            : "border-border text-muted-foreground hover:text-foreground"
+                        )}
+                        onClick={() => setOtpChannel("sms")}
+                        role="radio"
+                        type="button"
+                      >
+                        SMS
+                      </button>
+                    </div>
+                    {otpChannel === "sms" && !user?.phone && (
+                      <p className="text-xs text-destructive" role="alert">
+                        Add a phone number in the{" "}
+                        <a href="#phone" className="underline underline-offset-2">
+                          profile section
+                        </a>{" "}
+                        above to get codes by SMS.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <Button
                   aria-disabled={sendingOtp}
                   className="h-10 px-6 text-xs"
@@ -327,7 +388,9 @@ export default function SettingsPage() {
                       value={otp}
                     />
                     <span className="text-xs text-muted-foreground">
-                      Check your email — the code expires in 5 minutes.
+                      {otpChannel === "sms"
+                        ? "Check your phone — the code expires in 5 minutes."
+                        : "Check your email — the code expires in 5 minutes."}
                     </span>
                   </label>
                 )}

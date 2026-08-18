@@ -125,6 +125,13 @@ return [
             'replace_placeholders' => true,
         ],
 
+        'sms' => [
+            'driver' => env('SMS_LOG_DRIVER', 'single'),
+            'path' => env('SMS_LOG_PATH', storage_path('logs/sms.log')),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'replace_placeholders' => true,
+        ],
+
         'null' => [
             'driver' => 'monolog',
             'handler' => NullHandler::class,

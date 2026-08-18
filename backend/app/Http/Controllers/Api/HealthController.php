@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\SmsService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
@@ -50,5 +52,23 @@ class HealthController extends Controller
         $status = $result['healthy'] ? 200 : 503;
 
         return response()->json($result, $status);
+    }
+
+    /**
+     * Reports whether SMS OTP delivery is available (Semaphore API key set)
+     * and whether the current session's user has a phone number stored. The
+     * route is deliberately public so the guest forgot-password page can gate
+     * its "Send by SMS" toggle; `hasPhone` only reflects a signed-in request.
+     */
+    public function sms(Request $request): JsonResponse
+    {
+        $user = $request->user('sanctum');
+
+        return response()->json([
+            'available' => app(SmsService::class)->available(),
+            'hasPhone' => $user !== null
+                && is_string($user->phone)
+                && trim($user->phone) !== '',
+        ]);
     }
 }

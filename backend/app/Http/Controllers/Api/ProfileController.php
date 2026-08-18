@@ -12,13 +12,21 @@ class ProfileController extends Controller
     public function update(UpdateProfileRequest $request): JsonResponse
     {
         $user = $request->user();
-        $user->update($request->only('name', 'avatar_id'));
+
+        $data = $request->only('name', 'avatar_id', 'phone');
+
+        if (array_key_exists('phone', $data)) {
+            $data['phone'] = $data['phone'] !== null ? trim($data['phone']) : null;
+        }
+
+        $user->update($data);
 
         return response()->json([
             'id' => $user->id,
             'name' => $user->name,
             'email' => $user->email,
             'avatar_id' => $user->avatar_id,
+            'phone' => $user->phone,
         ]);
     }
 }

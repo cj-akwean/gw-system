@@ -2,12 +2,16 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\SendOtpSms;
 use App\Mail\PasswordChangeOtp;
 use App\Services\OtpService;
+use App\Services\SmsService;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Queue;
+use InvalidArgumentException;
 use Tests\TestCase;
 
 class OtpServiceTest extends TestCase
@@ -91,5 +95,53 @@ class OtpServiceTest extends TestCase
         $this->assertNotSame($first, $second);
         $this->assertTrue(app(OtpService::class)->verify($user, OtpService::PASSWORD_CHANGE, $second));
         $this->assertFalse(app(OtpService::class)->verify($user, OtpService::PASSWORD_CHANGE, $first));
+    }
+
+    public function test_send_with_sms_channel_dispatches_send_otp_sms_and_code_verifies(): void
+    {
+        Queue::fake();
+
+        $user = User::factory()->create([
+            'email' => 'otp-sms@example.com',
+            'phone' => '09171234567',
+        ]);
+
+        app(OtpService::class)->send($user, OtpService::PASSWORD_CHANGE, 'sms');
+
+        $job = Queue::pushed(SendOtpSms::class)->first();
+
+        $this->assertNotNull($job);
+        $this->assertSame('09171234567', $job->phone);
+        $this->assertMatchesRegularExpression('/^\d{6}$/', $job->code);
+        $this->assertSame(SmsService::OTP_MESSAGE, $job->message);
+
+        // Verification stays channel-agnostic — the SMS-delivered code works.
+        $this->assertTrue(app(OtpService::class)->verify($user, OtpService::PASSWORD_CHANGE, $job->code));
+    }
+
+    public function test_send_with_sms_channel_without_a_phone_throws(): void
+    {
+        Queue::fake();
+
+        $user = User::factory()->create(['email' => 'otp-nophone@example.com', 'phone' => null]);
+
+        $this->expectException(InvalidArgumentException::class);
+
+        app(OtpService::class)->send($user, OtpService::PASSWORD_CHANGE, 'sms');
+
+        Queue::assertNothingPushed();
+    }
+
+    public function test_send_rejects_an_unsupported_channel(): void
+    {
+        Mail::fake();
+
+        $user = $this->user();
+
+        $this->expectException(InvalidArgumentException::class);
+
+        app(OtpService::class)->send($user, OtpService::PASSWORD_CHANGE, 'fax');
+
+        Mail::assertNothingQueued();
     }
 }

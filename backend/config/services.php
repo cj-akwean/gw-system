@@ -22,6 +22,27 @@ return [
         'key' => env('RESEND_API_KEY'),
     ],
 
+'semaphore' => [
+        // Delivery driver: 'semaphore' hits the real API (production);
+        // 'log' writes to storage/logs/sms.log instead of sending (dev/test —
+        // Semaphore has no sandbox, every real call costs credits). Defaults to
+        // log outside production so the whole flow works offline; an explicit
+        // SMS_DRIVER always wins.
+        // NOTE: app()->environment() is NOT available here — the 'env'
+        // binding is created only after config files load (LoadConfiguration
+        // detects the environment at the very end), so the default derives
+        // from APP_ENV directly, exactly like config/app.php does.
+        'driver' => env('SMS_DRIVER', env('APP_ENV', 'production') === 'production' ? 'semaphore' : 'log'),
+        // Leave empty to disable SMS delivery entirely (the portal then
+        // hides the SMS option and nothing ever calls Semaphore).
+        'api_key' => env('SEMAPHORE_API_KEY'),
+        'sender_name' => env('SEMAPHORE_SENDER_NAME', 'GW-SYSTEM'),
+        // OTP-dedicated route: 2 credits per 160-char SMS, messages routed to
+        // telco OTP traffic even under high volume. Accepts a `code` param to
+        // send our own code and a `{otp}` placeholder in the message.
+        'otp_endpoint' => env('SEMAPHORE_OTP_ENDPOINT', 'https://api.semaphore.co/api/v4/otp'),
+    ],
+
     'paymongo' => [
         'secret_key' => env('PAYMONGO_SECRET_KEY'),
         'public_key' => env('PAYMONGO_PUBLIC_KEY'),

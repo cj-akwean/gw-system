@@ -18,7 +18,7 @@ interface AuthContextValue {
   ready: boolean;
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string) => Promise<void>;
-  updateProfile: (name: string, avatarId: number) => Promise<void>;
+  updateProfile: (name: string, avatarId: number, phone?: string | null) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -59,8 +59,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [applySession]);
 
   const updateProfile = useCallback(
-    async (name: string, avatarId: number) => {
-      const updated = await updateProfileApi(name, avatarId);
+    async (name: string, avatarId: number, phone?: string | null) => {
+      const updated = await updateProfileApi(name, avatarId, phone);
       setUser((prev) => (prev ? { ...prev, ...updated } : prev));
       try {
         const stored = JSON.parse(localStorage.getItem("auth") ?? "{}");

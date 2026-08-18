@@ -310,6 +310,9 @@ Created automatically by `setup.bat`; in manual setup you copy
 | `MAIL_MAILER` | `log` (no setup, writes to storage/logs) · `smtp` (Mailtrap) · `resend` (prod) | see [Email in development](#email-in-development-mailtrap) | ✅ (default `log` works) |
 | `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD` | Mailtrap SMTP creds | Mailtrap → Email Testing → your inbox → SMTP Settings (per-inbox) | only if `MAIL_MAILER=smtp` |
 | `RESEND_API_KEY` | Production email | resend.com → API Keys (`re_...`) | only for production |
+| `SEMAPHORE_API_KEY` | SMS verification codes (OTP delivery to PH mobile numbers); only needed for the `semaphore` driver | Semaphore dashboard → API Tokens | only for real SMS (leave empty to keep log-only) |
+| `SEMAPHORE_SENDER_NAME` | Sender ID customers see on OTP texts (≤11 chars, e.g. `GW-SYSTEM`) | Semaphore → Settings → Sender Names | only for real SMS (defaults to `GW-SYSTEM`) |
+| `SMS_DRIVER` | `log` (dev — writes phone/code to `storage/logs/sms.log` instead of sending) · `semaphore` (prod — real SMS) | — (defaults to `log` in dev/test, `semaphore` in production) | optional (set to `semaphore` in production) |
 
 The DB block in `.env` should look like this (the `.env.example` ships with SQLite
 selected — switch it):
@@ -349,6 +352,7 @@ paste the keys they give you into `.env`:
 | **PayMongo** | https://dashboard.paymongo.com | Test payment keys (`pk_test_`/`sk_test_`) and webhook setup — the payment gateway (GCash, QR Ph, card) |
 | **Mailtrap** | https://mailtrap.io | Free "Email Testing" inbox — receives the app's emails in dev so you can inspect receipts without spamming real inboxes |
 | **Resend** | https://resend.com | Production email provider (verify a sending domain, get an API key) — deferred until go-live |
+| **Semaphore** | https://semaphore.co | PH SMS provider for verification codes: sign up → add credits → add a Sender Name (`GW-SYSTEM`) → create an API key → set `SMS_DRIVER=semaphore` + `SEMAPHORE_API_KEY`/`SEMAPHORE_SENDER_NAME` in `backend/.env`. In dev you don't need it at all — the `log` driver writes codes to `storage/logs/sms.log` instead |
 | **ngrok** | https://ngrok.com | Free public tunnel so PayMongo's real webhooks can reach your PC — optional, see [Payments](#payments--why-ngrok-is-optional) |
 
 Only **PayMongo** is needed for a full payment test. Mailtrap is optional (email can
