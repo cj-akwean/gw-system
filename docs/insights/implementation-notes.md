@@ -235,6 +235,74 @@ attached (`buildViewData` gains `paymentMethod`/`paidAt`/`paymentReference`/`amo
 the old markdown view files were deleted). Attachment unchanged (`invoice-<number>.pdf`,
 in-memory); no hosted "Download" links by design — no permanent PDF storage.
 
+### 8. Google Pay (digital wallet) — client-side PAN_ONLY token flow *(2026-08-18)*
+Google Pay is a real PayMongo **digital wallet** method (`google_pay_card`, card-based —
+cards in the Google wallet, distinct from e-wallets; no setup/monthly fees, standard MDR,
+Google charges no merchant fee). Backend: `VALID_PAYMENT_METHODS` + the
+`/api/invoices/{id}/pay` default intent methods gain `google_pay_card` (one-line each) —
+`validateMethods()` accepts it automatically, the webhook already records the source
+channel generically, and the redirect/return intent-status endpoint is method-agnostic,
+so there is **no other server work**. Frontend: a new `GooglePayButton` component
+(`components/portal/google-pay-button.tsx`, ambient types in `src/types/payjs.d.ts`) is the
+**single tap-to-pay trigger**, replacing the Swipe button when `googlepay` is selected (no
+second button in the review body — guard comment on the trigger render). It injects
+`pay.google.com/gp/p/ui/pay.js` (module-level promise cache, 8s timeout, sync-resolve when
+`window.google.payments.api` already exists — unit-testable), gates on
+`window.isSecureContext`, checks `isReadyToPay` (`PAN_ONLY`, VISA/MASTERCARD, MIN billing +
+email required; `CRYPTOGRAM_3DS` is PayMongo "coming soon" — not used), and derives
+TEST/PRODUCTION **only** from the exported `publicKey()` (`pk_test_` prefix — test tokens can
+never reach a live intent). `gatewayMerchantId` in the tokenization spec is the **PayMongo
+public key** (per PayMongo docs), NOT the Google merchant id; `merchantInfo.merchantId` is
+`"TEST"` in test env, else `NEXT_PUBLIC_GOOGLE_PAY_MERCHANT_ID` (Console-verified, live
+rollout only). `startGooglePay` mirrors `startCard` exactly: fresh intent → token PM
+(`google_pay_card` with `{details:{token}}` + billing from Google's email/address) → attach
+with `return_url`; `redirectUrl` → pending marker + `window.location.assign` (issuer auth);
+`succeeded`/`processing` → pending marker + `resolveIntentStatus` → the confirming/success
+modal family; errors surface via `last_payment_error`. No card/PAN data ever reaches the
+Laravel backend. **Cap exemption:** Google Pay is card-based — the ₱100k e-wallet cap does
+NOT block it (`payBlocked` derives per-method: `capExceeded` applies only to qrph/gcash).
+During a payment the GPay button (an iframe-style element that can't show disabled) is
+replaced by a disabled "Connecting to Google Pay…" placeholder; a busy-ref guards
+double-taps; non-user-cancelled `loadPaymentData` failures show an inline error
+(`statusCode 11` / `CANCELED` is silent). Past-payments label: `google_pay_card`/`googlepay`
+→ "Google Pay" (title-case fallback still covers unknown webhook variants). Live rollout is
+gated on the PayMongo dashboard capability + Google Pay Console business verification
+(product-decisions §54).
+
+**Simulate harness (dev-only):** the GPay sheet can't open on the dev laptop and PayMongo
+offers no `test_url` simulator for `google_pay_card` (unlike QR Ph) — so the
+attach → outcome leg needs a browser-accessible trigger. The webhook-crediting half is
+shared: the payload-build + synchronous dispatch was extracted from `paymongo:simulate-payment`
+into `App\Services\PaymentSimulationService` (`simulate(Invoice, source, ?payer,
+forceFreshIntent)` — domain exception on non-payable, returns `[payment_id, event_id, payer]`),
+and the CLI now delegates to it (same signature / output — its suite is untouched). A
+dev-only `POST /api/dev/payments/simulate`
+(`DevPaymentSimulationController`, `auth:sanctum` + `throttle:20,1,payments-simulate`)
+`abort_unless(! app()->environment('production'), 404)` — the endpoint does not exist in
+production — then mirrors `InvoicePaymentController`'s ownership (403) and payable (409,
+"already paid" vs "not payable") guards, resolves the invoice from the body `invoice_id`,
+and returns `{ message, payment_id, event_id, source: 'google_pay_card' }` (race/domain
+exception → 422, unexpected → `report()` + 500). Frontend: `simulatePayment(invoiceId)` in
+`lib/api.ts`; `GooglePayButton` gains an `onSimulate` prop and renders a "Simulate payment
+(test)" link (mirror of the QR button) only when BOTH `pk_test_` (`isTestKey()`,
+thrown-safe) AND `onSimulate` are present — structurally impossible with a live key or in
+prod wiring; the `disabled` early-return stays link-free. `payment-method.tsx`'s
+`startSimulateGooglePay` is fire-and-poll: it deliberately does NOT touch the `qr` phase (no
+QR UI for Google Pay) and just sets `testPaymentPending(true)`, so the existing 2s poll
+flips the success modal once the webhook credits. This covers the webhook path
+(`payment.paid` → Payment row → queued email), the outcome machine, and the admin/channel
+labels — NOT the sheet/token-decryption/attach legs (those need a real GPay environment +
+enrolled test card). **Intent freshness (fix 2026-08-18):** the harness calls
+`simulate(..., forceFreshIntent: true)` and the fabricated payload is a faithful
+`payment.paid` envelope (event `created_at`/`previous_data` + full payment resource with
+`source.type = google_pay_card`), so a simulated Google Pay payment always carries its own
+fresh `pi_sim_` intent and can never be attributed to a leftover stored intent from
+another flow (a real `qrph.expired` delivery for an earlier QR Ph test surfaced this: the
+simulate had reused the QR intent id). The CLI still reuses a stored intent when present
+(documented behavior, unchanged). Tested: controller 200/403/409/404-unknown/404-prod,
+service intent-fabrication/reuse/fresh-override + source recording, CLI suite
+unchanged-and-green (product-decisions §55).
+
 ## Customer Portal (Next.js)
 
 > Detailed flow spec: `docs/prompts/payments-customer-portal-flow.md` (frontstage spec).

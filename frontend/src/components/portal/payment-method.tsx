@@ -13,12 +13,14 @@ import {
   getInvoices,
   reconcileInvoice,
   resolveIntentStatus,
+  simulatePayment,
   startPayment,
   writePendingInvoice,
   type PortalInvoice,
 } from "@/lib/api";
 import { attachPaymentMethod, createPaymentMethod } from "@/lib/paymongo";
 import { CardForm, type CardFormHandle, type CardPayload } from "@/components/portal/card-form";
+import { GooglePayButton } from "@/components/portal/google-pay-button";
 import { useCountdown } from "@/hooks/use-countdown";
 import { formatRemaining } from "@/lib/countdown";
 import { useAuth } from "@/lib/auth-context";
@@ -61,7 +63,7 @@ type QrState =
       intentId: string;
       testUrl: string | null;
     }
-  | { phase: "error"; message: string; flow: "qrph" | "gcash" | "card" };
+  | { phase: "error"; message: string; flow: "qrph" | "gcash" | "card" | "googlepay" };
 
 const QR_STORAGE_PREFIX = "gw-qr:";
 const POLL_INTERVAL_MS = 15_000;
@@ -165,7 +167,7 @@ export function PaymentMethodScreen({
   // connection is having trouble; it never flips the outcome on network errors.
   const [confirmingNetworkFailures, setConfirmingNetworkFailures] = useState(0);
   const [step, setStep] = useState<"method" | "review">("method");
-  const [selectedMethod, setSelectedMethod] = useState<"qrph" | "gcash" | "card" | null>(null);
+  const [selectedMethod, setSelectedMethod] = useState<"qrph" | "gcash" | "card" | "googlepay" | null>(null);
   // When the user clicks "Simulate payment (test)" on a QR Ph code, we open
   // PayMongo's test URL in a new tab and poll aggressively (2s) until the
   // webhook credits the invoice — matching the instant feedback Card/GCash get.
@@ -719,6 +721,129 @@ export function PaymentMethodScreen({
     [invoiceId, logout, router]
   );
 
+  const startGooglePay = useCallback(
+    async (payment: { token: string; billing: { name: string; email: string } }) => {
+      if (healthStatus != null && !healthStatus.healthy) return;
+      setQr({ phase: "starting" });
+      try {
+        const info = await startPayment(invoiceId);
+        const pm = await createPaymentMethod("google_pay_card", {
+          details: { token: payment.token },
+          billing: payment.billing,
+        });
+        setQr({ phase: "attaching" });
+
+        const attached = await attachPaymentMethod({
+          intentId: info.payment_intent_id,
+          clientKey: info.client_key,
+          paymentMethodId: pm,
+          returnUrl: buildReturnUrl(invoiceId),
+        });
+
+        if (attached.redirectUrl) {
+          // 3DS via the issuer (PAN_ONLY) — same recovery as the card flow:
+          // write the pending marker, hand the browser to the redirect, and
+          // never mark paid on the way out.
+          writePendingInvoice(invoiceId, {
+            paymentIntentId: info.payment_intent_id,
+            method: "googlepay",
+          });
+          window.location.assign(attached.redirectUrl);
+          return;
+        }
+
+        if (attached.status === "succeeded" || attached.status === "processing") {
+          // Payment is moving (auth happened inside the Google Pay sheet).
+          // Persist the intent for refresh recovery and let the same outcome
+          // modal family (confirming → success) take over.
+          writePendingInvoice(invoiceId, {
+            paymentIntentId: info.payment_intent_id,
+            method: "googlepay",
+          });
+
+          resolveIntentStatus(info.payment_intent_id)
+            .then((res) => {
+              setQr({ phase: "idle" });
+              if (res.status === "paid") {
+                clearPendingInvoice();
+                setPaymentResult({ status: "paid", confirming: false });
+                return;
+              }
+              if (res.status === "confirmed" || res.status === "processing") {
+                if (res.invoice_id != null) {
+                  setResolvedInvoiceId(res.invoice_id);
+                }
+                setPaymentResult({ status: "paid", confirming: true });
+                return;
+              }
+              if (res.status === "failed") {
+                setScreen({ status: "failed" });
+                return;
+              }
+              // unknown — keep checking, the webhook may still land.
+              setScreen({ status: "unconfirmed" });
+            })
+            .catch(() => {
+              setQr({ phase: "idle" });
+              setScreen({ status: "unconfirmed" });
+            });
+
+          return;
+        }
+
+        setQr({
+          phase: "error",
+          message:
+            attached.lastPaymentError ??
+            "The Google Pay payment wasn't accepted. Please try again.",
+          flow: "googlepay",
+        });
+      } catch (err) {
+        if (isUnauthorized(err)) {
+          logout().then(() => router.replace("/auth"));
+          return;
+        }
+        setQr({
+          phase: "error",
+          message:
+            err instanceof Error
+              ? err.message
+              : "We couldn't start the payment. Please try again.",
+          flow: "googlepay",
+        });
+      }
+    },
+    [invoiceId, logout, router]
+  );
+
+  // Dev-only test harness (Google Pay's sheet can't open on the dev laptop).
+  // Fire-and-poll: deliberately does NOT touch the qr phase — there is no QR
+  // UI for Google Pay; the existing testPaymentPending polling (2s) watches the
+  // invoice leave the unpaid list and flips the success modal.
+  const startSimulateGooglePay = useCallback(
+    async () => {
+      if (healthStatus != null && !healthStatus.healthy) return;
+      try {
+        await simulatePayment(invoiceId);
+        setTestPaymentPending(true);
+      } catch (err) {
+        if (isUnauthorized(err)) {
+          logout().then(() => router.replace("/auth"));
+          return;
+        }
+        setQr({
+          phase: "error",
+          message:
+            err instanceof Error
+              ? err.message
+              : "Couldn't run the test payment. Please try again.",
+          flow: "googlepay",
+        });
+      }
+    },
+    [invoiceId, logout, router]
+  );
+
   // Success feedback overlays the current screen — the pay screen underneath
   // stays visible (no white flash, no page swap). The modals are explicit:
   // nothing auto-navigates, and the confirming modal has NO escape that would
@@ -907,6 +1032,10 @@ export function PaymentMethodScreen({
   // button instead.
   const qrLocked = qrActive || qrExpired;
   const ewalletDisabled = capExceeded || busy || healthLoading || (healthStatus != null && !healthStatus.healthy);
+  // Google Pay is card-based — NOT subject to the ₱100k e-wallet cap. Its
+  // trigger is blocked only by busy/QR-lock/health, never by capExceeded.
+  const notHealthy = healthLoading || (healthStatus != null && !healthStatus.healthy);
+  const payBlocked = busy || qrLocked || (selectedMethod === "googlepay" ? notHealthy : ewalletDisabled);
 
   return (
     <>
@@ -1047,7 +1176,7 @@ export function PaymentMethodScreen({
                   {capExceeded && (
                     <p className="mt-3 text-xs text-muted-foreground">
                       This bill is over ₱100,000, so e-wallet payments aren&apos;t
-                      available. Use Card for this bill.
+                      available. Use Card or Google Pay for this bill.
                     </p>
                   )}
                 </div>
@@ -1075,23 +1204,28 @@ export function PaymentMethodScreen({
                   <ChevronRight className="ml-auto size-4 shrink-0 text-muted-foreground" />
                 </button>
 
-                <div
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedMethod("googlepay");
+                    setStep("review");
+                  }}
+                  disabled={busy}
                   data-testid="method-card-digital-wallet"
-                  className="rounded-xl border border-border bg-card p-4 opacity-60 shadow-sm"
+                  className={cn(
+                    "flex w-full items-start gap-3 rounded-xl border border-border bg-card p-4 text-left shadow-sm transition-colors",
+                    busy ? "opacity-60" : "hover:bg-muted/40"
+                  )}
                 >
-                  <div className="flex items-center gap-3">
-                    <Smartphone className="size-5 shrink-0 text-muted-foreground" />
-                    <p className="text-sm font-semibold text-muted-foreground">
-                      Digital Wallet
-                    </p>
-                    <span className="ml-auto shrink-0 rounded-full bg-muted px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Coming soon
+                  <Smartphone className="size-5 shrink-0 text-foreground" />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold">Digital Wallet</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Google Pay · Pay with cards saved in your Google account
                     </span>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Google Pay (coming soon)
-                  </p>
-                </div>
+                  </span>
+                  <ChevronRight className="ml-auto size-4 shrink-0 text-muted-foreground" />
+                </button>
                 </div>
               )}
 
@@ -1156,7 +1290,9 @@ export function PaymentMethodScreen({
                           ? "GCash"
                           : selectedMethod === "card"
                             ? "Card (Visa / Mastercard)"
-                            : "QR Ph (scan QR)"}
+                            : selectedMethod === "googlepay"
+                              ? "Google Pay"
+                              : "QR Ph (scan QR)"}
                       </p>
                     </div>
                     <button
@@ -1183,7 +1319,7 @@ export function PaymentMethodScreen({
                     </p>
                   )}
 
-                  {busy || qrLocked || ewalletDisabled ? (
+                  {payBlocked ? (
                     <button
                       type="button"
                       disabled
@@ -1194,10 +1330,14 @@ export function PaymentMethodScreen({
                         <>
                           <Loader2 className="size-4 animate-spin" />
                           {qr.phase === "starting"
-                            ? "Starting payment…"
+                            ? selectedMethod === "googlepay"
+                              ? "Starting Google Pay…"
+                              : "Starting payment…"
                             : selectedMethod === "card"
                               ? "Processing your card…"
-                              : "Generating your QR code…"}
+                              : selectedMethod === "googlepay"
+                                ? "Connecting to Google Pay…"
+                                : "Generating your QR code…"}
                         </>
                       ) : qrActive ? (
                         <>QR ready — scan to pay</>
@@ -1207,6 +1347,16 @@ export function PaymentMethodScreen({
                         <>Pay {formatPeso(invoice.total_amount)}</>
                       )}
                     </button>
+                  ) : selectedMethod === "googlepay" ? (
+                    // Google Pay has exactly one trigger — the GPay button
+                    // below. Its own tap opens the Google Pay sheet; there is
+                    // no secondary button inside the review body.
+                    <GooglePayButton
+                      onToken={startGooglePay}
+                      disabled={busy}
+                      amount={invoice.total_amount}
+                      onSimulate={startSimulateGooglePay}
+                    />
                   ) : (
                     <SwipeButton
                       data-testid="pay-now"
@@ -1268,7 +1418,9 @@ export function PaymentMethodScreen({
                   <Clock className="size-4 shrink-0" />
                   <p>
                     {step === "review"
-                      ? "Review and pay — your QR code will appear here."
+                      ? selectedMethod === "googlepay"
+                        ? "Tap the Google Pay button to continue."
+                        : "Review and pay — your QR code will appear here."
                       : "Choose a payment method to continue."}
                   </p>
                 </div>
@@ -1282,8 +1434,12 @@ export function PaymentMethodScreen({
                   <Loader2 className="size-4 shrink-0 animate-spin" />
                   <p>
                     {qr.phase === "starting"
-                      ? "Starting your payment…"
-                      : "Generating your QR code…"}
+                      ? selectedMethod === "googlepay"
+                        ? "Starting Google Pay…"
+                        : "Starting your payment…"
+                      : selectedMethod === "googlepay"
+                        ? "Connecting to Google Pay…"
+                        : "Generating your QR code…"}
                   </p>
                 </div>
               )}
@@ -1370,7 +1526,9 @@ export function PaymentMethodScreen({
                         ? () => setQr({ phase: "idle" })
                         : qr.flow === "gcash"
                           ? startGcash
-                          : startQrPh
+                          : qr.flow === "googlepay"
+                            ? () => setQr({ phase: "idle" })
+                            : startQrPh
                     }
                     className="rounded-md border border-border bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
                   >

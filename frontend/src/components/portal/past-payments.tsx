@@ -33,6 +33,7 @@ export function paymentMethodLabel(payment: PortalPayment): string {
   if (channel === "gcash") return "GCash";
   if (channel === "qrph") return "QR Ph";
   if (channel === "card") return "Card";
+  if (channel === "google_pay_card" || channel === "googlepay") return "Google Pay";
   if (payment.method === "cash") return "Cash / office";
   if (payment.method === "paymongo") return "PayMongo";
   const raw = String(payment.method ?? "").trim();

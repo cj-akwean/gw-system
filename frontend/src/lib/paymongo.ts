@@ -9,7 +9,7 @@ export interface PayMongoAttachResult {
   lastPaymentError: string | null;
 }
 
-function publicKey(): string {
+export function publicKey(): string {
   const key = process.env.NEXT_PUBLIC_PAYMONGO_PUBLIC_KEY;
   if (!key) {
     throw new Error("Online payment isn't configured on this portal yet.");

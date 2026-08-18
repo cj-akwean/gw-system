@@ -2,11 +2,10 @@
 
 namespace App\Console\Commands;
 
-use App\Jobs\ProcessPayMongoWebhook;
 use App\Models\Invoice;
 use App\Models\User;
+use App\Services\PaymentSimulationService;
 use Illuminate\Console\Command;
-use Illuminate\Support\Str;
 
 /**
  * Local webhook simulator for manual testing — fires the same payment.paid
@@ -19,6 +18,10 @@ use Illuminate\Support\Str;
  * still produces the admin bell notification + "Resend receipt" button. It
  * deliberately does NOT exercise PayMongo's signature verification or the
  * cutomer-facing checkout (use the ngrok + pay-checkout.html recipe for those).
+ *
+ * The payload build + dispatch live in PaymentSimulationService so the
+ * dev-only POST /api/dev/payments/simulate endpoint can reuse them (a browser
+ * button cannot invoke a CLI).
  */
 class PayMongoSimulatePaymentCommand extends Command
 {
@@ -30,7 +33,7 @@ class PayMongoSimulatePaymentCommand extends Command
 
     protected $description = 'Locally simulates a payment.paid webhook for an unpaid invoice (no ngrok, no dashboard, no test card).';
 
-    public function handle(): int
+    public function handle(PaymentSimulationService $simulation): int
     {
         $invoice = $this->resolveInvoice($this->argument('invoice'));
 
@@ -54,46 +57,13 @@ class PayMongoSimulatePaymentCommand extends Command
             return self::FAILURE;
         }
 
-        $intentId = $invoice->paymongo_payment_intent_id;
+        $hadIntent = $invoice->paymongo_payment_intent_id !== null;
 
-        if ($intentId === null) {
-            $intentId = 'pi_sim_'.Str::random(16);
-            $invoice->update(['paymongo_payment_intent_id' => $intentId]);
-            $this->warn("Invoice has no stored PayMongo intent — fabricated a simulation intent id ({$intentId}).");
+        $result = $simulation->simulate($invoice, $source, $this->payer());
+
+        if (! $hadIntent) {
+            $this->warn('Invoice has no stored PayMongo intent — fabricated a simulation intent id ('.$invoice->fresh()->paymongo_payment_intent_id.').');
         }
-
-        $eventId = 'evt_sim_'.Str::random(16);
-        $paymentId = 'pay_sim_'.Str::random(16);
-        $payer = $this->payer();
-
-        $payload = [
-            'data' => [
-                'id' => $eventId,
-                'type' => 'event',
-                'attributes' => [
-                    'type' => 'payment.paid',
-                    'livemode' => false,
-                    'data' => [
-                        'id' => $paymentId,
-                        'type' => 'payment',
-                        'attributes' => [
-                            'amount' => (int) round((float) $invoice->total_amount * 100),
-                            'currency' => 'PHP',
-                            'status' => 'paid',
-                            'payment_intent_id' => $intentId,
-                            'paid_at' => now()->timestamp,
-                            'source' => [
-                                'id' => 'sim_src_'.Str::random(8),
-                                'type' => $source,
-                            ],
-                            'billing' => $payer,
-                        ],
-                    ],
-                ],
-            ],
-        ];
-
-        (new ProcessPayMongoWebhook($payload))->handle();
 
         $invoice->refresh();
 
@@ -109,9 +79,9 @@ class PayMongoSimulatePaymentCommand extends Command
             number_format((float) $invoice->total_amount, 2),
             $source,
         ));
-        $this->info("  payment: {$paymentId}");
-        $this->info("  event:   {$eventId}");
-        $this->line('  payer:   '.implode(' · ', array_values(array_filter($payer))));
+        $this->info("  payment: {$result['payment_id']}");
+        $this->info("  event:   {$result['event_id']}");
+        $this->line('  payer:   '.implode(' · ', array_values(array_filter($result['payer']))));
         $this->line('Confirmation email queued — run php artisan queue:work --tries=3; a failed delivery triggers the admin bell "Resend receipt" button.');
         $this->line('Note: bypasses PayMongo signature verification and the checkout itself — use ngrok + pay-checkout.html to cover those.');
 

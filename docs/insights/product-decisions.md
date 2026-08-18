@@ -1663,3 +1663,78 @@ the code is sent by email") — it never confirms whether a specific email has an 
 or a phone. The backend's silent email fallback and its generic success message are
 untouched. A guest who picks SMS for an account without a phone still gets their code,
 by email, with zero signal about what exists.
+
+---
+
+## 54. Google Pay: the button itself is the trigger, and card-based means no e-wallet cap (2026-08-18)
+
+**Question asked:** "Add Google Pay as a real digital-wallet payment option. Should it copy
+the other methods' 'review and swipe to pay' interaction, and does the ?100k e-wallet cap
+apply to it?"
+
+**Answer + reasoning:**
+
+**a) The official Google Pay button IS the single trigger — no intermediate swipe, no
+second button.** Google's UX guidelines require the branded GPay button itself to open
+the payment sheet — that's what a "tappable Google Pay button" means to users, and a
+Swipe-to-pay in front of it would be a redundant gesture that adds a step and fights the
+branded affordance. So on the review step, choosing Digital Wallet swaps the SwipeButton
+for the PayPal-style official button; tapping it opens the sheet directly. To keep the
+interaction honest there is exactly one trigger: the button lives in the trigger area and
+is NOT duplicated inside the review body, with a code comment guarding that single
+placement (a first draft rendered two).
+ 
+**b) Google Pay is card-based, so the ?100k e-wallet cap does not apply.** The cap exists
+because PH e-wallet rails (GCash/QR Ph) have low per-transaction limits and the docs say
+"large commercial bills must go Card". A digital wallet keyed to a card rides card rails
+with the same limits as Card, so exempting it matches the existing rule's intent rather
+than inventing a new one. The pay-trigger condition is therefore derived per-method
+(`payBlocked`): `capExceeded` blocks only qrph/gcash; Google Pay is blocked by busy/health
+alone — and the ?100k in-app note now reads "Use Card or Google Pay for this bill.",
+keeping the copy and the behavior in agreement (both covered by the cap test).
+
+**c) Test/live can never mix because the environment derives from one source.** The Google
+Pay environment flag (TEST vs PRODUCTION) is read from the same exported `publicKey()`
+that gates the whole payment screen — there is no second "Google Pay env" config to drift.
+Reusing the key as `gatewayMerchantId` (per PayMongo's docs) also removes the classic
+merchant-id mixup: the Google Console id only appears in `merchantInfo.merchantId` and
+only in production, after Console verification. A TEST token can therefore never attach to
+a live intent and vice-versa.
+
+---
+
+## 55. The Google Pay test harness is a dev-only HTTP endpoint sharing the CLI's engine (2026-08-18)
+
+**Question asked:** "Google Pay's sheet can't open on the dev laptop and PayMongo has no
+`test_url` simulator for `google_pay_card` (QR Ph does). How do we exercise the webhook half
+from the browser?"
+
+**Answer + reasoning:**
+
+**a) Expose the CLI's dispatch logic over HTTP — but only outside production.** QR Ph's
+simulator works because PayMongo returns a `test_url` the portal buttons straight into; the
+Google Pay flow has no equivalent, and a browser button can't invoke `artisan`. So the
+payload-build + synchronous `ProcessPayMongoWebhook` dispatch was extracted from the CLI
+into `PaymentSimulationService`, and a thin `POST /api/dev/payments/simulate` controller
+serves it to the frontend "Simulate payment (test)" link. The endpoint `abort_unless` 404s
+in `production` — it is literally absent in the live environment — and the link itself is
+double-gated (see b). No service code for the harness ships in prod reachable form; the
+service class exists in prod but only the CLI and the dev route invoke it.
+
+**b) Firing is structurally impossible in production, not just discouraged.** The button
+renders only when BOTH the public key starts with `pk_test_` AND an `onSimulate` prop is
+wired. `onSimulate` comes from `payment-method.tsx` unconditionally, but the key condition
+is the live wall: with a `pk_live_` key `isTestKey()` is false and the link can't render no
+matter what props were passed — so a stray tap on a live intent can never mark a real
+invoice paid. The backend 404 is the second wall for any direct API call. The controller
+also mirrors `InvoicePaymentController`'s ownership (403) and payable (409) guards, so even
+in dev a caller can only simulate a bill they own, and an already-paid invoice stays a 409
+rather than a duplicate Payment row.
+
+**c) Why fire-and-poll rather than the QR's qr-phase state.** Google Pay has no QR UI, so
+`startSimulateGooglePay` deliberately leaves the `qr` state machine untouched and just
+flips `testPaymentPending` — the existing 2s polling effect (built for QR's simulate
+button) then watches the invoice leave the unpaid list and shows the success modal. One
+polling machine, two simulate buttons, no new UI state.
+
+---

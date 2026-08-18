@@ -26,6 +26,7 @@ class PayMongoService
     private const VALID_PAYMENT_METHODS = [
         'qrph', 'brankas', 'card', 'dob', 'billease',
         'gcash', 'grab_pay', 'shopee_pay', 'paymaya',
+        'google_pay_card',
     ];
 
     private const TIMEOUT_SECONDS = 15;
@@ -171,7 +172,7 @@ class PayMongoService
 
     public function createPaymentIntent(
         Invoice $invoice,
-        array $methods = ['qrph', 'gcash', 'card'],
+        array $methods = ['qrph', 'gcash', 'card', 'google_pay_card'],
         ?string $customerId = null,
         bool $setupFutureUsage = false,
     ): array {

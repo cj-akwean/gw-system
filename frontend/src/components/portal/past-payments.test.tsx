@@ -125,6 +125,10 @@ describe("paymentMethodLabel", () => {
     expect(paymentMethodLabel(payment({ channel: "gcash" }))).toBe("GCash");
     expect(paymentMethodLabel(payment({ channel: "qrph" }))).toBe("QR Ph");
     expect(paymentMethodLabel(payment({ channel: "card" }))).toBe("Card");
+    expect(paymentMethodLabel(payment({ channel: "google_pay_card" }))).toBe(
+      "Google Pay"
+    );
+    expect(paymentMethodLabel(payment({ channel: "googlepay" }))).toBe("Google Pay");
   });
 
   it("maps offline methods and falls back to PayMongo / raw method", () => {

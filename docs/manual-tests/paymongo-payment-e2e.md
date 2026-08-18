@@ -64,6 +64,66 @@ php artisan paymongo:simulate-payment 4 --source=qrph    # QR Ph channel (same p
 > PayMongo's docs warn it can process a real transaction. Always use the
 > "Simulate payment (test)" link.
 
+## Google Pay round (test mode, real PayMongo chain)
+
+> Added 2026-08-18. Exercises the REAL Google Pay client + attach chain in test mode:
+> portal DWP button → Google Pay sheet (TEST env) → test card → PayMongo token →
+> `google_pay_card` PM attach → webhook path. Same four prereqs as the QR round
+> (migrate + serve + queue:work, and ngrok only if you want the real signed webhook).
+
+Prereqs specific to this round:
+
+1. **PayMongo dashboard Google Pay enablement** — Google Pay must appear as an
+   activatable payment method for the account (PayMongo docs: *"Account configuration is
+   required — contact PayMongo support if the Google Pay option doesn't appear in your
+   dashboard"*). Skip the round if it's absent.
+2. **Test cards in the Google Pay sheet** — in the TEST environment the sheet only shows
+   cards enrolled as Google Pay test cards (e.g. `4111 1111 1111 1111`). Enroll one in the
+   browser's Google account / the Google Pay test app first, or the sheet will show no
+   card.
+3. **Secure context** — open the portal over `http://localhost:3000` (HTTPS or localhost
+   only); a plain-HTTP LAN URL makes the button render the
+   `google-pay-unavailable` state.
+4. `NEXT_PUBLIC_PAYMONGO_PUBLIC_KEY=pk_test_…` (the `TEST` environment derives from the
+   `pk_test_` prefix — a TEST token can never attach to a live intent).
+
+Steps:
+
+1. Seed/refresh the test data (`php artisan db:seed`), start `php artisan serve`,
+   `php artisan queue:work --tries=3`, `npm run dev`, and log in (`test@example.com` /
+   `password`).
+2. Open an unpaid bill → **Digital Wallet** card → review. Expect the official Google Pay
+   button (not the Swipe button); the aside hints "Tap the Google Pay button to continue."
+3. Tap the button → Google Pay sheet (TEST env) → select the enrolled test card →
+   authenticate. Depending on the issuer this happens in-sheet (no redirect) or triggers a
+   3DS redirect — both flows recover via the pending marker + intent-status endpoint.
+4. Expect: intent attaches, polling resolves paid, "Payment received" modal, receipt email
+   lands (Mailtrap), admin Payments row shows the Google Pay channel, and the portal's
+   **Past payments drawer** labels the row "Google Pay".
+5. **No Google Pay test card / sheet unavailable on this device?** (prereq 2 unmet — the
+   reported laptop case) — the review step shows "Google Pay isn't available on this
+   device/browser right now." **plus** the in-page **"Simulate payment (test)"** link
+   (rendered only with a `pk_test_` key; the endpoint is 404 in production). Tap it →
+   expect the success modal within ~2s, a `Payment` row with
+   `paymongo_source = 'google_pay_card'`, the Portal drawer labeling it "Google Pay", and
+   the receipt email queued (process with the worker → Mailtrap). The simulated `payment.paid`
+   is a faithful webhook envelope with its OWN fresh `pi_sim_` intent — it never reuses a
+   leftover stored intent from another flow. The CLI equivalent
+   (`php artisan paymongo:simulate-payment {invoice} --source=google_pay_card`) still
+   works and prints payment/event ids — both share the same engine.
+6. Optionally repeat with a 3DS-triggering test card if one exists in the sheet (else the
+   unit test variant covers it).
+
+> **Gotcha — a leftover QR Ph code looks like it "caused" the Google Pay simulation.**
+> If you ran the QR Ph real round first on the same invoice, PayMongo fires a real
+> `qrph.expired` delivery for that code (dashboard → Webhooks → Deliveries shows it; the
+> payload is a `qrph` resource with `source_status: "expired"`). That event is from YOUR
+> QR Ph test, not the simulate — the Google Pay simulation makes no PayMongo API calls and
+> cannot fire a real webhook. The simulate now always fabricates its own `pi_sim_` intent
+> (it never reuses the stored QR intent), so the two flows stay visibly separate: the QR
+> intent keeps its `qrph.expired` history, and the Google Pay `payment.paid` references a
+> fresh `pi_sim_` id.
+
 ## Prereqs (all four, or the test silently fails)
 
 1. `php artisan migrate` — **the `processed_webhook_events` table must exist** (this was missed

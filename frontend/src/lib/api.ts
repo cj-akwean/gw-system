@@ -289,6 +289,24 @@ export function buildReturnUrl(invoiceId: number | string): string {
   return `${window.location.origin}/dashboard/pay?id=${invoiceId}&from=redirect`;
 }
 
+/**
+ * Dev-only harness (404 in production): fires the same payment.paid
+ * simulation the `paymongo:simulate-payment` CLI provides, over HTTP so a
+ * browser "Simulate payment (test)" button can trigger it (Google Pay's sheet
+ * can't open on the dev laptop and PayMongo offers no google_pay_card
+ * test_url simulator, unlike QR Ph). The frontend only ever shows that button
+ * with a pk_test_ key.
+ */
+export async function simulatePayment(
+  invoiceId: number | string
+): Promise<{ payment_id: string; event_id: string }> {
+  const res = await authFetch("/api/dev/payments/simulate", {
+    method: "POST",
+    body: JSON.stringify({ invoice_id: String(invoiceId) }),
+  });
+  return res.json();
+}
+
 export interface IntentStatus {
   status: "paid" | "confirmed" | "failed" | "processing" | "unknown";
   invoice_id?: number;

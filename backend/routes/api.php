@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\ConnectionLinkController;
 use App\Http\Controllers\Api\ChangePasswordController;
+use App\Http\Controllers\Api\DevPaymentSimulationController;
 use App\Http\Controllers\Api\ForgotPasswordController;
 use App\Http\Controllers\Api\HealthController;
 use App\Http\Controllers\Api\InvoiceController;
@@ -77,4 +78,7 @@ Route::middleware('auth:sanctum')->group(function () {
         ->middleware('throttle:30,1,payments-intent-status');
     Route::post('/invoices/{invoice}/reconcile', [InvoiceReconcileController::class, 'reconcile'])
         ->middleware('throttle:10,1,invoices-reconcile');
+    // Dev-only simulate harness — 404 in production (controller guard).
+    Route::post('/dev/payments/simulate', [DevPaymentSimulationController::class, 'store'])
+        ->middleware('throttle:20,1,payments-simulate');
 });

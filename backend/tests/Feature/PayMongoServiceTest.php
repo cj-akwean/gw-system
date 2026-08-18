@@ -75,7 +75,7 @@ class PayMongoServiceTest extends TestCase
 
             return $attributes['amount'] === 202000
                 && $attributes['currency'] === 'PHP'
-                && $attributes['payment_method_allowed'] === ['qrph', 'gcash', 'card']
+                && $attributes['payment_method_allowed'] === ['qrph', 'gcash', 'card', 'google_pay_card']
                 && $attributes['description'] === 'Invoice '.$invoice->invoice_number
                 && $attributes['metadata'] === [
                     'invoice_id' => (string) $invoice->id,

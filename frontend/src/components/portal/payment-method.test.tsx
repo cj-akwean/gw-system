@@ -26,6 +26,7 @@ const mockPayWithSaved = vi.fn();
 const mockDeleteSavedPaymentMethod = vi.fn();
 const mockCheckPaymentHealth = vi.fn().mockResolvedValue({ healthy: true });
 const mockReconcileInvoice = vi.fn();
+const mockSimulatePayment = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   getInvoices: (...args: unknown[]) => mockGetInvoices(...args),
@@ -39,6 +40,7 @@ vi.mock("@/lib/api", () => ({
   deleteSavedPaymentMethod: (...args: unknown[]) => mockDeleteSavedPaymentMethod(...args),
   checkPaymentHealth: (...args: unknown[]) => mockCheckPaymentHealth(...args),
   reconcileInvoice: (...args: unknown[]) => mockReconcileInvoice(...args),
+  simulatePayment: (...args: unknown[]) => mockSimulatePayment(...args),
   formatPeso: (n: number) => `₱${Number(n).toFixed(2)}`,
   buildReturnUrl: (id: number | string) =>
     `http://localhost/dashboard/pay?id=${id}&from=redirect`,
@@ -54,6 +56,40 @@ vi.mock("@/lib/api", () => ({
 vi.mock("@/lib/paymongo", () => ({
   createPaymentMethod: (...args: unknown[]) => mockCreatePaymentMethod(...args),
   attachPaymentMethod: (...args: unknown[]) => mockAttachPaymentMethod(...args),
+}));
+
+vi.mock("@/components/portal/google-pay-button", () => ({
+  GooglePayButton: ({
+    onToken,
+    onSimulate,
+  }: {
+    onToken: (p: { token: string; billing: { name: string; email: string } }) => void;
+    onSimulate?: () => void;
+  }) => (
+    <div data-testid="google-pay-host">
+      <button
+        type="button"
+        data-testid="google-pay-button"
+        onClick={() =>
+          onToken({
+            token: "gpay-token-1",
+            billing: { name: "Maria Santos", email: "maria@example.com" },
+          })
+        }
+      >
+        Google Pay
+      </button>
+      {onSimulate && (
+        <button
+          type="button"
+          data-testid="google-pay-simulate"
+          onClick={onSimulate}
+        >
+          Simulate payment (test)
+        </button>
+      )}
+    </div>
+  ),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -137,11 +173,19 @@ async function renderReady() {
   );
 }
 
-function selectMethod(method: "qrph" | "gcash" = "qrph") {
-  fireEvent.click(screen.getByTestId(method === "gcash" ? "gcash-row" : "qr-ph-row"));
+function selectMethod(method: "qrph" | "gcash" | "card" | "googlepay" = "qrph") {
+  const testId =
+    method === "gcash"
+      ? "gcash-row"
+      : method === "card"
+        ? "method-card-card"
+        : method === "googlepay"
+          ? "method-card-digital-wallet"
+          : "qr-ph-row";
+  fireEvent.click(screen.getByTestId(testId));
 }
 
-async function goToReview(method: "qrph" | "gcash" = "qrph") {
+async function goToReview(method: "qrph" | "gcash" | "card" | "googlepay" = "qrph") {
   await renderReady();
   selectMethod(method);
   await vi.waitFor(() =>
@@ -174,6 +218,7 @@ describe("PaymentMethodScreen", () => {
     mockGetSavedPaymentMethods.mockReset().mockResolvedValue([]);
     mockPayWithSaved.mockReset();
     mockDeleteSavedPaymentMethod.mockReset();
+    mockSimulatePayment.mockReset();
     Object.defineProperty(window, "location", {
       writable: true,
       value: {
@@ -523,12 +568,13 @@ describe("PaymentMethodScreen", () => {
     expect(screen.getByTestId("method-card-card")).toBeInTheDocument();
     expect(screen.getByTestId("method-card-digital-wallet")).toBeInTheDocument();
     expect(screen.getByText("Recommended")).toBeInTheDocument();
-    expect(screen.getByText("Coming soon")).toBeInTheDocument();
+    expect(screen.getByTestId("method-card-digital-wallet")).not.toBeDisabled();
+    expect(screen.queryByText("Coming soon")).not.toBeInTheDocument();
     expect(screen.queryByText("Visa and Mastercard (coming soon)")).not.toBeInTheDocument();
     expect(screen.getByTestId("pay-amount")).toHaveTextContent("₱150.00");
   });
 
-  it("disables e-wallet methods but keeps Card for bills over the ₱100,000 cap", async () => {
+  it("disables e-wallet methods but keeps Card and Google Pay for bills over the ₱100,000 cap", async () => {
     mockGetInvoices.mockResolvedValue([invoice({ total_amount: 100_001 })]);
 
     render(<PaymentMethodScreen invoiceId="1" />);
@@ -540,6 +586,14 @@ describe("PaymentMethodScreen", () => {
     expect(screen.getByTestId("gcash-row")).toBeDisabled();
     expect(screen.getByText(/over ₱100,000/i)).toBeInTheDocument();
     expect(screen.getByTestId("method-card-card")).not.toBeDisabled();
+    expect(screen.getByTestId("method-card-digital-wallet")).not.toBeDisabled();
+
+    // The cap does not block the Google Pay trigger on the review step.
+    selectMethod("googlepay");
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("review-step")).toBeInTheDocument()
+    );
+    expect(screen.getByTestId("google-pay-button")).toBeInTheDocument();
   });
 
   it("shows the review step on method selection without auto-attaching", async () => {
@@ -1365,5 +1419,126 @@ describe("PaymentMethodScreen", () => {
       expect(screen.getByTestId("success-modal")).toBeInTheDocument()
     );
     expect(screen.queryByTestId("card-processing")).not.toBeInTheDocument();
+  });
+
+  it("pays with Google Pay client-side — token PM + attach carry the GPay details", async () => {
+    mockStartPayment.mockResolvedValue(intentInfo);
+    mockCreatePaymentMethod.mockResolvedValue("pm_gpay_1");
+    mockAttachPaymentMethod.mockResolvedValue({
+      status: "succeeded",
+      imageUrl: null,
+      redirectUrl: null,
+      expiresAt: null,
+      testUrl: null,
+      lastPaymentError: null,
+    });
+    mockResolveIntentStatus.mockResolvedValue({ status: "paid", invoice_id: 1 });
+
+    await goToReview("googlepay");
+    fireEvent.click(screen.getByTestId("google-pay-button"));
+    await flushAsync();
+
+    expect(mockCreatePaymentMethod).toHaveBeenCalledWith("google_pay_card", {
+      details: { token: "gpay-token-1" },
+      billing: { name: "Maria Santos", email: "maria@example.com" },
+    });
+    expect(mockAttachPaymentMethod).toHaveBeenCalledWith({
+      intentId: "pi_1",
+      clientKey: "ck_1",
+      paymentMethodId: "pm_gpay_1",
+      returnUrl: expect.stringContaining("from=redirect"),
+    });
+  });
+
+  it("redirects to Google Pay 3DS and writes the pending marker", async () => {
+    mockStartPayment.mockResolvedValue(intentInfo);
+    mockCreatePaymentMethod.mockResolvedValue("pm_gpay_1");
+    mockAttachPaymentMethod.mockResolvedValue({
+      status: "awaiting_next_action",
+      imageUrl: null,
+      redirectUrl: "https://pay.google.com/u/0/3ds/xyz",
+      expiresAt: null,
+      testUrl: null,
+      lastPaymentError: null,
+    });
+
+    await goToReview("googlepay");
+    fireEvent.click(screen.getByTestId("google-pay-button"));
+
+    await vi.waitFor(() =>
+      expect(assignSpy).toHaveBeenCalledWith("https://pay.google.com/u/0/3ds/xyz")
+    );
+    expect(mockWritePendingInvoice).toHaveBeenCalledWith("1", {
+      paymentIntentId: "pi_1",
+      method: "googlepay",
+    });
+    expect(mockCreatePaymentMethod).toHaveBeenCalledWith("google_pay_card", {
+      details: { token: "gpay-token-1" },
+      billing: { name: "Maria Santos", email: "maria@example.com" },
+    });
+    expect(mockAttachPaymentMethod).toHaveBeenCalledWith({
+      intentId: "pi_1",
+      clientKey: "ck_1",
+      paymentMethodId: "pm_gpay_1",
+      returnUrl: expect.stringContaining("from=redirect"),
+    });
+  });
+
+  it("confirms a no-3DS Google Pay charge via the intent status", async () => {
+    mockStartPayment.mockResolvedValue(intentInfo);
+    mockCreatePaymentMethod.mockResolvedValue("pm_gpay_1");
+    mockAttachPaymentMethod.mockResolvedValue({
+      status: "succeeded",
+      imageUrl: null,
+      redirectUrl: null,
+      expiresAt: null,
+      testUrl: null,
+      lastPaymentError: null,
+    });
+    mockResolveIntentStatus.mockResolvedValue({ status: "paid", invoice_id: 1 });
+
+    await goToReview("googlepay");
+    fireEvent.click(screen.getByTestId("google-pay-button"));
+
+    await vi.waitFor(() =>
+      expect(mockResolveIntentStatus).toHaveBeenCalledWith("pi_1")
+    );
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("success-modal")).toBeInTheDocument()
+    );
+    expect(mockWritePendingInvoice).toHaveBeenCalledWith("1", {
+      paymentIntentId: "pi_1",
+      method: "googlepay",
+    });
+  });
+
+  it("runs the Google Pay simulate harness and shows the success modal on the 2s poll", async () => {
+    vi.useFakeTimers();
+    mockSimulatePayment.mockResolvedValue({
+      payment_id: "pay_sim_1",
+      event_id: "evt_sim_1",
+    });
+
+    await goToReview("googlepay");
+    fireEvent.click(screen.getByTestId("google-pay-simulate"));
+    await flushAsync();
+
+    expect(mockSimulatePayment).toHaveBeenCalledWith("1");
+
+    // Webhook not credited yet — invoice still in the unpaid list.
+    mockGetInvoices.mockResolvedValue([invoice()]);
+    act(() => {
+      vi.advanceTimersByTime(2_000);
+    });
+    await flushAsync();
+    expect(screen.queryByTestId("success-modal")).not.toBeInTheDocument();
+
+    // Simulate credited it — invoice leaves the unpaid list → success modal.
+    mockGetInvoices.mockResolvedValue([]);
+    act(() => {
+      vi.advanceTimersByTime(2_000);
+    });
+    await flushAsync();
+    expect(screen.getByTestId("success-modal")).toBeInTheDocument();
   });
 });
