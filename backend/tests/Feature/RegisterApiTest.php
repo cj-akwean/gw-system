@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Mail\WelcomeNewUser;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 class RegisterApiTest extends TestCase
@@ -12,6 +14,8 @@ class RegisterApiTest extends TestCase
 
     public function test_user_can_register_with_email_and_password(): void
     {
+        Mail::fake();
+
         $response = $this->postJson('/api/register', [
             'email' => 'newbie@example.com',
             'password' => 'secret123',
@@ -28,6 +32,8 @@ class RegisterApiTest extends TestCase
             'email' => 'newbie@example.com',
             'name' => null,
         ]);
+
+        Mail::assertQueued(WelcomeNewUser::class);
 
         $token = $response->json('token');
         $this->withHeaders(['Authorization' => "Bearer $token"])

@@ -4,10 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegisterRequest;
+use App\Mail\WelcomeNewUser;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Mail;
 use Laravel\Sanctum\Sanctum;
 
 class AuthController extends Controller
@@ -42,6 +44,8 @@ class AuthController extends Controller
             'email' => $request->email,
             'password' => $request->password,
         ]);
+
+        Mail::to($user)->queue(new WelcomeNewUser($user));
 
         $token = $user->createToken('api-token')->plainTextToken;
 
