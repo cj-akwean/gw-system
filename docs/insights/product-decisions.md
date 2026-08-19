@@ -1534,9 +1534,9 @@ demo-data call. The related AGENTS.md "282/282 green" figure was also stale; the
 
 ---
 
-## 51. Why SMS is an optional OTP channel, not primary — and what it will never carry (2026-08-18)
+## 51. Why SMS is an optional OTP channel, not primary ï¿½ and what it will never carry (2026-08-18)
 
-**Question asked:** "Add SMS notifications — send the verification codes by text so
+**Question asked:** "Add SMS notifications ï¿½ send the verification codes by text so
 customers without reliable email can still use the portal."
 
 **Answer + reasoning:**
@@ -1551,38 +1551,38 @@ SEMAPHORE_API_KEY, so a half-set-up account never advertises a broken channel.
 code (OtpService) and the password-reset code (the broker token). **Card 3DS OTPs are
 a hard exclusion:** when a customer pays by Visa/Mastercard, the *bank* sends the 3DS
 challenge/OTP to the cardholder through the card network. PayMongo and this app never
-see or control it — no amount of app-side SMS work can deliver, resend, or influence
+see or control it ï¿½ no amount of app-side SMS work can deliver, resend, or influence
 those codes. Any future pitch or plan that implies "SMS OTPs for card payments" is
 category error, not a feature gap.
 
 **c) Semaphore over Twilio.** Both work, but every number this utility will text is a PH
-mobile — Twilio adds a global platform and per-SMS fees in USD for reach the office
+mobile ï¿½ Twilio adds a global platform and per-SMS fees in USD for reach the office
 doesn't need. Semaphore is PH-native (? credits, local support, an OTP-dedicated route
 that stays routing even when telco generic traffic is congested). No abstraction layer
-over multiple providers: that's speculative generality here — one provider, one
+over multiple providers: that's speculative generality here ï¿½ one provider, one
 service class, and the config swap (whenever a real second provider appears) is a small,
 contained refactor.
 
-**d) SMS is OTPs only — no receipts, no billing reminders, no admin alerts.** Those were
+**d) SMS is OTPs only ï¿½ no receipts, no billing reminders, no admin alerts.** Those were
 explicitly deferred. Receipts/reminders are bulk-or-intermittent and already handled by
 email + the admin bell; mixing them into a channel that costs money per message and
 exists to unblock verification would blur the channel's purpose and its failure
 monitoring. Phone numbers are also self-asserted (no OTP-verify-on-save): the customer
-types a number, we validate the format, done — verifying the phone would need another
+types a number, we validate the format, done ï¿½ verifying the phone would need another
 SMS per user just to trust data that only gates *their own* choice of channel.
 
 **e) Design consequence of "optional": the backend falls back quietly.** The
 forgot-password page lets a guest tick "Send by SMS instead" without knowing whether
 that email has a phone stored (checking would leak account existence). When SMS is
-picked but the account has no phone, delivery silently falls back to email — the
+picked but the account has no phone, delivery silently falls back to email ï¿½ the
 anti-enumeration generic response is unchanged and a user who picked SMS by accident
 still gets their code, just by email.
 
 ---
 
-## 52. Semaphore has no sandbox — so dev/test uses a log driver, exactly like MAIL_MAILER=log (2026-08-18, amendment)
+## 52. Semaphore has no sandbox ï¿½ so dev/test uses a log driver, exactly like MAIL_MAILER=log (2026-08-18, amendment)
 
-**Question asked:** "The SMS flow is implemented but there is no way to try it — Semaphore
+**Question asked:** "The SMS flow is implemented but there is no way to try it ï¿½ Semaphore
 has no test/sandbox mode, every real call costs 2 credits and needs a real PH number. How
 do we develop and demo this?"
 
@@ -1590,15 +1590,15 @@ do we develop and demo this?"
 
 **a) Reuse the project's email convention rather than inventing a new one.** This app
 already ships MAIL_MAILER=log: dev writes emails to a file instead of delivering them.
-SMS gets the same switch — SMS_DRIVER=log writes phone + code + interpolated body to
+SMS gets the same switch ï¿½ SMS_DRIVER=log writes phone + code + interpolated body to
 storage/logs/sms.log and returns without calling Semaphore; SMS_DRIVER=semaphore is the
 real API path. A developer with no Semaphore account can now run the entire portal flow
 (settings ? add phone ? Change password SMS ? read the code from the log ? submit) offline.
 Same mental model, same developer legacy: "no account? read the log file."
 
 **b) Why not test keys / a Twilio trial sandbox instead?** Twilio has a real sandbox
-(Trial), but adopting it means adopting a *second* provider for a niche flow — a second
-account, a second service class, a second cost/currency — just to demo something the log
+(Trial), but adopting it means adopting a *second* provider for a niche flow ï¿½ a second
+account, a second service class, a second cost/currency ï¿½ just to demo something the log
 driver already covers at zero infrastructure. And portal SMS usage drops sharply after
 launch (it only exists to unblock customers without reliable email), so a sandbox-driven
 second provider would be permanent operational debt for a thin use case. The log driver is
@@ -1608,12 +1608,12 @@ MAIL_MAILER=log is not a mail provider.
 **c) The switch defaults by environment, and production can never silently log.** Out of
 the box the driver is log outside production and semaphore in production. In
 semaphore mode without a key, SmsService throws a clear "SEMAPHORE_API_KEY is not
-configured" error (the vailable() gate also stays false) — so a forgotten key on a prod
+configured" error (the vailable() gate also stays false) ï¿½ so a forgotten key on a prod
 box cannot degrade into "codes silently written to a file nobody reads" (the exact
 'accidentally-on' failure MAIL_MAILER=log avoids by being part of the deploy checklist).
 One real gotcha surfaced implementing this: pp()->environment() cannot run inside a
 config file (Laravel binds env only *after* config files load), so the default derives
-from APP_ENV directly — same as config/app.php.
+from APP_ENV directly ï¿½ same as config/app.php.
 
 ---
 
@@ -1624,30 +1624,30 @@ nudges queued up. What's the *right* UX for each, and which trade-offs are delib
 
 **Answer + reasoning:**
 
-**a) Password change signs you out — you see the change take effect.** The naive UX
+**a) Password change signs you out ï¿½ you see the change take effect.** The naive UX
 ("Password updated." inline) leaves the user wondering whether the change even applied,
 and keeps a session alive with a credential they've just replaced. Forcing a re-login
 makes the effect tangible: portal redirects to `/auth` with a "sign in with your new
 password" banner; the admin gets bounced to the Filament login. The token is revoked
 server-side (portal `logout()` ? `POST /api/logout`), so the old credential dies
 immediately instead of lingering until expiry. Edge asymmetry is accepted: if the logout
-call itself fails, the token may survive to expiry — out of scope, and the redirect still
+call itself fails, the token may survive to expiry ï¿½ out of scope, and the redirect still
 happens.
 
 **b) The reveal toggle lives in the base `Input`, and Filament's equivalent is locked in
 explicitly.** Putting the toggle in one shared component means every password field gets
-it with zero per-field work, and new fields inherit it automatically — no future
+it with zero per-field work, and new fields inherit it automatically ï¿½ no future
 audit of "did we remember the eye icon?" The cost is a little wrapper complexity in one
 component, paid once. On the admin side Filament already defaults `arePasswordsRevealable`
 to true; `->revealablePasswords()` is a one-liner that pins the intent so a future panel
 refactor can't silently flip it. The toggle is a `<span role="button">`, not a `<button>`
-— a real button inside a wrapping `<label>` becomes labelable and breaks
+ï¿½ a real button inside a wrapping `<label>` becomes labelable and breaks
 `getByLabelText`, and a span keeps keyboard semantics with Enter/Space.
 
 **c) Forgot Password mirrors Settings' explicit picker because the checkbox hid the
 email default.** The old "Send by SMS instead" checkbox implied email-by-default but made
 SMS the attended choice; the segmented Email/SMS picker makes email visibly the default
-and SMS a first-class alternative, consistent with the Settings channel toggle — one
+and SMS a first-class alternative, consistent with the Settings channel toggle ï¿½ one
 mental model across both pages. When SMS is impossible (no driver) the picker disappears
 and it's an email-only flow, so the page never offers a channel it can't deliver.
 
@@ -1659,7 +1659,7 @@ wrong." Same component, same message, one reorder.
 
 **e) Forgot-password stays deliberately opaque (anti-enumeration).** The copy only ever
 describes capability ("SMS codes require a phone number saved on the account; otherwise
-the code is sent by email") — it never confirms whether a specific email has an account
+the code is sent by email") ï¿½ it never confirms whether a specific email has an account
 or a phone. The backend's silent email fallback and its generic success message are
 untouched. A guest who picks SMS for an account without a phone still gets their code,
 by email, with zero signal about what exists.
@@ -1674,9 +1674,9 @@ apply to it?"
 
 **Answer + reasoning:**
 
-**a) The official Google Pay button IS the single trigger — no intermediate swipe, no
+**a) The official Google Pay button IS the single trigger ï¿½ no intermediate swipe, no
 second button.** Google's UX guidelines require the branded GPay button itself to open
-the payment sheet — that's what a "tappable Google Pay button" means to users, and a
+the payment sheet ï¿½ that's what a "tappable Google Pay button" means to users, and a
 Swipe-to-pay in front of it would be a redundant gesture that adds a step and fights the
 branded affordance. So on the review step, choosing Digital Wallet swaps the SwipeButton
 for the PayPal-style official button; tapping it opens the sheet directly. To keep the
@@ -1690,12 +1690,12 @@ because PH e-wallet rails (GCash/QR Ph) have low per-transaction limits and the 
 with the same limits as Card, so exempting it matches the existing rule's intent rather
 than inventing a new one. The pay-trigger condition is therefore derived per-method
 (`payBlocked`): `capExceeded` blocks only qrph/gcash; Google Pay is blocked by busy/health
-alone — and the ?100k in-app note now reads "Use Card or Google Pay for this bill.",
+alone ï¿½ and the ?100k in-app note now reads "Use Card or Google Pay for this bill.",
 keeping the copy and the behavior in agreement (both covered by the cap test).
 
 **c) Test/live can never mix because the environment derives from one source.** The Google
 Pay environment flag (TEST vs PRODUCTION) is read from the same exported `publicKey()`
-that gates the whole payment screen — there is no second "Google Pay env" config to drift.
+that gates the whole payment screen ï¿½ there is no second "Google Pay env" config to drift.
 Reusing the key as `gatewayMerchantId` (per PayMongo's docs) also removes the classic
 merchant-id mixup: the Google Console id only appears in `merchantInfo.merchantId` and
 only in production, after Console verification. A TEST token can therefore never attach to
@@ -1711,13 +1711,13 @@ from the browser?"
 
 **Answer + reasoning:**
 
-**a) Expose the CLI's dispatch logic over HTTP — but only outside production.** QR Ph's
+**a) Expose the CLI's dispatch logic over HTTP ï¿½ but only outside production.** QR Ph's
 simulator works because PayMongo returns a `test_url` the portal buttons straight into; the
 Google Pay flow has no equivalent, and a browser button can't invoke `artisan`. So the
 payload-build + synchronous `ProcessPayMongoWebhook` dispatch was extracted from the CLI
 into `PaymentSimulationService`, and a thin `POST /api/dev/payments/simulate` controller
 serves it to the frontend "Simulate payment (test)" link. The endpoint `abort_unless` 404s
-in `production` — it is literally absent in the live environment — and the link itself is
+in `production` ï¿½ it is literally absent in the live environment ï¿½ and the link itself is
 double-gated (see b). No service code for the harness ships in prod reachable form; the
 service class exists in prod but only the CLI and the dev route invoke it.
 
@@ -1725,7 +1725,7 @@ service class exists in prod but only the CLI and the dev route invoke it.
 renders only when BOTH the public key starts with `pk_test_` AND an `onSimulate` prop is
 wired. `onSimulate` comes from `payment-method.tsx` unconditionally, but the key condition
 is the live wall: with a `pk_live_` key `isTestKey()` is false and the link can't render no
-matter what props were passed — so a stray tap on a live intent can never mark a real
+matter what props were passed ï¿½ so a stray tap on a live intent can never mark a real
 invoice paid. The backend 404 is the second wall for any direct API call. The controller
 also mirrors `InvoicePaymentController`'s ownership (403) and payable (409) guards, so even
 in dev a caller can only simulate a bill they own, and an already-paid invoice stays a 409
@@ -1733,8 +1733,26 @@ rather than a duplicate Payment row.
 
 **c) Why fire-and-poll rather than the QR's qr-phase state.** Google Pay has no QR UI, so
 `startSimulateGooglePay` deliberately leaves the `qr` state machine untouched and just
-flips `testPaymentPending` — the existing 2s polling effect (built for QR's simulate
+flips `testPaymentPending` ï¿½ the existing 2s polling effect (built for QR's simulate
 button) then watches the invoice leave the unpaid list and shows the success modal. One
 polling machine, two simulate buttons, no new UI state.
 
 ---
+
+## 56. Google Pay reverted to "Coming soon" â€” sandbox testing limitation *(2026-08-19)*
+
+**Question asked:** "Can we verify Google Pay end-to-end in the PayMongo sandbox?"
+
+**Answer:** No. PayMongo offers no `test_url` simulator for `google_pay_card` (unlike QR Ph),
+and the dev-only simulate harness (`POST /api/dev/payments/simulate`) bypasses PayMongo
+entirely â€” it builds a fake `payment.paid` payload and dispatches it through
+`ProcessPayMongoWebhook` locally. This means:
+
+- Simulated Google Pay payments never hit PayMongo's servers
+- Nothing appears in the PayMongo webhook delivery dashboard
+- The payment is marked paid locally but cannot be proven end-to-end
+
+**Decision:** Revert the Digital Wallet card to disabled "Coming soon" in the portal UI.
+Backend wiring (`google_pay_card` in `VALID_PAYMENT_METHODS` + intent defaults) stays in
+place for easy re-enablement. Re-enable when a testable flow exists (ngrok + real Google Pay
+test card in sandbox, or PayMongo adds a simulator).

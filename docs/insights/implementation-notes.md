@@ -235,7 +235,7 @@ attached (`buildViewData` gains `paymentMethod`/`paidAt`/`paymentReference`/`amo
 the old markdown view files were deleted). Attachment unchanged (`invoice-<number>.pdf`,
 in-memory); no hosted "Download" links by design — no permanent PDF storage.
 
-### 8. Google Pay (digital wallet) — client-side PAN_ONLY token flow *(2026-08-18)*
+### 8. Google Pay (digital wallet) — client-side PAN_ONLY token flow *(2026-08-18; reverted to "Coming soon" 2026-08-19)*
 Google Pay is a real PayMongo **digital wallet** method (`google_pay_card`, card-based —
 cards in the Google wallet, distinct from e-wallets; no setup/monthly fees, standard MDR,
 Google charges no merchant fee). Backend: `VALID_PAYMENT_METHODS` + the
@@ -302,6 +302,17 @@ simulate had reused the QR intent id). The CLI still reuses a stored intent when
 (documented behavior, unchanged). Tested: controller 200/403/409/404-unknown/404-prod,
 service intent-fabrication/reuse/fresh-override + source recording, CLI suite
 unchanged-and-green (product-decisions §55).
+
+**Reverted to "Coming soon" (2026-08-19):** The frontend flow was fully implemented but
+PayMongo sandbox offers no `test_url` simulator for `google_pay_card` (unlike QR Ph), and the
+dev-only simulate harness bypasses PayMongo entirely (local-only `ProcessPayMongoWebhook`
+dispatch). This means simulated Google Pay payments never appear in the PayMongo webhook
+dashboard — the feature cannot be proven end-to-end in sandbox. The Digital Wallet card in
+the portal UI now renders disabled with "Coming soon". Backend wiring (`google_pay_card` in
+`VALID_PAYMENT_METHODS` + `createPaymentIntent()` defaults) remains in place for easy
+re-enablement. The `GooglePayButton` component file (`google-pay-button.tsx`) is retained as
+dead code. Re-enable when a testable flow exists (ngrok + real Google Pay test card, or
+PayMongo adds a simulator). Product decision §56.
 
 ## Customer Portal (Next.js)
 

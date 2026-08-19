@@ -124,6 +124,14 @@ Steps:
 > intent keeps its `qrph.expired` history, and the Google Pay `payment.paid` references a
 > fresh `pi_sim_` id.
 
+> **⚠ Reverted to "Coming soon" (2026-08-19):** The Google Pay round is currently disabled.
+> The Digital Wallet card in the portal UI renders disabled with "Coming soon". The simulate
+> harness bypasses PayMongo entirely (local-only dispatch), so nothing appears in the PayMongo
+> webhook dashboard. The backend wiring (`google_pay_card` in `VALID_PAYMENT_METHODS`) remains
+> for easy re-enablement. To re-enable: restore the frontend flow in `payment-method.tsx`
+> (reverse the 2026-08-19 edits), verify with ngrok + a real Google Pay test card, or wait
+> for PayMongo to add a `test_url` simulator for `google_pay_card`.
+
 ## Prereqs (all four, or the test silently fails)
 
 1. `php artisan migrate` — **the `processed_webhook_events` table must exist** (this was missed

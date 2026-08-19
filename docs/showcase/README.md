@@ -270,9 +270,10 @@ npm run build     # static export, TS clean
 
 ## Production readiness (where the project stands)
 
-- **Feature completeness: ~92%.** All core flows ship and pass: auth, billing, payments
-  (QR Ph / GCash / Card / Google Pay digital wallet), receipts, admin, exports. Deliberately deferred **features**:
-  SMS, Smart Features
+- **Feature completeness: ~90%.** All core flows ship and pass: auth, billing, payments
+  (QR Ph / GCash / Card), receipts, admin, exports. **Deferred:** Digital Wallet (Google Pay —
+  reverted to "Coming soon" due to PayMongo sandbox testing limitations; backend wiring
+  remains), SMS, Smart Features
   (leak detection, forecasting, risk scoring), residential/commercial rate classes,
   minimum-charge rule (needs the office's confirmed value).
 - **Production readiness: ~75–80%.** The code is ready; the *Infra phase* is not executed:

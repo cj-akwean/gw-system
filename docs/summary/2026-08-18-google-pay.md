@@ -133,3 +133,30 @@ replaced with `pi_sim_`. Docs updated (implementation-notes §8, manual-tests go
 
 **Re-validated:** backend simulate suites 23/23 (PayMongoServiceTest unaffected),
 frontend untouched (238/238 from the prior run).
+
+---
+
+## Reverted to "Coming soon" (2026-08-19)
+
+The Digital Wallet card was reverted to disabled "Coming soon" in the portal UI. Root cause:
+PayMongo sandbox offers no `test_url` simulator for `google_pay_card` (unlike QR Ph), and the
+dev-only simulate harness (`POST /api/dev/payments/simulate`) bypasses PayMongo entirely — it
+builds a fake `payment.paid` payload and dispatches it locally via `ProcessPayMongoWebhook`.
+This means simulated Google Pay payments never hit PayMongo's servers and never appear in the
+PayMongo webhook delivery dashboard. The feature cannot be verified end-to-end in sandbox.
+
+**What was removed from the frontend:**
+- `GooglePayButton` import and all rendering in `payment-method.tsx`
+- `startGooglePay` and `startSimulateGooglePay` callbacks
+- `"googlepay"` from `selectedMethod` state union and error flow union
+- Google Pay conditional text (busy/attaching/placeholder labels)
+- 4 Google Pay test cases + unused mock in `payment-method.test.tsx`
+
+**What remains (for easy re-enablement):**
+- `google-pay-button.tsx` component file (dead code)
+- Backend `google_pay_card` in `VALID_PAYMENT_METHODS` + `createPaymentIntent()` defaults
+- `DevPaymentSimulationController` + `PaymentSimulationService` (dev-only, 404 in prod)
+- `past-payments.tsx` label map (historical records display correctly)
+
+Re-enable when a testable flow exists (ngrok + real Google Pay test card, or PayMongo adds a
+simulator). Product decision §56.
