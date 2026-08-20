@@ -4,6 +4,7 @@ import "./globals.css";
 import { Space_Grotesk, Montserrat } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { Providers } from "@/lib/providers";
+import { GWTFooter } from "@/components/gwt-footer";
 
 const montserratHeading = Montserrat({subsets:['latin'],variable:'--font-heading'});
 
@@ -28,6 +29,7 @@ export default function RootLayout({
       </head>
       <body>
         <Providers>{children}</Providers>
+        <GWTFooter />
       </body>
     </html>
   );
