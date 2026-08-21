@@ -6,7 +6,7 @@ const mockLogin = vi.fn();
 const mockSignup = vi.fn();
 
 vi.mock("@/lib/auth-context", () => ({
-  useAuth: () => ({ login: mockLogin, signup: mockSignup }),
+  useAuth: () => ({ login: mockLogin, signup: mockSignup, loginWithGoogle: vi.fn() }),
 }));
 
 describe("AuthPage signup mode", () => {

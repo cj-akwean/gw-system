@@ -88,6 +88,31 @@ export async function registerApi(
   return res.json();
 }
 
+/**
+ * Exchange a Google Identity Services ID token (from the "Sign in with
+ * Google" button) for a Sanctum token. The backend verifies the token with
+ * Google and finds/creates the matching user.
+ */
+export async function googleLoginApi(credential: string): Promise<LoginResponse> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/auth/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ credential }),
+    });
+  } catch {
+    throw new Error("Unable to reach the server. Please try again.");
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message ?? "Google sign-in failed");
+  }
+
+  return res.json();
+}
+
 export async function updateProfileApi(
   name: string,
   avatarId: number,

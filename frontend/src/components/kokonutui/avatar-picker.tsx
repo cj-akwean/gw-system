@@ -22,12 +22,12 @@ import { cn } from "@/lib/utils";
 
 interface ProfileSetupProps {
   onComplete?: (data: {
-    username: string;
+    name: string;
     avatarId: number;
     phone: string | null;
   }) => void;
   className?: string;
-  initialUsername?: string;
+  initialName?: string;
   initialAvatarId?: number;
   /** Show an optional phone field (settings + onboarding). */
   initialPhone?: string;
@@ -57,7 +57,7 @@ const thumbnailVariants: Variants = {
 export default function ProfileSetup({
   onComplete,
   className,
-  initialUsername = "",
+  initialName = "",
   initialAvatarId,
   initialPhone = "",
   withPhone = false,
@@ -68,7 +68,7 @@ export default function ProfileSetup({
   const [selectedAvatar, setSelectedAvatar] = useState<Avatar>(
     initialAvatarId ? getAvatar(initialAvatarId) : AVATARS[0]
   );
-  const [username, setUsername] = useState(initialUsername);
+  const [name, setName] = useState(initialName);
   const [phone, setPhone] = useState(initialPhone);
   const [isFocused, setIsFocused] = useState(false);
   const shouldReduceMotion = useReducedMotion();
@@ -79,17 +79,17 @@ export default function ProfileSetup({
   };
 
   const handleSubmit = () => {
-    if (username.trim() && onComplete) {
+    if (name.trim() && onComplete) {
       onComplete({
-        username: username.trim(),
+        name: name.trim(),
         avatarId: selectedAvatar.id,
         phone: withPhone ? phone.trim() || null : null,
       });
     }
   };
 
-  const isValid = username.trim().length >= 3;
-  const showError = username.trim().length > 0 && username.trim().length < 3;
+  const isValid = name.trim().length >= 3;
+  const showError = name.trim().length > 0 && name.trim().length < 3;
   const rgb = AVATAR_RGB[selectedAvatar.id];
 
   return (
@@ -219,43 +219,43 @@ export default function ProfileSetup({
             </motion.div>
           </div>
 
-          {/* Username field */}
+          {/* Name field */}
           <div className="space-y-4">
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="font-medium text-sm" htmlFor="username">
-                  Username
+                <label className="font-medium text-sm" htmlFor="name">
+                  Name
                 </label>
                 <span
                   className={cn(
                     "text-xs tabular-nums transition-colors duration-200 ease-out",
-                    username.length >= 18
+                    name.length >= 45
                       ? "text-amber-500 dark:text-amber-400"
                       : "text-muted-foreground/50"
                   )}
                 >
-                  {username.length}/20
+                  {name.length}/50
                 </span>
               </div>
 
               <div className="relative">
                 <Input
-                  autoComplete="username"
+                  autoComplete="name"
                   className={cn(
                     "h-10 pl-9 text-sm",
                     showError &&
                       "border-destructive/50 focus-visible:ring-destructive"
                   )}
-                  id="username"
-                  maxLength={20}
-                  name="username"
+                  id="name"
+                  maxLength={50}
+                  name="name"
                   onBlur={() => setIsFocused(false)}
-                  onChange={(e) => setUsername(e.target.value)}
+                  onChange={(e) => setName(e.target.value)}
                   onFocus={() => setIsFocused(true)}
-                  placeholder="your_username…"
+                  placeholder="Your name"
                   spellCheck={false}
                   type="text"
-                  value={username}
+                  value={name}
                 />
                 <User2
                   aria-hidden="true"
@@ -276,7 +276,7 @@ export default function ProfileSetup({
                     role="alert"
                     transition={{ duration: 0.15, ease: "easeOut" }}
                   >
-                    Username must be at least 3 characters
+                    Name must be at least 3 characters
                   </motion.p>
                 )}
               </AnimatePresence>

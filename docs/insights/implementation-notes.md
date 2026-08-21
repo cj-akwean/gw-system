@@ -98,7 +98,54 @@ the non-password save asserts `assertAuthenticated`.
   unauth-redirect effect. The /auth banner reads `useSearchParams` in its own
   `PasswordChangedNotice` component wrapped in `<Suspense fallback={null}>` (auth page
   itself stays outside the boundary, so nothing but the optional notice is deferred at
-  static build).
+static build).
+
+### 5. Google OAuth — "Sign in with Google" *(2026-08-21)*
+- **Why client-side GIS and not Socialite redirect:** the Next.js frontend is a static
+  export (`output: "export"`) — there is no server to host the OAuth redirect/callback.
+  Google Identity Services (GIS) runs entirely in the browser: the button returns a
+  JWT **ID token** (`CredentialResponse.credential`), which the frontend POSTs to the
+  Laravel API. The backend verifies it, so there is no cross-app redirect dance and no
+  Client Secret anywhere (only the Client ID — see why in product-decisions §57).
+- **Frontend** — `components/google-signin-button.tsx`: lazy-loads
+  `https://accounts.google.com/gsi/client` (async script, removed on unmount), then
+  `google.accounts.id.initialize({ client_id, callback, error_callback })` +
+  `renderButton(el, { theme:"outline", size:"large", ... })` → Google's official
+  branded button (Google-compliant; the old custom `GoogleIcon`/`GithubIcon` outline
+  buttons were removed — GitHub OAuth deleted, Google is the only social login). The
+  div is cleared (`replaceChildren()`) before render so a StrictMode remount never
+  stacks two iframes. The callback routes the ID token through `useAuth().loginWithGoogle`
+  → `googleLoginApi()` (`POST /api/auth/google`). `error_callback` surfaces
+  popup-cancelled/closed messages; the component returns `null` when
+  `NEXT_PUBLIC_GOOGLE_CLIENT_ID` is unset (graceful dev fallback — the login page just
+  shows email/password + OR divider without a broken button). Ambient GIS types live in
+  `src/types/payjs.d.ts` alongside the Google Pay types (same `Window.google` global,
+  one source of truth).
+- **Backend** — `AuthController@google(GoogleAuthRequest)`:
+  1. `Http::get('https://oauth2.googleapis.com/tokeninfo', ['id_token' => credential])`
+     — non-200 → 401 "Invalid Google sign-in".
+  2. `aud` must equal `config('services.google.client_id')` → else 401 (rejects ID tokens
+     minted for a different OAuth client — the security-critical check).
+  3. `email_verified` must be true (tokeninfo returns the string `"true"/"false"`, so
+     `filter_var(..., FILTER_VALIDATE_BOOLEAN)`).
+  4. User lookup by `google_id` (`users.google_id` unique nullable; `users.password` made
+     nullable in the same migration — Google-created users have no password, existing
+     email users are untouched).
+  5. No user → email already exists (no `google_id`) → **409** "An account with this email
+     already exists. Please log in with your email and password." (anti-takeover policy,
+     see product-decisions §57).
+  6. No user, email free → `User::updateOrCreate(['google_id' => $sub], [...])` — the
+     unique index makes concurrent double-claim idempotent.
+  7. Issue a Sanctum token, return the identical `{ token, user }` shape as `/api/login`.
+  Route: `POST /api/auth/google`, guest + `throttle:10,1,auth-google` (same budget as
+  login). Config: `services.google.client_id` ← `GOOGLE_CLIENT_ID`; the same value also
+  goes in `frontend/.env.local` as `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
+- **Tests** — `tests/Feature/GoogleAuthTest.php` (8 tests, `Http::fake` the tokeninfo
+  endpoint): new-user created + logged in; existing `google_id` logs in without
+  duplicating; existing email without `google_id` → 409 (and `google_id` stays null);
+  invalid credential → 401; wrong audience → 401; unverified email → 401; credential
+  required → 422. Frontend: `google-signin-button.test.tsx` (renders nothing without a
+  client id, never loads the script); `auth.test.tsx` mock gained `loginWithGoogle`.
 
 ## Meter Readings
 

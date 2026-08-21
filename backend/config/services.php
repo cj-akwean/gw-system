@@ -18,6 +18,13 @@ return [
         'key' => env('POSTMARK_API_KEY'),
     ],
 
+    'google' => [
+        // Client-side Google Identity Services flow — only the Client ID is
+        // used (no secret needed); the backend verifies the ID token's
+        // audience against this value.
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+    ],
+
     'resend' => [
         'key' => env('RESEND_API_KEY'),
     ],

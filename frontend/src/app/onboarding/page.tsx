@@ -159,10 +159,11 @@ export default function OnboardingPage() {
 
               {step === STEP_PROFILE && (
                 <ProfileSetup
+                  initialName={user?.name ?? ""}
                   initialPhone={user?.phone ?? ""}
-                  onComplete={async ({ username, avatarId, phone }) => {
+                  onComplete={async ({ name, avatarId, phone }) => {
                     try {
-                      await updateProfile(username, avatarId, phone);
+                      await updateProfile(name, avatarId, phone);
                       setProfileError("");
                       setStep(STEP_LINK);
                     } catch (err) {

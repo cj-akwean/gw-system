@@ -9,7 +9,7 @@ import {
   useMemo,
   type ReactNode,
 } from "react";
-import { loginApi, logoutApi, registerApi, updateProfileApi, type PortalUser } from "./api";
+import { googleLoginApi, loginApi, logoutApi, registerApi, updateProfileApi, type PortalUser } from "./api";
 
 export const AUTH_NOTICE_PASSWORD_CHANGED = "password_changed";
 
@@ -20,6 +20,7 @@ interface AuthContextValue {
   ready: boolean;
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: (credential: string) => Promise<void>;
   updateProfile: (name: string, avatarId: number, phone?: string | null) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -60,6 +61,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     applySession(await registerApi(email, password));
   }, [applySession]);
 
+  const loginWithGoogle = useCallback(async (credential: string) => {
+    applySession(await googleLoginApi(credential));
+  }, [applySession]);
+
   const updateProfile = useCallback(
     async (name: string, avatarId: number, phone?: string | null) => {
       const updated = await updateProfileApi(name, avatarId, phone);
@@ -83,8 +88,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, token, isAuthenticated: !!token, ready, login, signup, updateProfile, logout }),
-    [user, token, ready, login, signup, updateProfile, logout],
+    () => ({ user, token, isAuthenticated: !!token, ready, login, signup, loginWithGoogle, updateProfile, logout }),
+    [user, token, ready, login, signup, loginWithGoogle, updateProfile, logout],
   );
 
   return (

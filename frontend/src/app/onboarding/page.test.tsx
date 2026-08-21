@@ -164,8 +164,8 @@ describe("OnboardingPage wizard", () => {
 
     render(<OnboardingPage />);
 
-    const usernameInput = await screen.findByPlaceholderText("your_username…");
-    fireEvent.change(usernameInput, { target: { value: "AquaFan" } });
+    const nameInput = await screen.findByPlaceholderText("Your name");
+    fireEvent.change(nameInput, { target: { value: "AquaFan" } });
 
     const submitButton = screen.getByRole("button", { name: /Get Started/i });
     fireEvent.click(submitButton);
@@ -176,13 +176,35 @@ describe("OnboardingPage wizard", () => {
     expect(await screen.findByText("Link Your Meter")).toBeInTheDocument();
   });
 
+  it("prefills the name field from a Google-signed user", async () => {
+    seedLinksFetch([]);
+    mockUseAuth = () => ({
+      isAuthenticated: true,
+      ready: true,
+      user: { id: 1, name: "Juan Dela Cruz", email: "juan@gmail.com", avatar_id: null },
+      logout: mockLogout,
+      updateProfile: mockUpdateProfile,
+    });
+
+    render(<OnboardingPage />);
+
+    const nameInput = await screen.findByPlaceholderText("Your name");
+    expect(nameInput).toHaveValue("Juan Dela Cruz");
+
+    fireEvent.click(screen.getByRole("button", { name: /Get Started/i }));
+
+    await waitFor(() => {
+      expect(mockUpdateProfile).toHaveBeenCalledWith("Juan Dela Cruz", 1, null);
+    });
+  });
+
   it("links a meter successfully and shows the all-set step", async () => {
     seedLinksFetch([]);
 
     render(<OnboardingPage />);
 
-    const usernameInput = await screen.findByPlaceholderText("your_username…");
-    fireEvent.change(usernameInput, { target: { value: "AquaFan" } });
+    const nameInput = await screen.findByPlaceholderText("Your name");
+    fireEvent.change(nameInput, { target: { value: "AquaFan" } });
     fireEvent.click(screen.getByRole("button", { name: /Get Started/i }));
 
     const accountInput = await screen.findByLabelText("Account Number");
@@ -214,8 +236,8 @@ describe("OnboardingPage wizard", () => {
 
     render(<OnboardingPage />);
 
-    const usernameInput = await screen.findByPlaceholderText("your_username…");
-    fireEvent.change(usernameInput, { target: { value: "AquaFan" } });
+    const nameInput = await screen.findByPlaceholderText("Your name");
+    fireEvent.change(nameInput, { target: { value: "AquaFan" } });
     fireEvent.click(screen.getByRole("button", { name: /Get Started/i }));
 
     const accountInput = await screen.findByLabelText("Account Number");
@@ -237,8 +259,8 @@ describe("OnboardingPage wizard", () => {
 
     render(<OnboardingPage />);
 
-    const usernameInput = await screen.findByPlaceholderText("your_username…");
-    fireEvent.change(usernameInput, { target: { value: "AquaFan" } });
+    const nameInput = await screen.findByPlaceholderText("Your name");
+    fireEvent.change(nameInput, { target: { value: "AquaFan" } });
     fireEvent.click(screen.getByRole("button", { name: /Get Started/i }));
 
     const accountInput = await screen.findByLabelText("Account Number");
@@ -258,8 +280,8 @@ describe("OnboardingPage wizard", () => {
 
     render(<OnboardingPage />);
 
-    const usernameInput = await screen.findByPlaceholderText("your_username…");
-    fireEvent.change(usernameInput, { target: { value: "AquaFan" } });
+    const nameInput = await screen.findByPlaceholderText("Your name");
+    fireEvent.change(nameInput, { target: { value: "AquaFan" } });
     fireEvent.click(screen.getByRole("button", { name: /Get Started/i }));
 
     fireEvent.click(await screen.findByText("I'll do this later"));
@@ -275,8 +297,8 @@ describe("OnboardingPage wizard", () => {
 
     render(<OnboardingPage />);
 
-    const usernameInput = await screen.findByPlaceholderText("your_username…");
-    fireEvent.change(usernameInput, { target: { value: "AquaFan" } });
+    const nameInput = await screen.findByPlaceholderText("Your name");
+    fireEvent.change(nameInput, { target: { value: "AquaFan" } });
     fireEvent.click(screen.getByRole("button", { name: /Get Started/i }));
 
     const accountInput = await screen.findByLabelText("Account Number");

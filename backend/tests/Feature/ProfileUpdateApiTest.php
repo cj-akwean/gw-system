@@ -47,13 +47,13 @@ class ProfileUpdateApiTest extends TestCase
             ->assertJsonValidationErrors(['name']);
     }
 
-    public function test_profile_update_rejects_name_longer_than_20(): void
+    public function test_profile_update_rejects_name_longer_than_50(): void
     {
         $user = User::factory()->create();
         Sanctum::actingAs($user);
 
         $this->patchJson('/api/profile', [
-            'name' => str_repeat('x', 21),
+            'name' => str_repeat('x', 51),
             'avatar_id' => 1,
         ])->assertStatus(422)
             ->assertJsonValidationErrors(['name']);

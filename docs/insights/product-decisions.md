@@ -1756,3 +1756,51 @@ entirely — it builds a fake `payment.paid` payload and dispatches it through
 Backend wiring (`google_pay_card` in `VALID_PAYMENT_METHODS` + intent defaults) stays in
 place for easy re-enablement. Re-enable when a testable flow exists (ngrok + real Google Pay
 test card in sandbox, or PayMongo adds a simulator).
+
+---
+
+## 57. Google login: client-side ID token (no secret), and "reject on email match" as the anti-takeover default *(2026-08-21)*
+
+**Question asked:** "Add a Google login button, drop the GitHub one. How do we do OAuth on a
+static-export frontend, and what happens when a Google email matches an existing
+email/password account?"
+
+**Answer:** two decisions fell out, one architectural and one about account security.
+
+**a) Google Identity Services (client-side ID token), not a Socialite redirect.** The
+Next.js frontend is a static export (`output: "export"`) — there is no Node server to host
+the OAuth `redirect`/`callback` pair, and no session cookies to protect. GIS runs entirely
+in the browser: the "Sign in with Google" button returns a signed JWT ID token, the
+frontend POSTs it to the Laravel API, and the backend verifies it with Google's `tokeninfo`
+endpoint (audience + `email_verified`). Consequences worth knowing:
+- **Only the Client ID is needed — the Client Secret is never used.** The secret exists to
+  exchange an authorization code server-side; with ID-token verification there is no code
+  exchange, so there is nothing to leak from a static bundle. The manual setup step is
+  therefore just: Google Cloud Console → OAuth Client ID (Web app) → authorized JavaScript
+  origins `http://localhost:3000` → copy the Client ID into both `.env` files. (If we ever
+  switch to Socialite, that changes — secret + redirect URI + `GUZZLE`/HTTPS wiring.)
+- **Verification is server-side regardless.** The frontend never trusts the token; the
+  backend calls Google and checks `aud` against its own client id. A token minted for some
+  other app (or an unverified email) is rejected before any user is created.
+- GIS only renders its own official button; the old custom `GoogleIcon`/`GithubIcon`
+  outline buttons were removed (GitHub OAuth deleted entirely — email/password + Google is
+  the whole surface). Email/password signup stays as-is.
+
+**b) Existing email without a `google_id` → 409 "log in with email", never auto-link.**
+This is the classic OAuth account-takeover trap: Google's `email_verified` only proves the
+email is verified *in that Google account* — it does not prove the person clicking the
+button owns the email in *our* system. Auto-linking by email would let an attacker register
+a victim's email with their own Google account and silently inherit the victim's bills and
+payment history (and our system allows unverified email registration, so the attack has a
+real starting point). Options considered:
+
+- **Reject with "use email login" (chosen):** safest. A Google user whose email collides
+  with an existing password account is told to sign in with email/password. Cost: a
+  friction edge case (someone who registered with email then tries Google).
+- **Auto-link:** convenient, but the takeover vector above makes it unacceptable for a
+  billing portal.
+- **Create a second account:** defeats the unique-email constraint and confuses billing.
+
+If a genuine "connect your Google account" flow is ever wanted, the safe way is
+email/password sign-in first, then link *from inside a logged-in session* — never
+implicitly from a Google button.

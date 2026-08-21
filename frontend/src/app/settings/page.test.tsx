@@ -41,29 +41,29 @@ vi.mock("@/components/portal/dashboard-header", () => ({
 vi.mock("@/components/kokonutui/avatar-picker", () => ({
   default: ({
     onComplete,
-    initialUsername,
+    initialName,
     initialAvatarId,
     initialPhone,
     withPhone,
   }: {
     onComplete?: (data: {
-      username: string;
+      name: string;
       avatarId: number;
       phone: string | null;
     }) => void;
-    initialUsername?: string;
+    initialName?: string;
     initialAvatarId?: number;
     initialPhone?: string;
     withPhone?: boolean;
   }) => (
     <div data-testid="profile-setup">
-      <span>{initialUsername}</span>
+      <span>{initialName}</span>
       <span>{initialAvatarId}</span>
       <span data-testid="profile-phone">{initialPhone}</span>
       <span data-testid="profile-withphone">{String(withPhone)}</span>
       <button
         type="button"
-        onClick={() => onComplete?.({ username: "AquaFan", avatarId: 3, phone: "09171234567" })}
+        onClick={() => onComplete?.({ name: "AquaFan", avatarId: 3, phone: "09171234567" })}
       >
         save-profile
       </button>

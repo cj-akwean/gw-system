@@ -32,6 +32,9 @@ Route::post('/login', [AuthController::class, 'login'])
 Route::post('/register', [AuthController::class, 'register'])
     ->middleware(['guest', 'throttle:10,1,auth-register'])
     ->name('register');
+Route::post('/auth/google', [AuthController::class, 'google'])
+    ->middleware(['guest', 'throttle:10,1,auth-google'])
+    ->name('google');
 Route::post('/logout', [AuthController::class, 'logout'])
     ->middleware(['auth:sanctum', 'throttle:30,1,auth-logout']);
 

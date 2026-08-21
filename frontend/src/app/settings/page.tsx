@@ -208,12 +208,12 @@ export default function SettingsPage() {
               subtitle="Update your avatar, display name and phone number."
               submitLabel="Save"
               initialAvatarId={user?.avatar_id ?? undefined}
-              initialUsername={user?.name ?? ""}
+              initialName={user?.name ?? ""}
               initialPhone={user?.phone ?? ""}
               withPhone
-              onComplete={async ({ username, avatarId, phone }) => {
+              onComplete={async ({ name, avatarId, phone }) => {
                 try {
-                  await updateProfile(username, avatarId, phone);
+                  await updateProfile(name, avatarId, phone);
                   setProfileError("");
                   setProfileSaved(true);
                 } catch (err) {

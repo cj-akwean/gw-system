@@ -2,8 +2,6 @@
 
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { GithubIcon } from "@/components/github-icon";
-import { GoogleIcon } from "@/components/google-icon";
 import { Button } from "@/components/ui/button";
 import {
   InputGroup,
@@ -12,6 +10,7 @@ import {
 } from "@/components/ui/input-group";
 import { AuthDivider } from "@/components/auth-divider";
 import { DecorIcon } from "@/components/decor-icon";
+import { GoogleSignInButton } from "@/components/google-signin-button";
 import { AtSignIcon, LockIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useAuth } from "@/lib/auth-context";
@@ -136,16 +135,7 @@ export function AuthPage({ mode, onToggleMode }: AuthPageProps) {
 
           <AuthDivider>OR</AuthDivider>
 
-          <div className="grid grid-cols-2 gap-2">
-            <Button className="w-full" type="button" variant="outline">
-              <GoogleIcon data-icon="inline-start" />
-              Google
-            </Button>
-            <Button className="w-full" type="button" variant="outline">
-              <GithubIcon data-icon="inline-start" />
-              GitHub
-            </Button>
-          </div>
+          <GoogleSignInButton />
         </div>
 
         <p className="text-muted-foreground text-sm text-center">
