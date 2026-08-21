@@ -122,8 +122,13 @@ export function PastPayments() {
       )}
 
       {open && state.status === "ready" && state.payments.length > 0 && (
-        <ul data-testid="past-payments-list" className="divide-y divide-border border-t border-border">
-          {state.payments.map((payment) => (
+        <div>
+          <div aria-live="polite" className="sr-only">
+            Loaded {state.payments.length} past payment
+            {state.payments.length === 1 ? "" : "s"}.
+          </div>
+          <ul data-testid="past-payments-list" className="divide-y divide-border border-t border-border">
+            {state.payments.map((payment) => (
             <li
               key={payment.id}
               className="flex items-center justify-between gap-3 px-5 py-3.5"
@@ -147,7 +152,8 @@ export function PastPayments() {
               </div>
             </li>
           ))}
-        </ul>
+          </ul>
+        </div>
       )}
     </section>
   );

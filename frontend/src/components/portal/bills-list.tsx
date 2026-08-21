@@ -18,31 +18,52 @@ export function BillsList() {
   const { logout } = useAuth();
   const [state, setState] = useState<State>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
+  // Incremented when the window regains focus — silently refreshes the bills
+  // so returning from the pay flow shows the latest (e.g. just-paid) state.
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    const onFocus = () => setRefreshKey((n) => n + 1);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
 
-    getInvoices()
-      .then((invoices) => {
-        if (!cancelled) setState({ status: "ready", invoices });
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        const apiErr = err as ApiError;
-        if (apiErr.status === 401) {
-          logout().then(() => router.replace("/auth"));
-          return;
-        }
-        setState({
-          status: "error",
-          message: apiErr.message ?? "Something went wrong. Please try again.",
+    const load = (showLoading: boolean) => {
+      if (showLoading) setState({ status: "loading" });
+      getInvoices()
+        .then((invoices) => {
+          if (!cancelled) setState({ status: "ready", invoices });
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          const apiErr = err as ApiError;
+          if (apiErr.status === 401) {
+            logout().then(() => router.replace("/auth"));
+            return;
+          }
+          setState({
+            status: "error",
+            message: apiErr.message ?? "Something went wrong. Please try again.",
+          });
         });
-      });
+    };
+
+    // Initial load / manual retry show the skeleton; focus refetches keep the
+    // current list visible and only swap in the fresh data.
+    if (refreshKey === 0 || state.status === "error") {
+      load(true);
+    } else {
+      load(false);
+    }
 
     return () => {
       cancelled = true;
     };
-  }, [attempt, logout, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attempt, refreshKey, logout, router]);
 
   const retry = useCallback(() => {
     setState({ status: "loading" });
@@ -87,6 +108,13 @@ export function BillsList() {
     0
   );
 
+  // Screen-reader announcement for the async load result — silent updates are
+  // invisible to assistive tech, so announce the outcome explicitly.
+  const announcement =
+    invoices.length === 0
+      ? "There are no unpaid bills on your accounts."
+      : `There ${invoices.length === 1 ? "is" : "are"} ${invoices.length} unpaid ${invoices.length === 1 ? "bill" : "bills"} awaiting payment.`;
+
   // Group by connection (account/meter) — the API already sorts overdue-first
   // then by due date, and grouping preserves that order within each group.
   const groups: { key: string; connection: PortalInvoice["service_connection"]; invoices: PortalInvoice[] }[] =
@@ -103,6 +131,9 @@ export function BillsList() {
 
   return (
     <section className="space-y-6">
+      <div aria-live="polite" className="sr-only">
+        {announcement}
+      </div>
       <div className="flex items-end justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-2xl font-bold tracking-tight">My Bills</h2>

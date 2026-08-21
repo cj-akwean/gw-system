@@ -3,9 +3,11 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import ResetPasswordPage from "@/app/reset-password/page";
 
 const mockReplace = vi.fn();
+let mockSearchParams = new URLSearchParams("");
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace, push: vi.fn() }),
+  useSearchParams: () => mockSearchParams,
 }));
 
 vi.mock("next/link", () => ({
@@ -53,6 +55,7 @@ function fillForm() {
 describe("ResetPasswordPage", () => {
   beforeEach(() => {
     mockReplace.mockReset();
+    mockSearchParams = new URLSearchParams("");
   });
 
   afterEach(() => {
@@ -65,6 +68,15 @@ describe("ResetPasswordPage", () => {
     render(<ResetPasswordPage />);
 
     expect(mockReplace).toHaveBeenCalledWith("/dashboard");
+  });
+
+  it("prefills the email from the query param", () => {
+    mockSearchParams = new URLSearchParams("email=lost%40example.com");
+    mockUseAuth = () => ({ isAuthenticated: false, ready: true });
+
+    render(<ResetPasswordPage />);
+
+    expect(screen.getByLabelText("Email")).toHaveValue("lost@example.com");
   });
 
   it("resets the password and shows the success state", async () => {

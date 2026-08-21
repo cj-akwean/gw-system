@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Script from "next/script";
+import { Toaster } from "sonner";
 import "./globals.css";
 import { Space_Grotesk, Montserrat } from "next/font/google";
 import { cn } from "@/lib/utils";
@@ -30,6 +31,7 @@ export default function RootLayout({
       <body>
         <Providers>{children}</Providers>
         <GWTFooter />
+        <Toaster position="top-center" richColors closeButton />
       </body>
     </html>
   );

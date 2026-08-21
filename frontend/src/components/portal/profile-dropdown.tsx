@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { LayoutDashboard, LogOut, Moon, Settings, Sun, User } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -13,6 +14,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 
 interface ProfileDropdownProps {
@@ -23,6 +34,7 @@ interface ProfileDropdownProps {
 export function ProfileDropdown({ user, onLogout }: ProfileDropdownProps) {
   const pathname = usePathname();
   const { dark, mounted, toggle } = useTheme();
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const avatar = user?.avatar_id ? getAvatar(user.avatar_id) : null;
   const rgb = user?.avatar_id ? AVATAR_RGB[user.avatar_id] : null;
   const displayName = user?.name || "My Account";
@@ -115,12 +127,39 @@ export function ProfileDropdown({ user, onLogout }: ProfileDropdownProps) {
             "dark:bg-destructive/20"
           )}
         >
-          <button data-testid="profile-sign-out" type="button" onClick={onLogout}>
+          <button
+            data-testid="profile-sign-out"
+            type="button"
+            onClick={() => setConfirmOpen(true)}
+          >
             <LogOut className="h-4 w-4 text-destructive" />
             Sign Out
           </button>
         </DropdownMenuItem>
       </DropdownMenuContent>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sign out?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You&apos;ll need to sign in again to view and pay your bills.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="confirm-sign-out"
+              onClick={() => {
+                setConfirmOpen(false);
+                onLogout();
+              }}
+            >
+              Sign out
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DropdownMenu>
   );
 }

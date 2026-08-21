@@ -49,7 +49,7 @@ export function LinkMeterForm({ onLinked, onSkip }: LinkMeterFormProps) {
         <h2 className="font-semibold text-xl tracking-tight">Link Your Meter</h2>
         <p className="text-muted-foreground text-sm">
           Find these on your latest bill. Linking lets us show your bills and
-          usage here.
+          due dates here.
         </p>
       </div>
 

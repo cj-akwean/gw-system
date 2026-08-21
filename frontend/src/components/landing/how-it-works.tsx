@@ -12,7 +12,7 @@ const steps = [
   },
   {
     icon: Receipt,
-    title: "View bills & usage",
+    title: "View bills & due dates",
     body: "See your unpaid bills, billing periods, and totals at a glance.",
   },
   {

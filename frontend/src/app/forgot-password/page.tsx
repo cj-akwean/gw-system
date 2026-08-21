@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { sendPasswordResetOtp, checkSmsHealth } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useResendTimer } from "@/hooks/use-resend-timer";
 import { PageLoader } from "@/components/portal/page-loader";
 import { OtpChannelPicker } from "@/components/portal/otp-channel-picker";
 
@@ -21,6 +22,8 @@ export default function ForgotPasswordPage() {
   const [sending, setSending] = useState(false);
   const [smsAvailable, setSmsAvailable] = useState(false);
   const [otpChannel, setOtpChannel] = useState<"email" | "sms">("email");
+  const { remaining: resendRemaining, canResend, start: startResend } =
+    useResendTimer(30);
 
   useEffect(() => {
     if (ready && isAuthenticated) {
@@ -42,18 +45,24 @@ export default function ForgotPasswordPage() {
     return <PageLoader />;
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const sendCode = async () => {
+    if (sending) return;
     setError("");
     setSending(true);
     try {
       await sendPasswordResetOtp(email, otpChannel);
       setSent(true);
+      startResend();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't send the code.");
     } finally {
       setSending(false);
     }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    void sendCode();
   };
 
   return (
@@ -81,7 +90,30 @@ export default function ForgotPasswordPage() {
                 Enter the code on the reset page — it expires in 15 minutes.
               </p>
               <Button asChild className="h-10 w-full px-6 text-xs">
-                <Link href="/reset-password">Enter the code</Link>
+                <Link
+                  href={`/reset-password?email=${encodeURIComponent(email.trim())}`}
+                >
+                  Enter the code
+                </Link>
+              </Button>
+              <Button
+                aria-disabled={sending || !canResend}
+                className="h-10 w-full px-6 text-xs"
+                disabled={sending || !canResend}
+                onClick={() => void sendCode()}
+                type="button"
+                variant="outline"
+              >
+                {sending ? (
+                  <>
+                    <Loader2 aria-hidden className="size-3.5 animate-spin" />
+                    Sending…
+                  </>
+                ) : !canResend ? (
+                  <>Resend in {resendRemaining}s</>
+                ) : (
+                  "Resend code"
+                )}
               </Button>
             </div>
           ) : (

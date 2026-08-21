@@ -14,6 +14,10 @@ import { AnimatedOTPInput } from "@/components/smoothui/otp-input";
 import { OtpChannelPicker } from "@/components/portal/otp-channel-picker";
 import { AUTH_NOTICE_PASSWORD_CHANGED, useAuth } from "@/lib/auth-context";
 import { useLogoutRedirect } from "@/lib/use-logout-redirect";
+import { useUnsavedChanges } from "@/hooks/use-unsaved-changes";
+import { useResendTimer } from "@/hooks/use-resend-timer";
+import { UnsavedChangesDialog } from "@/components/portal/unsaved-changes-dialog";
+import { toast } from "@/lib/toast";
 import {
   changePasswordApi,
   checkSmsHealth,
@@ -35,7 +39,6 @@ export default function SettingsPage() {
   const [links, setLinks] = useState<PortalLink[]>([]);
   const [linksLoaded, setLinksLoaded] = useState(false);
   const [linksError, setLinksError] = useState("");
-  const [profileSaved, setProfileSaved] = useState(false);
   const [profileError, setProfileError] = useState("");
   const [unlinkError, setUnlinkError] = useState("");
   const [unlinkingId, setUnlinkingId] = useState<number | null>(null);
@@ -49,6 +52,17 @@ export default function SettingsPage() {
   const [changingPassword, setChangingPassword] = useState(false);
   const [otpChannel, setOtpChannel] = useState<"email" | "sms">("email");
   const [smsAvailable, setSmsAvailable] = useState(false);
+  // True when the security (password) form has unsaved input. Used to warn the
+  // user before leaving with unsaved changes (beforeunload + in-app guard).
+  const securityDirty =
+    currentPassword !== "" ||
+    newPassword !== "" ||
+    confirmPassword !== "" ||
+    otp !== "";
+  const { requestNavigate, pending, confirmLeave, cancelLeave } =
+    useUnsavedChanges(securityDirty);
+  const { remaining: resendRemaining, canResend, start: startResend } =
+    useResendTimer(30);
 
   useEffect(() => {
     if (!ready || !isAuthenticated) return;
@@ -71,7 +85,7 @@ export default function SettingsPage() {
   }, [ready, isAuthenticated, loggingOut, router]);
 
   const handleLogout = () => {
-    void logoutAndRedirect("/");
+    requestNavigate(() => void logoutAndRedirect("/"));
   };
 
   const handleUnlink = async (linkId: number) => {
@@ -80,6 +94,7 @@ export default function SettingsPage() {
     try {
       await unlinkApi(linkId);
       setLinks((prev) => prev.filter((link) => link.id !== linkId));
+      toast.success("Meter unlinked.");
     } catch (err) {
       setUnlinkError(err instanceof Error ? err.message : "Couldn't unlink the meter.");
     } finally {
@@ -115,6 +130,7 @@ export default function SettingsPage() {
     try {
       await sendPasswordChangeOtp(otpChannel);
       setOtpSent(true);
+      startResend();
     } catch (err) {
       setPasswordError(
         err instanceof Error ? err.message : "Couldn't send the code."
@@ -175,7 +191,8 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="relative min-h-screen w-full" style={{ background: "var(--bg)" }}>
+    <>
+      <div className="relative min-h-screen w-full" style={{ background: "var(--bg)" }}>
       <div
         className="pointer-events-none fixed inset-0"
         style={{ background: "var(--glow) no-repeat", filter: "blur(var(--glow-blur))" }}
@@ -215,20 +232,14 @@ export default function SettingsPage() {
                 try {
                   await updateProfile(name, avatarId, phone);
                   setProfileError("");
-                  setProfileSaved(true);
+                  toast.success("Profile saved.");
                 } catch (err) {
-                  setProfileSaved(false);
                   setProfileError(
                     err instanceof Error ? err.message : "Couldn't save your profile."
                   );
                 }
               }}
             />
-            {profileSaved && (
-              <p className="text-center text-sm text-primary" role="status">
-                Profile saved.
-              </p>
-            )}
             {profileError && (
               <p className="text-destructive text-sm text-center" role="alert">
                 {profileError}
@@ -328,9 +339,9 @@ export default function SettingsPage() {
                 )}
 
                 <Button
-                  aria-disabled={sendingOtp}
+                  aria-disabled={sendingOtp || !canResend}
                   className="h-10 px-6 text-xs"
-                  disabled={sendingOtp}
+                  disabled={sendingOtp || !canResend}
                   onClick={() => void handleSendOtp()}
                   type="button"
                   variant="outline"
@@ -340,6 +351,8 @@ export default function SettingsPage() {
                       <Loader2 aria-hidden className="size-3.5 animate-spin" />
                       Sending…
                     </>
+                  ) : otpSent && !canResend ? (
+                    <>Resend in {resendRemaining}s</>
                   ) : otpSent ? (
                     "Resend code"
                   ) : (
@@ -464,5 +477,12 @@ export default function SettingsPage() {
         </main>
       </div>
     </div>
+    <UnsavedChangesDialog
+        pending={pending}
+        onConfirm={confirmLeave}
+        onCancel={cancelLeave}
+        confirmLabel="Leave"
+      />
+    </>
   );
 }

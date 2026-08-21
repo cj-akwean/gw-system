@@ -11,7 +11,7 @@ import {
 import { AuthDivider } from "@/components/auth-divider";
 import { DecorIcon } from "@/components/decor-icon";
 import { GoogleSignInButton } from "@/components/google-signin-button";
-import { AtSignIcon, LockIcon } from "lucide-react";
+import { AtSignIcon, Loader2, LockIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useAuth } from "@/lib/auth-context";
 
@@ -26,21 +26,55 @@ export function AuthPage({ mode, onToggleMode }: AuthPageProps) {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // Field-level errors (live, cleared on change). Email is validated with a
+  // lenient format check; password with a min length; confirm must match.
+  const [emailError, setEmailError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [confirmError, setConfirmError] = useState("");
+
+  const clearFieldErrors = () => {
+    setEmailError("");
+    setPasswordError("");
+    setConfirmError("");
+  };
+
+  function validate(): boolean {
+    let valid = true;
+    clearFieldErrors();
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setEmailError("Enter a valid email address.");
+      valid = false;
+    }
+    if (password.length < 8) {
+      setPasswordError("Password must be at least 8 characters.");
+      valid = false;
+    }
+    if (!isLogin && confirmPassword !== password) {
+      setConfirmError("Passwords do not match.");
+      valid = false;
+    }
+    return valid;
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (isLoading) return;
+
+    if (!validate()) return;
 
     setIsLoading(true);
     setError("");
 
     try {
       if (isLogin) {
-        await login(email, password);
+        await login(email.trim(), password);
       } else {
-        await signup(email, password);
+        await signup(email.trim(), password);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed");
@@ -76,7 +110,7 @@ export function AuthPage({ mode, onToggleMode }: AuthPageProps) {
         </div>
 
         <div className="space-y-4">
-          <form className="space-y-2" onSubmit={handleSubmit}>
+          <form className="space-y-2" onSubmit={handleSubmit} noValidate>
             {error && (
               <p className="text-sm text-red-500 text-center" role="alert">
                 {error}
@@ -88,29 +122,86 @@ export function AuthPage({ mode, onToggleMode }: AuthPageProps) {
                 placeholder="your.email@example.com"
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                aria-invalid={emailError ? true : undefined}
+                aria-describedby={emailError ? "auth-email-error" : undefined}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setEmailError("");
+                }}
                 required
               />
               <InputGroupAddon align="inline-start">
                 <AtSignIcon />
               </InputGroupAddon>
             </InputGroup>
+            {emailError && (
+              <p id="auth-email-error" className="text-sm text-red-500" role="alert">
+                {emailError}
+              </p>
+            )}
 
             <InputGroup>
               <InputGroupInput
                 placeholder="Password"
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                aria-invalid={passwordError ? true : undefined}
+                aria-describedby={passwordError ? "auth-password-error" : undefined}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setPasswordError("");
+                  setConfirmError("");
+                }}
                 required
               />
               <InputGroupAddon align="inline-start">
                 <LockIcon />
               </InputGroupAddon>
             </InputGroup>
+            {passwordError && (
+              <p id="auth-password-error" className="text-sm text-red-500" role="alert">
+                {passwordError}
+              </p>
+            )}
+
+            {!isLogin && (
+              <>
+                <InputGroup>
+                  <InputGroupInput
+                    placeholder="Confirm password"
+                    type="password"
+                    value={confirmPassword}
+                    aria-invalid={confirmError ? true : undefined}
+                    aria-describedby={confirmError ? "auth-confirm-error" : undefined}
+                    onChange={(e) => {
+                      setConfirmPassword(e.target.value);
+                      setConfirmError("");
+                    }}
+                    required
+                  />
+                  <InputGroupAddon align="inline-start">
+                    <LockIcon />
+                  </InputGroupAddon>
+                </InputGroup>
+                {confirmError && (
+                  <p id="auth-confirm-error" className="text-sm text-red-500" role="alert">
+                    {confirmError}
+                  </p>
+                )}
+              </>
+            )}
 
             <Button className="w-full" size="sm" type="submit" disabled={isLoading}>
-              {isLoading ? "Signing in..." : isLogin ? "Login with Email" : "Create Account"}
+              {isLoading ? (
+                <>
+                  <Loader2 aria-hidden className="size-4 animate-spin" />
+                  {isLogin ? "Signing in..." : "Creating account..."}
+                </>
+              ) : isLogin ? (
+                "Login with Email"
+              ) : (
+                "Create Account"
+              )}
             </Button>
           </form>
 
@@ -139,21 +230,7 @@ export function AuthPage({ mode, onToggleMode }: AuthPageProps) {
         </div>
 
         <p className="text-muted-foreground text-sm text-center">
-          By clicking continue, you agree to our{" "}
-          <a
-            className="underline underline-offset-4 hover:text-primary"
-            href="#"
-          >
-            Terms of Service
-          </a>{" "}
-          and{" "}
-          <a
-            className="underline underline-offset-4 hover:text-primary"
-            href="#"
-          >
-            Privacy Policy
-          </a>
-          .
+          By clicking continue, you agree to our Terms of Service and Privacy Policy.
         </p>
       </div>
     </div>

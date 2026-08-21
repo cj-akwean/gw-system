@@ -36,6 +36,7 @@ const user = {
   name: "Maria",
   email: "maria@example.com",
   avatar_id: 2,
+  phone: null,
 };
 
 describe("ProfileDropdown", () => {
@@ -97,19 +98,37 @@ describe("ProfileDropdown", () => {
     expect(mockToggle).toHaveBeenCalledTimes(1);
   });
 
-  it("calls onLogout when Sign Out is clicked", async () => {
+  it("does not call onLogout until sign out is confirmed", async () => {
     render(<ProfileDropdown user={user} onLogout={mockLogout} />);
 
     await userEvent.click(screen.getByRole("button", { name: "Open profile menu" }));
     await userEvent.click(screen.getByTestId("profile-sign-out"));
 
+    expect(
+      screen.getByText(/You'll need to sign in again/i)
+    ).toBeInTheDocument();
+    expect(mockLogout).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByTestId("confirm-sign-out"));
+
     expect(mockLogout).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call onLogout when sign out is cancelled", async () => {
+    render(<ProfileDropdown user={user} onLogout={mockLogout} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Open profile menu" }));
+    await userEvent.click(screen.getByTestId("profile-sign-out"));
+
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(mockLogout).not.toHaveBeenCalled();
   });
 
   it("falls back to a default label without a user name", () => {
     render(
       <ProfileDropdown
-        user={{ id: 2, name: null, email: "jane@example.com", avatar_id: null }}
+        user={{ id: 2, name: null, email: "jane@example.com", avatar_id: null, phone: null }}
         onLogout={mockLogout}
       />
     );

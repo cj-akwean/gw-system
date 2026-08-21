@@ -1394,12 +1394,12 @@ function SuccessModal({ onOK, email }: { onOK: () => void; email?: string }) {
         data-testid="success-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="Payment received"
+        aria-labelledby="success-modal-title"
         className="flex w-full max-w-sm flex-col items-center gap-4 rounded-xl border border-border bg-card p-6 text-center shadow-xl animate-in fade-in zoom-in-95 duration-300"
       >
         <CheckCircle2 className="size-10 text-emerald-500" />
         <div>
-          <p className="text-base font-semibold">Payment received</p>
+          <p id="success-modal-title" className="text-base font-semibold">Payment received</p>
           <p className="mt-1 text-sm text-muted-foreground">
             Your confirmation and receipt are emailed to {email ?? "you"}.
           </p>
@@ -1438,12 +1438,12 @@ function ConfirmingModal({
         data-testid="confirming-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="Payment confirmed"
+        aria-labelledby="confirming-modal-title"
         className="flex w-full max-w-sm flex-col items-center gap-4 rounded-xl border border-border bg-card p-6 text-center shadow-xl animate-in fade-in zoom-in-95 duration-300"
       >
         <Loader2 className="size-8 animate-spin text-muted-foreground" />
         <div>
-          <p className="text-base font-semibold">Payment confirmed with your provider</p>
+          <p id="confirming-modal-title" className="text-base font-semibold">Payment confirmed with your provider</p>
           <p className="mt-1 text-sm text-muted-foreground">
             We&apos;re updating your account — your receipt will be emailed
             shortly.

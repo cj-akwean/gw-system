@@ -17,13 +17,21 @@ describe("AuthPage signup mode", () => {
     mockSignup.mockResolvedValue(undefined);
   });
 
-  it("collects only email and password", () => {
+  it("collects email, password and confirm password in signup", () => {
     render(<AuthPage mode="signup" />);
 
     expect(screen.getByPlaceholderText("your.email@example.com")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Password")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Confirm password")).toBeInTheDocument();
     expect(screen.queryByPlaceholderText("Your Name")).not.toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("Confirm Password")).not.toBeInTheDocument();
+  });
+
+  it("does not collect confirm password in login mode", () => {
+    render(<AuthPage mode="login" />);
+
+    expect(screen.getByPlaceholderText("your.email@example.com")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Password")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Confirm password")).not.toBeInTheDocument();
   });
 
   it("calls signup with email and password", async () => {
@@ -35,12 +43,73 @@ describe("AuthPage signup mode", () => {
     fireEvent.change(screen.getByPlaceholderText("Password"), {
       target: { value: "secret123" },
     });
+    fireEvent.change(screen.getByPlaceholderText("Confirm password"), {
+      target: { value: "secret123" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Create Account" }));
 
     await waitFor(() => {
       expect(mockSignup).toHaveBeenCalledWith("new@example.com", "secret123");
     });
     expect(mockLogin).not.toHaveBeenCalled();
+  });
+
+  it("blocks signup when passwords do not match", async () => {
+    render(<AuthPage mode="signup" />);
+
+    fireEvent.change(screen.getByPlaceholderText("your.email@example.com"), {
+      target: { value: "new@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), {
+      target: { value: "secret123" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Confirm password"), {
+      target: { value: "different1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create Account" }));
+
+    expect(await screen.findByText("Passwords do not match.")).toBeInTheDocument();
+    expect(mockSignup).not.toHaveBeenCalled();
+  });
+
+  it("blocks signup for a short password", async () => {
+    render(<AuthPage mode="signup" />);
+
+    fireEvent.change(screen.getByPlaceholderText("your.email@example.com"), {
+      target: { value: "new@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), {
+      target: { value: "short" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Confirm password"), {
+      target: { value: "short" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create Account" }));
+
+    expect(
+      await screen.findByText("Password must be at least 8 characters.")
+    ).toBeInTheDocument();
+    expect(mockSignup).not.toHaveBeenCalled();
+  });
+
+  it("blocks signup for an invalid email", async () => {
+    render(<AuthPage mode="signup" />);
+
+    fireEvent.change(screen.getByPlaceholderText("your.email@example.com"), {
+      target: { value: "not-an-email" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), {
+      target: { value: "secret123" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Confirm password"), {
+      target: { value: "secret123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create Account" }));
+
+    expect(
+      await screen.findByText("Enter a valid email address.")
+    ).toBeInTheDocument();
+    expect(mockSignup).not.toHaveBeenCalled();
   });
 
   it("shows the signup error message", async () => {
@@ -54,6 +123,9 @@ describe("AuthPage signup mode", () => {
       target: { value: "taken@example.com" },
     });
     fireEvent.change(screen.getByPlaceholderText("Password"), {
+      target: { value: "secret123" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Confirm password"), {
       target: { value: "secret123" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Create Account" }));

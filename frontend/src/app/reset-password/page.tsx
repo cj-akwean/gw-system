@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,10 +12,19 @@ import { useAuth } from "@/lib/auth-context";
 import { PageLoader } from "@/components/portal/page-loader";
 
 export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={<PageLoader />}>
+      <ResetPasswordContent />
+    </Suspense>
+  );
+}
+
+function ResetPasswordContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { isAuthenticated, ready } = useAuth();
 
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(() => searchParams.get("email") ?? "");
   const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -164,7 +173,7 @@ export default function ResetPasswordPage() {
           )}
 
           <p className="mt-6 text-center text-sm text-muted-foreground">
-            Didn't get a code?{" "}
+            Didn&apos;t get a code?{" "}
             <Link href="/forgot-password" className="text-primary underline underline-offset-4">
               Request a new one
             </Link>

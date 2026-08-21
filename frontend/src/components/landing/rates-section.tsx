@@ -216,8 +216,8 @@ export function RatesSection() {
 
             <p className="rounded-xl border border-dashed border-border bg-muted/40 p-4 text-xs leading-5 text-muted-foreground">
               <span className={cn("font-semibold text-foreground")}>Looking for your bill?</span>{" "}
-              Link your account and meter number to see your bills, usage, and due
-              dates online.
+              Link your account and meter number to see your bills and due dates
+              online.
             </p>
           </div>
         </div>

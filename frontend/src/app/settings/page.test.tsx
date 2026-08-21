@@ -6,9 +6,14 @@ const mockReplace = vi.fn();
 const mockPush = vi.fn();
 const mockLogout = vi.fn();
 const mockUpdateProfile = vi.fn();
+const { mockToastSuccess } = vi.hoisted(() => ({ mockToastSuccess: vi.fn() }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace, push: mockPush }),
+}));
+
+vi.mock("@/lib/toast", () => ({
+  toast: { success: mockToastSuccess, error: vi.fn(), info: vi.fn(), warning: vi.fn() },
 }));
 
 let mockUseAuth: () => {
@@ -137,6 +142,7 @@ describe("SettingsPage", () => {
     mockPush.mockReset();
     mockLogout.mockReset();
     mockUpdateProfile.mockReset();
+    mockToastSuccess.mockReset();
     mockUpdateProfile.mockResolvedValue(undefined);
     localStorage.setItem("auth", JSON.stringify({ token: "token-1", user: {} }));
   });
@@ -194,6 +200,7 @@ describe("SettingsPage", () => {
       ([, init]) => init?.method === "DELETE"
     ) as [string, RequestInit];
     expect(deleteCall[0]).toBe("http://127.0.0.1:8000/api/links/5");
+    expect(mockToastSuccess).toHaveBeenCalledWith("Meter unlinked.");
   });
 
   it("does not unlink when the hold is released early", async () => {
@@ -216,7 +223,7 @@ describe("SettingsPage", () => {
     expect(deleteCall).toBeUndefined();
   });
 
-  it("shows a confirmation when saving the profile", async () => {
+  it("shows a toast when saving the profile", async () => {
     seedFetch([]);
     mockUseAuth = () => authedUser();
 
@@ -224,8 +231,10 @@ describe("SettingsPage", () => {
 
     fireEvent.click(await screen.findByText("save-profile"));
 
-    expect(await screen.findByText("Profile saved.")).toBeInTheDocument();
-    expect(mockUpdateProfile).toHaveBeenCalledWith("AquaFan", 3, "09171234567");
+    await waitFor(() => {
+      expect(mockUpdateProfile).toHaveBeenCalledWith("AquaFan", 3, "09171234567");
+    });
+    expect(mockToastSuccess).toHaveBeenCalledWith("Profile saved.");
   });
 
   it("renders the security section with password fields", async () => {

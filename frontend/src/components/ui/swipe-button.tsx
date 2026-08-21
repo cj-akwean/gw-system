@@ -75,6 +75,16 @@ export function SwipeButton({
     setIsDragging(false)
   }
 
+  // Keyboard path: the inner button is focusable; pressing Enter/Space
+  // activates the payment instead of requiring a swipe (swipe is
+  // mouse/touch-only and unavailable to keyboard users).
+  const handleActivate = () => {
+    if (isValidated) return
+    setIsValidated(true)
+    setCurrentX(0)
+    onSwipeComplete?.()
+  }
+
   return (
     <div
       ref={containerRef}
@@ -119,6 +129,7 @@ export function SwipeButton({
         }}
         aria-label={isValidated ? "Validated" : text}
         disabled={isValidated}
+        onClick={handleActivate}
       >
         {isValidated ? (
           <Check className="h-4 w-4" aria-hidden="true" />

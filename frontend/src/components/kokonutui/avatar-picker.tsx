@@ -283,7 +283,7 @@ export default function ProfileSetup({
             </div>
 
             {withPhone && (
-              <div className="space-y-2">
+              <div className="space-y-2 scroll-mt-24">
                 <label className="font-medium text-sm" htmlFor="phone">
                   Phone <span className="font-normal text-muted-foreground">(optional)</span>
                 </label>
