@@ -176,6 +176,14 @@ class InvoiceResource extends Resource
                     }),
             ])
             ->defaultSort('billing_period_end', 'desc')
+            ->contentFooter(function (Table $table): \Illuminate\Contracts\View\View {
+                $total = '₱'.number_format((float) $table->getQuery()->sum('total_amount'), 2);
+
+                return view('filament.tables.footer-total', [
+                    'label' => 'Total (filtered)',
+                    'total' => $total,
+                ]);
+            })
             ->actions([
                 Actions\ViewAction::make(),
             ])

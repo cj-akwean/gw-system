@@ -46,6 +46,9 @@ class ImportServiceConnections extends Page
 
     public array $failedRows = [];
 
+    /** True while previewing or importing — disables the buttons and shows a spinner. */
+    public bool $processing = false;
+
     public array $data = [];
 
     public function mount(): void
@@ -114,6 +117,26 @@ class ImportServiceConnections extends Page
         ]);
     }
 
+    public function downloadTemplate()
+    {
+        $headers = ['name', 'barangay', 'address', 'account_number', 'meter_number', 'phone', 'email'];
+        $rows = [
+            ['Juan Dela Cruz', 'Poblacion', '123 Mabini St.', 'GW-000001', 'MTR-000001', '09171234567', 'juan@example.com'],
+            ['Maria Santos', 'Talidang', '456 Rizal Ave.', '', '', '', ''],
+        ];
+
+        return response()->streamDownload(function () use ($headers, $rows) {
+            $out = fopen('php://output', 'w');
+            fputcsv($out, $headers);
+            foreach ($rows as $row) {
+                fputcsv($out, $row);
+            }
+            fclose($out);
+        }, 'service-connections-template.csv', [
+            'Content-Type' => 'text/csv',
+        ]);
+    }
+
     public function updatedData(): void
     {
         if (blank($this->data['csvFile'] ?? null)) {
@@ -125,122 +148,142 @@ class ImportServiceConnections extends Page
 
     public function preview(): void
     {
-        $this->importedCount = 0;
-        $this->failedRows = [];
-
-        $file = $this->uploadedCsvFile();
-
-        if (! $file) {
-            Notification::make()->title('Please upload a CSV file.')->warning()->send();
-
+        if ($this->processing) {
             return;
         }
 
-        $path = $file->getRealPath();
+        $this->processing = true;
 
-        $rows = Excel::toArray(new ServiceConnectionImport, $path);
+        try {
+            $this->importedCount = 0;
+            $this->failedRows = [];
 
-        if (empty($rows[0])) {
-            Notification::make()->title('CSV file is empty or has no valid rows.')->warning()->send();
+            $file = $this->uploadedCsvFile();
 
-            return;
+            if (! $file) {
+                Notification::make()->title('Please upload a CSV file.')->warning()->send();
+
+                return;
+            }
+
+            $path = $file->getRealPath();
+
+            $rows = Excel::toArray(new ServiceConnectionImport, $path);
+
+            if (empty($rows[0])) {
+                Notification::make()->title('CSV file is empty or has no valid rows.')->warning()->send();
+
+                return;
+            }
+
+            $service = app(ServiceConnectionService::class);
+            $headerErrors = $service->validateHeaders($rows[0][0] ?? []);
+
+            if (! empty($headerErrors)) {
+                Notification::make()
+                    ->title('Invalid CSV header')
+                    ->body(
+                        'Required columns: name, barangay, address. Optional: account_number, meter_number, phone, email, gender, birthdate, civil_status, occupation, status, connection_date, rate_schedule. Blank account/meter numbers are auto-generated. '
+                        .implode(' ', $headerErrors)
+                    )
+                    ->danger()
+                    ->send();
+
+                return;
+            }
+
+            $results = $service->prepareImportRows($rows[0]);
+
+            $this->previewRows = $results;
+            $this->validCount = $results->where('valid', true)->count();
+            $this->invalidCount = $results->where('valid', false)->count();
+            $this->hasPreview = true;
+        } finally {
+            $this->processing = false;
         }
-
-        $service = app(ServiceConnectionService::class);
-        $headerErrors = $service->validateHeaders($rows[0][0] ?? []);
-
-        if (! empty($headerErrors)) {
-            Notification::make()
-                ->title('Invalid CSV header')
-                ->body(
-                    'Required columns: name, barangay, address. Optional: account_number, meter_number, phone, email, gender, birthdate, civil_status, occupation, status, connection_date, rate_schedule. Blank account/meter numbers are auto-generated. '
-                    .implode(' ', $headerErrors)
-                )
-                ->danger()
-                ->send();
-
-            return;
-        }
-
-        $results = $service->prepareImportRows($rows[0]);
-
-        $this->previewRows = $results;
-        $this->validCount = $results->where('valid', true)->count();
-        $this->invalidCount = $results->where('valid', false)->count();
-        $this->hasPreview = true;
     }
 
     public function import(): void
     {
+        if ($this->processing) {
+            return;
+        }
+
         if (! $this->hasPreview || $this->validCount === 0) {
             Notification::make()->title('No valid rows to import.')->warning()->send();
 
             return;
         }
 
-        $service = app(ServiceConnectionService::class);
-        $importerId = Filament::auth()->id();
-        $imported = 0;
-        $failed = 0;
-        $failedRows = [];
+        $this->processing = true;
 
-        $validRows = $this->previewRows->where('valid', true);
+        try {
+            $service = app(ServiceConnectionService::class);
+            $importerId = Filament::auth()->id();
+            $imported = 0;
+            $failed = 0;
+            $failedRows = [];
 
-        DB::transaction(function () use ($service, $importerId, $validRows, &$imported, &$failed, &$failedRows) {
-            if (DB::connection()->getDriverName() === 'pgsql') {
-                DB::statement('select pg_advisory_xact_lock(?)', [self::IMPORT_ADVISORY_LOCK_KEY]);
-            }
+            $validRows = $this->previewRows->where('valid', true);
 
-            foreach ($validRows as $row) {
-                try {
-                    $row['data']['imported_by'] = $importerId;
-                    $service->createWithIdentifierBackstops($row['data'], $row['generated']);
-                    $imported++;
-                } catch (\Throwable $e) {
-                    $failed++;
-                    $failedRows[] = $row['row'];
-                    Log::warning('Service connection import row failed.', [
-                        'row' => $row['row'],
-                        'name' => $row['name'] ?? null,
-                        'account_number' => $row['account_number'] ?? null,
-                        'meter_number' => $row['meter_number'] ?? null,
-                        'exception' => $e->getMessage(),
-                    ]);
+            DB::transaction(function () use ($service, $importerId, $validRows, &$imported, &$failed, &$failedRows) {
+                if (DB::connection()->getDriverName() === 'pgsql') {
+                    DB::statement('select pg_advisory_xact_lock(?)', [self::IMPORT_ADVISORY_LOCK_KEY]);
                 }
-            }
-        });
 
-        $this->importedCount = $imported;
-        $this->failedRows = $failedRows;
-        $this->hasPreview = false;
-        $this->previewRows = collect();
-        $this->data = [];
+                foreach ($validRows as $row) {
+                    try {
+                        $row['data']['imported_by'] = $importerId;
+                        $service->createWithIdentifierBackstops($row['data'], $row['generated']);
+                        $imported++;
+                    } catch (\Throwable $e) {
+                        $failed++;
+                        $failedRows[] = $row['row'];
+                        Log::warning('Service connection import row failed.', [
+                            'row' => $row['row'],
+                            'name' => $row['name'] ?? null,
+                            'account_number' => $row['account_number'] ?? null,
+                            'meter_number' => $row['meter_number'] ?? null,
+                            'exception' => $e->getMessage(),
+                        ]);
+                    }
+                }
+            });
 
-        $title = "Imported {$imported} connection(s)."
-            .($failed ? " {$failed} row(s) failed." : '');
+            $this->importedCount = $imported;
+            $this->failedRows = $failedRows;
+            $this->hasPreview = false;
+            $this->previewRows = collect();
+            $this->data = [];
 
-        $body = $failed
-            ? 'Failed CSV rows: '.implode(', ', $failedRows).' - see storage/logs/laravel.log for reasons.'
-            : null;
+            $title = "Imported {$imported} connection(s)."
+                .($failed ? " {$failed} row(s) failed." : '');
 
-        Notification::make()
-            ->title($title)
-            ->body($body)
-            ->{$failed ? 'warning' : 'success'}()
-            ->send();
+            $body = $failed
+                ? 'Failed CSV rows: '.implode(', ', $failedRows).' - see storage/logs/laravel.log for reasons.'
+                : null;
 
-        AdminNotifier::notify(
-            'Service connections imported',
-            $body !== null ? $title.' '.$body : $title,
-            $failed ? 'warning' : 'success',
-        );
+            Notification::make()
+                ->title($title)
+                ->body($body)
+                ->{$failed ? 'warning' : 'success'}()
+                ->send();
 
-        Log::info('Service connection import completed.', [
-            'imported_by' => $importerId,
-            'imported' => $imported,
-            'failed' => $failed,
-            'failed_rows' => $failedRows,
-        ]);
+            AdminNotifier::notify(
+                'Service connections imported',
+                $body !== null ? $title.' '.$body : $title,
+                $failed ? 'warning' : 'success',
+            );
+
+            Log::info('Service connection import completed.', [
+                'imported_by' => $importerId,
+                'imported' => $imported,
+                'failed' => $failed,
+                'failed_rows' => $failedRows,
+            ]);
+        } finally {
+            $this->processing = false;
+        }
     }
 
     public function getTitle(): string

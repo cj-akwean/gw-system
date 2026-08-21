@@ -3,6 +3,15 @@
         <x-filament::section
             heading="Upload CSV File"
             description="Required columns: name, barangay, address. Optional: account_number, meter_number, phone, email, gender, birthdate, civil_status, occupation, status, connection_date, rate_schedule. Any other columns are ignored. Blank account/meter numbers are auto-generated and shown in the preview.">
+            <div class="mb-4 flex items-center gap-3">
+                <x-filament::button wire:click="downloadTemplate" color="gray" size="sm">
+                    Download Template
+                </x-filament::button>
+                <div wire:loading wire:target="preview" class="flex items-center gap-2 text-sm text-gray-500">
+                    <x-filament::loading-indicator class="h-4 w-4" />
+                    Analyzing CSV…
+                </div>
+            </div>
             {{ $this->importForm }}
         </x-filament::section>
 
@@ -20,11 +29,23 @@
 
                     <div class="flex items-center gap-3">
                         @if ($validCount > 0)
-                            <x-filament::button wire:click="import" color="success">
-                                Import {{ $validCount }} Valid Connection(s)
+                            <x-filament::button
+                                wire:click="import"
+                                color="success"
+                                :disabled="$processing"
+                            >
+                                <span wire:loading.remove wire:target="import">Import {{ $validCount }} Valid Connection(s)</span>
+                                <span wire:loading wire:target="import">
+                                    <x-filament::loading-indicator class="h-4 w-4" />
+                                    Importing…
+                                </span>
                             </x-filament::button>
                         @endif
-                        <x-filament::button wire:click="downloadCsv" color="gray">
+                        <x-filament::button
+                            wire:click="downloadCsv"
+                            color="gray"
+                            :disabled="$processing"
+                        >
                             Download CSV with notes
                         </x-filament::button>
                     </div>

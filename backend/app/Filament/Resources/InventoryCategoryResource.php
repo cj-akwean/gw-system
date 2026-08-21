@@ -7,6 +7,7 @@ use App\Models\InventoryCategory;
 use Closure;
 use Filament\Actions;
 use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables;
@@ -65,16 +66,25 @@ class InventoryCategoryResource extends Resource
             ->defaultSort('name')
             ->actions([
                 Actions\EditAction::make(),
-                Actions\DeleteAction::make(),
+                Actions\DeleteAction::make()
+                    ->before(function (Actions\DeleteAction $action, Model $record): void {
+                        // A category in use by items must stay — deleting it
+                        // would orphan the items' grouping. Tell the admin why
+                        // instead of silently hiding the button.
+                        $itemCount = $record->items()->count();
+
+                        if ($itemCount > 0) {
+                            Notification::make()
+                                ->title('Category in use')
+                                ->body("This category has {$itemCount} item(s). Rename it instead of deleting.")
+                                ->warning()
+                                ->send();
+
+                            $action->halt();
+                        }
+                    }),
             ])
             ->bulkActions([]);
-    }
-
-    public static function canDelete(Model $record): bool
-    {
-        // A category in use by items must stay — deleting it would orphan
-        // the items' grouping. Admins can rename it instead.
-        return ! $record->items()->exists();
     }
 
     public static function getPages(): array

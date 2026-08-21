@@ -1804,3 +1804,27 @@ real starting point). Options considered:
 If a genuine "connect your Google account" flow is ever wanted, the safe way is
 email/password sign-in first, then link *from inside a logged-in session* — never
 implicitly from a Google button.
+
+
+## 58. Admin panel: additive feedback over silent gating (2026-08-22)
+
+**Question asked:** "When the dashboard or admin screens feel basic, do we rebuild them
+or bolt on feedback?"
+
+**Answer — add affordances and explainable states; never silently hide.**
+
+- **Silent canDelete() gating misleads.** When delete is forbidden, Filament hides the
+  button with no reason. We replaced that with a DeleteAction->before() that sends an
+  explanatory notification ("Category in use - rename it instead", with the item count)
+  and halts. Rationale: an operator who can't figure out *why* the button vanished is
+  more likely to work around it than to ask.
+- **Dashboard grows, not rebuilds.** Adding self-contained widgets (needs-attention,
+  recent payments) plus two extra stats + trend deltas to the existing stat cards keeps
+  the change removable (one widget = one file, auto-discovered, own sort). Nothing in
+  the existing dashboard was wrong; it just didn't answer "what needs me now?"
+- **Error location matters.** Domain failures (invoice not payable) now throw an inline
+  ValidationException on the offending field, not just a banner. Banner + no field
+  points nowhere; field + banner points exactly where to fix.
+- **Friendly > translated.** Password-reset broker statuses (passwords.token) are
+  developer-facing; we map them to operator sentences and always offer the next action
+  ("Request a new code").

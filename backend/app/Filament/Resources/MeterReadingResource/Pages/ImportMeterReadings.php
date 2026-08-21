@@ -33,6 +33,9 @@ class ImportMeterReadings extends Page
 
     public int $importedCount = 0;
 
+    /** True while previewing or importing — disables the buttons and shows a spinner. */
+    public bool $processing = false;
+
     public array $data = [];
 
     public function mount(): void
@@ -133,93 +136,113 @@ class ImportMeterReadings extends Page
 
     public function preview(): void
     {
-        $file = $this->uploadedCsvFile();
-
-        if (! $file) {
-            Notification::make()->title('Please upload a CSV file.')->warning()->send();
-
+        if ($this->processing) {
             return;
         }
 
-        $path = $file->getRealPath();
+        $this->processing = true;
 
-        $rows = Excel::toArray(new MeterReadingImport(app(ReadingService::class)), $path);
+        try {
+            $file = $this->uploadedCsvFile();
 
-        if (empty($rows[0])) {
-            Notification::make()->title('CSV file is empty or has no valid rows.')->warning()->send();
+            if (! $file) {
+                Notification::make()->title('Please upload a CSV file.')->warning()->send();
 
-            return;
+                return;
+            }
+
+            $path = $file->getRealPath();
+
+            $rows = Excel::toArray(new MeterReadingImport(app(ReadingService::class)), $path);
+
+            if (empty($rows[0])) {
+                Notification::make()->title('CSV file is empty or has no valid rows.')->warning()->send();
+
+                return;
+            }
+
+            $importService = app(ReadingService::class);
+            $headerErrors = $importService->validateHeaders($rows[0][0] ?? []);
+
+            if (! empty($headerErrors)) {
+                Notification::make()
+                    ->title('Invalid CSV header')
+                    ->body(
+                        'Expected columns: account_number and/or meter_number, present_reading, reading_date (optional). '
+                        .implode(' ', $headerErrors)
+                    )
+                    ->danger()
+                    ->send();
+
+                return;
+            }
+
+            $user = Filament::auth()->user();
+            $results = $importService->prepareImportRows($rows[0], $user);
+
+            $this->previewRows = $results;
+            $this->validCount = $results->where('valid', true)->count();
+            $this->invalidCount = $results->where('valid', false)->count();
+            $this->hasPreview = true;
+        } finally {
+            $this->processing = false;
         }
-
-        $importService = app(ReadingService::class);
-        $headerErrors = $importService->validateHeaders($rows[0][0] ?? []);
-
-        if (! empty($headerErrors)) {
-            Notification::make()
-                ->title('Invalid CSV header')
-                ->body(
-                    'Expected columns: account_number and/or meter_number, present_reading, reading_date (optional). '
-                    .implode(' ', $headerErrors)
-                )
-                ->danger()
-                ->send();
-
-            return;
-        }
-
-        $user = Filament::auth()->user();
-        $results = $importService->prepareImportRows($rows[0], $user);
-
-        $this->previewRows = $results;
-        $this->validCount = $results->where('valid', true)->count();
-        $this->invalidCount = $results->where('valid', false)->count();
-        $this->hasPreview = true;
     }
 
     public function import(): void
     {
+        if ($this->processing) {
+            return;
+        }
+
         if (! $this->hasPreview || $this->validCount === 0) {
             Notification::make()->title('No valid rows to import.')->warning()->send();
 
             return;
         }
 
-        $user = Filament::auth()->user();
-        $service = app(ReadingService::class);
-        $imported = 0;
-        $failed = 0;
+        $this->processing = true;
 
-        $validRows = $this->previewRows->where('valid', true);
+        try {
+            $user = Filament::auth()->user();
+            $service = app(ReadingService::class);
+            $imported = 0;
+            $failed = 0;
 
-        DB::transaction(function () use ($service, $user, $validRows, &$imported, &$failed) {
-            foreach ($validRows as $row) {
-                try {
-                    $service->createFromArray($row['data'], $user, 'csv_import');
-                    $imported++;
-                } catch (\Exception $e) {
-                    $failed++;
+            $validRows = $this->previewRows->where('valid', true);
+
+            DB::transaction(function () use ($service, $user, $validRows, &$imported, &$failed) {
+                foreach ($validRows as $row) {
+                    try {
+                        $service->createFromArray($row['data'], $user, 'csv_import');
+                        $imported++;
+                    } catch (\Exception $e) {
+                        $failed++;
+                    }
                 }
-            }
-        });
+            });
 
-        $this->importedCount = $imported;
-        $this->hasPreview = false;
-        $this->previewRows = collect();
-        $this->data = [];
+            $this->importedCount = $imported;
+            $this->hasPreview = false;
+            $this->previewRows = collect();
+            $this->data = [];
 
-        $title = "Imported {$imported} reading(s)."
-            . ($failed ? " {$failed} row(s) failed." : '');
+            $title = "Imported {$imported} reading(s)."
+                . ($failed ? " {$failed} row(s) failed." : '');
 
-        Notification::make()
-            ->title($title)
-            ->{$failed ? 'warning' : 'success'}()
-            ->send();
+            Notification::make()
+                ->title($title)
+                ->{$failed ? 'warning' : 'success'}()
+                ->send();
 
-        AdminNotifier::notify(
-            'Meter readings imported',
-            $title,
-            $failed ? 'warning' : 'success',
-        );
+            AdminNotifier::notify(
+                'Meter readings imported',
+                $title,
+                $failed ? 'warning' : 'success',
+            );
+        } finally {
+            $this->processing = false;
+        }
     }
 
     public function getTitle(): string

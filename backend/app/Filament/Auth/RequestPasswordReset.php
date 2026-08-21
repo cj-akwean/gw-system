@@ -23,6 +23,21 @@ use SensitiveParameter;
  */
 class RequestPasswordReset extends BaseRequestPasswordReset
 {
+    /**
+     * Prefill the email from the "Request a new code" link on the reset page
+     * (?email=…), so the admin doesn't retype it after a wrong code.
+     */
+    public function mount(): void
+    {
+        parent::mount();
+
+        $email = request()->query('email');
+
+        if (is_string($email) && $email !== '') {
+            $this->form->fill(['email' => $email]);
+        }
+    }
+
     public function request(): void
     {
         try {
@@ -66,6 +81,8 @@ class RequestPasswordReset extends BaseRequestPasswordReset
 
     protected function getSentNotification(string $status): ?Notification
     {
+        $email = $this->form->getState()['email'] ?? null;
+
         return Notification::make()
             ->title(__($status))
             ->body(__('filament-panels::auth/pages/password-reset/request-password-reset.notifications.sent.body'))
@@ -74,7 +91,7 @@ class RequestPasswordReset extends BaseRequestPasswordReset
                 Action::make('enterCode')
                     ->label('Enter the code')
                     ->link()
-                    ->url(Filament::getUrl().'/password-reset/reset-code'),
+                    ->url(Filament::getUrl().'/password-reset/reset-code?email='.urlencode((string) $email)),
             ]);
     }
 }

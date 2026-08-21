@@ -2,13 +2,13 @@
 
 namespace Tests\Feature;
 
-use App\Filament\Resources\InventoryCategoryResource;
 use App\Filament\Resources\InventoryCategoryResource\Pages\CreateInventoryCategory;
 use App\Filament\Resources\InventoryCategoryResource\Pages\EditInventoryCategory;
 use App\Filament\Resources\InventoryCategoryResource\Pages\ListInventoryCategories;
 use App\Models\InventoryCategory;
 use App\Models\InventoryItem;
 use App\Models\User;
+use Filament\Actions\DeleteAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -81,16 +81,25 @@ class InventoryCategoryResourceTest extends TestCase
 
     public function test_delete_is_blocked_while_items_reference_the_category(): void
     {
-        $category = InventoryCategory::factory()->create();
+        $category = InventoryCategory::factory()->create(['name' => 'Pipes']);
         InventoryItem::factory()->create(['inventory_category_id' => $category->id]);
 
-        $this->assertFalse(InventoryCategoryResource::canDelete($category));
+        Livewire::actingAs($this->admin(), 'admin')
+            ->test(ListInventoryCategories::class)
+            ->callTableAction(DeleteAction::class, $category)
+            ->assertNotified('Category in use');
+
+        $this->assertDatabaseHas('inventory_categories', ['id' => $category->id]);
     }
 
     public function test_delete_is_allowed_for_an_unused_category(): void
     {
-        $category = InventoryCategory::factory()->create();
+        $category = InventoryCategory::factory()->create(['name' => 'Valves']);
 
-        $this->assertTrue(InventoryCategoryResource::canDelete($category));
+        Livewire::actingAs($this->admin(), 'admin')
+            ->test(ListInventoryCategories::class)
+            ->callTableAction(DeleteAction::class, $category);
+
+        $this->assertDatabaseMissing('inventory_categories', ['id' => $category->id]);
     }
 }

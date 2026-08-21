@@ -2,12 +2,16 @@
 
 namespace Tests\Feature;
 
+use App\Models\BillingRun;
 use App\Models\Invoice;
+use App\Models\InventoryItem;
 use App\Models\Payment;
 use App\Models\ServiceConnection;
+use App\Models\User;
 use App\Services\DashboardMetricsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Notification as NotificationFacade;
 use Tests\TestCase;
 
 class DashboardMetricsServiceTest extends TestCase
@@ -136,5 +140,188 @@ class DashboardMetricsServiceTest extends TestCase
         $this->assertCount(1, $series);
         $this->assertSame($now->format('Y-m'), array_key_first($series));
         $this->assertSame(30.0, $series[$now->format('Y-m')]);
+    }
+
+    public function test_collection_rate_divides_collections_by_billed_in_month(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 8, 15, 12, 0, 0));
+
+        try {
+            // Billed this month (period ends in August): 1000 total.
+            $billedPaid = Invoice::factory()->create([
+                'status' => 'paid',
+                'total_amount' => 600.00,
+                'billing_period_end' => now()->format('Y-m-d'),
+            ]);
+            Invoice::factory()->create([
+                'status' => 'unpaid',
+                'total_amount' => 400.00,
+                'billing_period_end' => now()->format('Y-m-d'),
+            ]);
+            // Outside the month — must not count as billed.
+            $outside = Invoice::factory()->create([
+                'status' => 'unpaid',
+                'total_amount' => 999.00,
+                'billing_period_end' => now()->subMonth()->format('Y-m-d'),
+            ]);
+
+            // Collected this month: 250.
+            Payment::factory()->cash()->create([
+                'invoice_id' => $billedPaid->id,
+                'amount' => 250.00,
+                'paid_at' => now(),
+            ]);
+            Payment::factory()->cash()->create([
+                'invoice_id' => $outside->id,
+                'amount' => 777.00,
+                'paid_at' => now()->subMonth(),
+            ]);
+
+            $this->assertSame(25.0, app(DashboardMetricsService::class)->collectionRateForMonth());
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_collection_rate_is_null_when_nothing_billed(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 8, 15, 12, 0, 0));
+
+        try {
+            // Only a payment, no invoice billed this month.
+            $invoice = Invoice::factory()->create([
+                'status' => 'paid',
+                'total_amount' => 100.00,
+                'billing_period_end' => now()->subMonth()->format('Y-m-d'),
+            ]);
+            Payment::factory()->cash()->create([
+                'invoice_id' => $invoice->id,
+                'amount' => 100.00,
+                'paid_at' => now(),
+            ]);
+
+            $this->assertNull(app(DashboardMetricsService::class)->collectionRateForMonth());
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_revenue_delta_compares_this_month_to_last_month(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 8, 15, 12, 0, 0));
+
+        try {
+            Payment::factory()->create(['amount' => 150.00, 'paid_at' => now()]);
+            Payment::factory()->create(['amount' => 100.00, 'paid_at' => now()->subMonth()]);
+
+            $this->assertSame(50.0, app(DashboardMetricsService::class)->revenueDelta());
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_revenue_delta_returns_zero_when_last_month_had_no_revenue(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 8, 15, 12, 0, 0));
+
+        try {
+            Payment::factory()->create(['amount' => 50.00, 'paid_at' => now()]);
+
+            $this->assertSame(0.0, app(DashboardMetricsService::class)->revenueDelta());
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_unpaid_delta_measures_open_bill_count_change(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 8, 15, 12, 0, 0));
+
+        try {
+            // Previous billing month (July): 4 open. Current (August): 5 open → +25%.
+            Invoice::factory()->count(4)->create([
+                'status' => 'unpaid',
+                'billing_period_end' => now()->startOfMonth()->subMonth()->format('Y-m-d'),
+            ]);
+            Invoice::factory()->count(5)->create([
+                'status' => 'unpaid',
+                'billing_period_end' => now()->format('Y-m-d'),
+            ]);
+            // Outside the two compared months — must not affect the delta.
+            Invoice::factory()->count(50)->create([
+                'status' => 'unpaid',
+                'billing_period_end' => now()->subMonths(3)->format('Y-m-d'),
+            ]);
+
+            $this->assertSame(25.0, app(DashboardMetricsService::class)->unpaidDelta());
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_needs_attention_collects_all_categories(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 8, 15, 12, 0, 0));
+
+        try {
+            $overdue = Invoice::factory()->create([
+                'status' => 'overdue',
+                'total_amount' => 250.50,
+                'due_date' => now()->subDays(5)->format('Y-m-d'),
+            ]);
+            $pending = ServiceConnection::factory()->create(['status' => 'pending']);
+            $lowStock = InventoryItem::factory()->create([
+                'name' => 'Lion PVC Pipe',
+                'quantity_on_hand' => 2,
+                'reorder_level' => 10,
+            ]);
+            $failedRun = BillingRun::create([
+                'period_end' => now()->subMonth()->format('Y-m-d'),
+                'status' => 'failed',
+                'report' => [],
+            ]);
+
+            $data = app(DashboardMetricsService::class)->needsAttention();
+
+            $this->assertCount(1, $data['overdue']);
+            $this->assertSame((float) $overdue->total_amount, (float) $data['overdue']->first()['amount']);
+            $this->assertSame($overdue->id, $data['overdue']->first()['invoice_id']);
+
+            $this->assertCount(1, $data['pending_connections']);
+            $this->assertSame($pending->id, $data['pending_connections']->first()['connection_id']);
+
+            $this->assertCount(1, $data['low_stock']);
+            $this->assertSame('low_stock', $data['low_stock']->first()['status']);
+            $this->assertSame($lowStock->id, $data['low_stock']->first()['item_id']);
+
+            $this->assertCount(1, $data['billing_runs']);
+            $this->assertSame($failedRun->id, $data['billing_runs']->first()['run_id']);
+            $this->assertSame('failed', $data['billing_runs']->first()['status']);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_needs_attention_empty_database(): void
+    {
+        $data = app(DashboardMetricsService::class)->needsAttention();
+
+        $this->assertTrue($data['overdue']->isEmpty());
+        $this->assertTrue($data['pending_connections']->isEmpty());
+        $this->assertTrue($data['low_stock']->isEmpty());
+        $this->assertTrue($data['billing_runs']->isEmpty());
+        $this->assertSame(0, $data['unread_count']);
+    }
+
+    public function test_needs_attention_excludes_completed_billing_runs(): void
+    {
+        BillingRun::create([
+            'period_end' => now()->subMonth()->format('Y-m-d'),
+            'status' => 'completed',
+            'report' => [],
+            'finished_at' => now(),
+        ]);
+
+        $this->assertTrue(app(DashboardMetricsService::class)->needsAttention()['billing_runs']->isEmpty());
     }
 }

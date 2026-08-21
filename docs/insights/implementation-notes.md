@@ -628,6 +628,46 @@ marker `RunBillingJob` refuses to resurrect); orchestration in
 `App\Services\BillingRunService` (mirrors `billing:run` semantics incl. the
 concurrent-create race catch), dispatched as `RunBillingJob` *(2026-08-06)*.
 
+### 5. Dashboard UX enhancement *(2026-08-22)*
+Additive (never rebuild — removable per widget): `NeedsAttentionWidget` (custom
+`Widget` + `filament.widgets.needs-attention` blade) groups overdue bills (top 5 by
+amount), pending connections, low/no-stock items, failed **or stale** billing runs
+(`BillingRun::isStale()`) and the unread notification count, each row click-through to
+its resource view, with a friendly empty state. `RecentPaymentsWidget` (Filament
+`TableWidget`) lists the last 8 payments with peso-formatted amounts and click-through.
+`MetricsOverview` gains: **collection rate** (collections ÷ billed for the current
+month, null when nothing billed so it never reads "0%"), **receivables 90+ days** stat
+(from `FinancialReportService::agingBuckets()`), and **trend deltas** (revenue + unpaid
+count vs the previous month, arrow icons, "No change" when the baseline is 0). Data
+lives in `DashboardMetricsService` (`collectionRateForMonth`, `revenueDelta`,
+`unpaidDelta`, `needsAttention`) — widgets stay thin per the business-logic rule.
+
+### 6. Admin feedback polish *(2026-08-22)*
+Customer-portal-style UI feedback, all additive:
+- **Import spinners** — both import pages (`ImportMeterReadings`, `ImportServiceConnections`)
+  gain a `processing` flag + `wire:loading` spinners on the preview/import buttons; the
+  Service Connections page also gains the missing **Download Template** action (mirrors
+  the meter-readings page).
+- **Receipt PDF download** — `ViewPayment` header action streams
+  `PdfService::generate($invoice, $payment)` to a temp file (BinaryFileResponse, the
+  FinancialReport PDF pattern) named `receipt-{invoice_number}.pdf`.
+- **Inline payment error** — `CreatePayment` converts the not-payable domain failure from
+  a notification-title-only into a `ValidationException` on the `invoice_id` field with a
+  friendly status-specific message (paid → "already paid"), keeping the operator on the form.
+- **Delete reason** — `InventoryCategoryResource` no longer silently hides delete via
+  `canDelete()`; a `DeleteAction->before()` warns "Category in use — rename it instead"
+  (with the item count) and halts.
+- **OTP reset** — `ResetPassword` maps broker statuses to friendly messages, throws the
+  error inline on the OTP field, and its failure notification carries a **"Request a new
+  code"** action that links to the request page prefilled; `RequestPasswordReset` and the
+  reset page prefill `?email=` from the notification links.
+- **Invoice status tabs** — `ListInvoices` gains All / Unpaid / Overdue / Paid tabs with
+  count badges (status-specific colors).
+- **List totals** — Invoice and Payment tables gain a `contentFooter` "Total (filtered)"
+  row (sums respect active filters), via `filament.tables.footer-total` partial.
+- **Bell "Mark all as read"** — verified already provided by Filament's base bell
+  (`markAllNotificationsAsReadAction`, rendered when unread exist) — no change needed.
+
 ## Admin Reports / Exports
 
 ### 1. Payments CSV export

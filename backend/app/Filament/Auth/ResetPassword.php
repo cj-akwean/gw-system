@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use SensitiveParameter;
 
 /**
@@ -145,11 +146,33 @@ class ResetPassword extends BaseResetPassword
             return app(PasswordResetResponse::class);
         }
 
+        // Wrong/expired code (or an email that doesn't exist) — surface it
+        // inline on the OTP field with a resend path, so the admin isn't left
+        // guessing from a generic banner.
+        $message = $this->friendlyResetError($status);
+
         Notification::make()
-            ->title(__($status))
+            ->title($message)
             ->danger()
+            ->actions([
+                \Filament\Actions\Action::make('requestNewCode')
+                    ->label('Request a new code')
+                    ->link()
+                    ->url(Filament::getUrl().'/password-reset/request?email='.urlencode((string) $this->email)),
+            ])
             ->send();
 
-        return null;
+        throw ValidationException::withMessages([
+            'data.otp' => $message,
+        ]);
+    }
+
+    private function friendlyResetError(string $status): string
+    {
+        return match ($status) {
+            Password::INVALID_USER => 'No admin account uses that email. Check the email and try again.',
+            Password::INVALID_TOKEN => 'That code is invalid or has expired. Request a new one below.',
+            default => __('passwords.token'),
+        };
     }
 }

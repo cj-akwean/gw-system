@@ -96,7 +96,8 @@ class PaymentResourceTest extends TestCase
                 'paid_at' => '2026-08-06',
             ])
             ->call('create')
-            ->assertHasNoFormErrors();
+            ->assertHasFormErrors(['invoice_id'])
+            ->assertSee('already paid');
 
         $this->assertDatabaseCount('payments', 0);
         $this->assertSame('paid', $invoice->fresh()->status);
@@ -303,5 +304,19 @@ class PaymentResourceTest extends TestCase
         Livewire::actingAs($admin, 'admin')
             ->test(ViewPayment::class, ['record' => $payment->id])
             ->assertSee('View OR-2026-888');
+    }
+
+    public function test_view_page_registers_download_receipt_action(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true]);
+        $invoice = $this->payableInvoice();
+        $payment = Payment::factory()->create([
+            'invoice_id' => $invoice->id,
+            'reference' => 'OR-2026-999',
+        ]);
+
+        Livewire::actingAs($admin, 'admin')
+            ->test(ViewPayment::class, ['record' => $payment->id])
+            ->assertActionExists('downloadReceipt');
     }
 }

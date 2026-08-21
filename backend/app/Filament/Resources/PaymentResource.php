@@ -239,6 +239,14 @@ class PaymentResource extends Resource
                     }),
             ])
             ->defaultSort('paid_at', 'desc')
+            ->contentFooter(function (Table $table): \Illuminate\Contracts\View\View {
+                $total = '₱'.number_format((float) $table->getQuery()->sum('amount'), 2);
+
+                return view('filament.tables.footer-total', [
+                    'label' => 'Total (filtered)',
+                    'total' => $total,
+                ]);
+            })
             ->actions([
                 Actions\ViewAction::make(),
             ])

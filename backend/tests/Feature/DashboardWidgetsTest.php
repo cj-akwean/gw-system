@@ -6,12 +6,17 @@ use App\Filament\Resources\InvoiceResource;
 use App\Filament\Resources\PaymentResource;
 use App\Filament\Resources\ServiceConnectionResource;
 use App\Filament\Widgets\MetricsOverview;
+use App\Filament\Widgets\NeedsAttentionWidget;
+use App\Filament\Widgets\RecentPaymentsWidget;
 use App\Filament\Widgets\RevenueChart;
+use App\Models\BillingRun;
 use App\Models\Invoice;
+use App\Models\InventoryItem;
 use App\Models\Payment;
 use App\Models\ServiceConnection;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -118,5 +123,80 @@ class DashboardWidgetsTest extends TestCase
             rawurlencode((string) json_encode(['status' => ['values' => ['unpaid', 'overdue']]])),
             $html,
         );
+    }
+
+    public function test_metrics_overview_shows_collection_rate_and_aging_when_data_exists(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 8, 15, 12, 0, 0));
+
+        try {
+            $paid = Invoice::factory()->create([
+                'status' => 'paid',
+                'total_amount' => 600.00,
+                'billing_period_end' => now()->format('Y-m-d'),
+                'due_date' => now()->addDays(10)->format('Y-m-d'),
+            ]);
+            Invoice::factory()->create([
+                'status' => 'overdue',
+                'total_amount' => 900.00,
+                'billing_period_end' => now()->format('Y-m-d'),
+                'due_date' => now()->subDays(100)->format('Y-m-d'),
+            ]);
+            Payment::factory()->cash()->create([
+                'invoice_id' => $paid->id,
+                'amount' => 150.00,
+                'paid_at' => now(),
+            ]);
+
+            Livewire::actingAs($this->admin(), 'admin')
+                ->test(MetricsOverview::class)
+                ->assertSee('Collection rate')
+                ->assertSee('Receivables 90+ days');
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_needs_attention_widget_renders_categories_and_empty_state(): void
+    {
+        // Empty DB → friendly empty state.
+        Livewire::actingAs($this->admin(), 'admin')
+            ->test(NeedsAttentionWidget::class)
+            ->assertSee('Nothing needs your attention right now.');
+
+        // Seeded → categories render with links.
+        Invoice::factory()->create(['status' => 'overdue', 'total_amount' => 250.50]);
+        ServiceConnection::factory()->create(['status' => 'pending']);
+        InventoryItem::factory()->create([
+            'name' => 'Lion PVC Pipe',
+            'quantity_on_hand' => 2,
+            'reorder_level' => 10,
+        ]);
+        BillingRun::create([
+            'period_end' => now()->subMonth()->format('Y-m-d'),
+            'status' => 'failed',
+            'report' => [],
+        ]);
+
+        $html = Livewire::actingAs($this->admin(), 'admin')
+            ->test(NeedsAttentionWidget::class)
+            ->assertSee('Overdue bills')
+            ->assertSee('Pending connections')
+            ->assertSee('Low stock')
+            ->assertSee('Billing runs')
+            ->html();
+
+        $this->assertStringContainsString(InvoiceResource::getUrl('index'), $html);
+        $this->assertStringContainsString(ServiceConnectionResource::getUrl('index'), $html);
+    }
+
+    public function test_recent_payments_widget_lists_latest_payments(): void
+    {
+        $this->seedDashboardData();
+
+        Livewire::actingAs($this->admin(), 'admin')
+            ->test(RecentPaymentsWidget::class)
+            ->assertSee('₱300.00')
+            ->assertSee('₱120.25');
     }
 }
