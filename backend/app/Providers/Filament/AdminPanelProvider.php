@@ -51,6 +51,7 @@ class AdminPanelProvider extends PanelProvider
                 \App\Filament\Auth\ResetPassword::class,
             )->name('auth.password-reset.reset-code'))
             ->spa()
+            ->sidebarCollapsibleOnDesktop()
             // FileUpload pages race Alpine's entangle under SPA swaps (Livewire
             // Entangle Error on data.csvFile) — keep them as plain reloads.
             ->spaUrlExceptions([
