@@ -35,7 +35,9 @@ class BillingRunResource extends Resource
     public static function getRecordTitle(?Model $record): string|\Illuminate\Contracts\Support\Htmlable|null
     {
         if ($record instanceof BillingRun) {
-            return 'Run #'.$record->id;
+            $period = $record->period_end?->format('M Y') ?? '';
+
+            return 'Run #'.$record->id.($period ? " — {$period}" : '');
         }
 
         return parent::getRecordTitle($record);

@@ -25,7 +25,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning className={cn("font-sans", spaceGrotesk.variable, montserratHeading.variable)}>
       <head>
         <Script id="theme-init" strategy="beforeInteractive">
-          {`if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark')`}
+          {`if(localStorage.getItem('theme')!=='light')document.documentElement.classList.add('dark')`}
         </Script>
       </head>
       <body>

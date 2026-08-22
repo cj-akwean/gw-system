@@ -5,7 +5,7 @@ import { useCallback, useSyncExternalStore } from "react";
 // Module-level theme store. `useTheme` was previously per-instance useState —
 // toggling updated only the toggling component, so canvas consumers
 // (fractal grid blend, ocean background) kept stale colors until remount.
-let dark = false;
+let dark = true;
 const listeners = new Set<() => void>();
 
 function subscribe(listener: () => void): () => void {
@@ -44,7 +44,7 @@ function ensureInitialized() {
 
 export function useTheme() {
   ensureInitialized();
-  const isDark = useSyncExternalStore(subscribe, getSnapshot, () => false);
+  const isDark = useSyncExternalStore(subscribe, getSnapshot, () => true);
 
   const toggle = useCallback(
     async (origin?: Element | null) => {

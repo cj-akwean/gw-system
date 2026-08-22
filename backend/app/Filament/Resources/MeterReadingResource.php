@@ -17,6 +17,7 @@ use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Closure;
 
 class MeterReadingResource extends Resource
@@ -28,6 +29,18 @@ class MeterReadingResource extends Resource
     protected static string | \UnitEnum | null $navigationGroup = 'Operations';
 
     protected static ?string $recordTitleAttribute = 'id';
+
+    public static function getRecordTitle(?Model $record): string|\Illuminate\Contracts\Support\Htmlable|null
+    {
+        if ($record instanceof MeterReading) {
+            $account = $record->serviceConnection?->account_number ?? '—';
+            $date = $record->entered_at?->format('M j, Y') ?? '—';
+
+            return "Reading — {$account} ({$date})";
+        }
+
+        return parent::getRecordTitle($record);
+    }
 
     public static function form(Schema $schema): Schema
     {

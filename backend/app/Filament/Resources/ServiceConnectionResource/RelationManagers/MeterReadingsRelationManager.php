@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\ServiceConnectionResource\RelationManagers;
 
+use App\Models\MeterReading;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -14,6 +15,12 @@ class MeterReadingsRelationManager extends RelationManager
     {
         return $table
             ->recordTitleAttribute('id')
+            ->recordTitle(function (MeterReading $record): string {
+                $account = $record->serviceConnection?->account_number ?? '—';
+                $date = $record->entered_at?->format('M j, Y') ?? '—';
+
+                return "Reading — {$account} ({$date})";
+            })
             ->columns([
                 Tables\Columns\TextColumn::make('entered_at')
                     ->label('Date')
